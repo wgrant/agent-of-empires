@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { FileDown, Image as ImageIcon, Link as LinkIcon, Music } from "lucide-react";
 
 import type { ToolOutputBlock } from "../../lib/acpTypes";
@@ -41,27 +41,77 @@ function LinkRow({ icon, label, ...anchor }: { icon: ReactNode; label: string } 
   );
 }
 
+function ImageLightbox({ src, alt, onClose }: { src: string; alt: string; onClose: () => void }) {
+  const [zoomed, setZoomed] = useState(false);
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={alt}
+      className={
+        zoomed
+          ? "fixed inset-0 z-50 overflow-auto bg-black/80 p-4 animate-fade-in"
+          : "fixed inset-0 z-50 flex cursor-zoom-out items-center justify-center bg-black/80 p-4 animate-fade-in"
+      }
+      onClick={onClose}
+    >
+      <img
+        src={src}
+        alt={alt}
+        className={
+          zoomed
+            ? "max-w-none cursor-zoom-out rounded shadow-2xl"
+            : "max-h-[90vh] max-w-[90vw] cursor-zoom-in rounded object-contain shadow-2xl"
+        }
+        onClick={(event) => {
+          event.stopPropagation();
+          setZoomed((value) => !value);
+        }}
+      />
+    </div>
+  );
+}
+
+function ImageOutputBlock({ block }: { block: Extract<ToolOutputBlock, { kind: "image" }> }) {
+  const [open, setOpen] = useState(false);
+  const src = block.data
+    ? dataUri(block.mime_type, block.data)
+    : block.uri
+      ? safeUri(block.uri, SAFE_MEDIA_SCHEMES)
+      : null;
+  if (!src) {
+    return <MediaPlaceholder icon={<ImageIcon className={ICON} />} label={`image (${block.mime_type})`} />;
+  }
+  const alt = `tool output image (${block.mime_type})`;
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="block cursor-zoom-in rounded"
+        aria-label="View image"
+      >
+        <img src={src} alt={alt} className="max-h-80 max-w-full rounded border border-surface-700 object-contain" />
+      </button>
+      {open && <ImageLightbox src={src} alt={alt} onClose={() => setOpen(false)} />}
+    </>
+  );
+}
+
 function ToolOutputBlockView({ block }: { block: ToolOutputBlock }) {
   switch (block.kind) {
     case "text":
       return <TextPre text={block.text} />;
-    case "image": {
-      const src = block.data
-        ? dataUri(block.mime_type, block.data)
-        : block.uri
-          ? safeUri(block.uri, SAFE_MEDIA_SCHEMES)
-          : null;
-      if (!src) {
-        return <MediaPlaceholder icon={<ImageIcon className={ICON} />} label={`image (${block.mime_type})`} />;
-      }
-      return (
-        <img
-          src={src}
-          alt={`tool output image (${block.mime_type})`}
-          className="max-h-80 max-w-full rounded border border-surface-700 object-contain"
-        />
-      );
-    }
+    case "image":
+      return <ImageOutputBlock block={block} />;
     case "audio":
       if (!block.data) {
         return <MediaPlaceholder icon={<Music className={ICON} />} label={`audio (${block.mime_type})`} />;
