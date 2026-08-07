@@ -576,12 +576,27 @@ pub struct FullFileContents {
 /// containment-checked `canonical_path`, so what renders is what the agent
 /// saw. `Ok(None)` for anything else, so the caller answers `404` without
 /// disclosing whether an untracked file exists.
+///
+/// A session's project directory need not be a git repository at all (e.g. a
+/// plain scratch/research directory added directly). In that case there is no
+/// tracked-blob concept to gate on, so any regular file under the directory is
+/// served as-is; the security boundary against symlink escapes and path
+/// traversal is enforced by the caller before `canonical_path` is produced.
 pub fn compute_unchanged_file_contents(
     repo_path: &Path,
     file_path: &Path,
     canonical_path: &Path,
 ) -> Result<Option<FullFileContents>> {
-    let repo = super::open_repo_at(repo_path)?;
+    let repo = match super::open_repo_at(repo_path) {
+        Ok(repo) => repo,
+        Err(e)
+            if e.code() == git2::ErrorCode::NotFound
+                && e.class() == git2::ErrorClass::Repository =>
+        {
+            return read_file_contents(canonical_path);
+        }
+        Err(e) => return Err(e.into()),
+    };
     // Unborn HEAD (no commits yet) means nothing is tracked.
     let head_tree = match repo.head().and_then(|h| h.peel_to_tree()) {
         Ok(t) => t,
@@ -593,9 +608,13 @@ pub fn compute_unchanged_file_contents(
         Ok(entry) if entry.kind() == Some(git2::ObjectType::Blob) => {}
         _ => return Ok(None),
     }
-    // `canonical_path` is the already-resolved working-dir path; require a
-    // regular file so a cited directory or special file yields 404, not a read
-    // error.
+    read_file_contents(canonical_path)
+}
+
+/// `canonical_path` is the already-resolved working-dir path; require a
+/// regular file so a cited directory or special file yields 404, not a read
+/// error.
+fn read_file_contents(canonical_path: &Path) -> Result<Option<FullFileContents>> {
     if !canonical_path.is_file() {
         return Ok(None);
     }
@@ -830,6 +849,23 @@ mod tests {
         let out = compute_unchanged_file_contents(dir.path(), Path::new(".git/config"), &canonical)
             .unwrap();
         assert!(out.is_none(), ".git internals must not be served");
+    }
+
+    #[test]
+    fn unchanged_file_contents_serves_plain_file_when_directory_is_not_a_git_repo() {
+        // A session's project directory need not be version-controlled at
+        // all (e.g. a plain scratch/research directory). There is no
+        // tracked-blob concept to gate on, so any regular file present on
+        // disk should be served rather than the request failing.
+        let dir = TempDir::new().unwrap();
+        let file_path = dir.path().join("FINDINGS.md");
+        fs::write(&file_path, "# Findings\n").unwrap();
+        let canonical = file_path.canonicalize().unwrap();
+        let out = compute_unchanged_file_contents(dir.path(), Path::new("FINDINGS.md"), &canonical)
+            .unwrap()
+            .expect("plain file under a non-git directory should be served");
+        assert_eq!(out.content, "# Findings\n");
+        assert!(!out.is_binary);
     }
 
     /// Pin a branch name, so `git init`'s default does not decide the test.

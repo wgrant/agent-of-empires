@@ -31,4 +31,41 @@ pub enum GitError {
     IoError(#[from] std::io::Error),
 }
 
+impl GitError {
+    /// True when the underlying failure is `open_repo_at` finding no git
+    /// repository at the given path at all, as opposed to a repo-internal
+    /// error (corrupt object, bad ref, etc). Callers use this to distinguish
+    /// "this session's project directory just isn't version-controlled"
+    /// (recoverable: fall back to plain filesystem access) from a genuine
+    /// git failure worth surfacing as a 500.
+    pub fn is_repository_not_found(&self) -> bool {
+        match self {
+            GitError::NotAGitRepo => true,
+            GitError::Git2Error(e) => {
+                e.code() == git2::ErrorCode::NotFound && e.class() == git2::ErrorClass::Repository
+            }
+            _ => false,
+        }
+    }
+}
+
 pub type Result<T> = std::result::Result<T, GitError>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn is_repository_not_found_detects_missing_repo_but_not_other_git2_errors() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let missing_repo: GitError = match crate::git::open_repo_at(dir.path()) {
+            Err(e) => e.into(),
+            Ok(_) => panic!("empty tempdir must not be a git repository"),
+        };
+        assert!(missing_repo.is_repository_not_found());
+        assert!(GitError::NotAGitRepo.is_repository_not_found());
+
+        let unrelated = GitError::BranchNotFound("feature".into());
+        assert!(!unrelated.is_repository_not_found());
+    }
+}

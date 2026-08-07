@@ -394,12 +394,16 @@ pub async fn session_diff_file(
                 repo_path,
             );
 
-            // Files in the changed set are diffed; an in-repo file with no
-            // diff is served through the full-file fallback below. The
-            // traversal and containment checks are the security boundary.
-            let changed_files = scan_state
-                .changed_files_cached(repo_path, &base_branch)
-                .map_err(|e| DiffFileError::Internal(e.into()))?;
+            // Validate the requested path. Files in the changed set are diffed;
+            // an in-repo file with no diff against the base is served through
+            // the full-file fallback below. The path-traversal and containment
+            // checks are the security boundary preventing arbitrary reads.
+            // Scratch project directories use the full-file fallback below.
+            let changed_files = match scan_state.changed_files_cached(repo_path, &base_branch) {
+                Ok(files) => files,
+                Err(e) if e.is_repository_not_found() => Vec::new(),
+                Err(e) => return Err(DiffFileError::Internal(e.into())),
+            };
             let (canonical_path, is_changed) =
                 match validate_diff_path(repo_path, file_path, &changed_files) {
                     Ok(v) => v,
