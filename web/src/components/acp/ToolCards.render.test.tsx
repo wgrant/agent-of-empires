@@ -453,6 +453,39 @@ describe("structured output media", () => {
     expect(text()).toContain(visible);
   });
 
+  it("opens images in a lightbox that closes from the backdrop or Escape", () => {
+    const { container } = withOutput([{ kind: "image", mime_type: "image/png", data: "AAAA" }]);
+    fireEvent.click(container.querySelector("img")!);
+    let dialog = container.querySelector('[role="dialog"]');
+    expect(dialog).toBeTruthy();
+    expect(container.querySelectorAll("img")).toHaveLength(2);
+    fireEvent.click(dialog!);
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+
+    fireEvent.click(container.querySelector("img")!);
+    dialog = container.querySelector('[role="dialog"]');
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(dialog).not.toBeNull();
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it("toggles the lightbox image between viewport fit and native size", () => {
+    const { container } = withOutput([{ kind: "image", mime_type: "image/png", data: "AAAA" }]);
+    fireEvent.click(container.querySelector("img")!);
+    const dialog = container.querySelector('[role="dialog"]')!;
+    const image = dialog.querySelector("img")!;
+    expect(image.className).toContain("max-h-[90vh]");
+    expect(dialog.className).not.toContain("overflow-auto");
+
+    fireEvent.click(image);
+    expect(image.className).toContain("max-w-none");
+    expect(image.className).not.toContain("max-h-[90vh]");
+    expect(dialog.className).toContain("overflow-auto");
+
+    fireEvent.click(image);
+    expect(image.className).toContain("max-h-[90vh]");
+  });
+
   // Agent-controlled uris never reach a sink; unusable blocks degrade to a placeholder.
   it.each<[string, ToolOutputBlock, string, string]>([
     ["image without data", { kind: "image", mime_type: "image/png" }, "img", "image (image/png)"],
