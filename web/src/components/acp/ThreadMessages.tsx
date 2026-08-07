@@ -1,6 +1,11 @@
 import { MessagePrimitive, useAuiState } from "@assistant-ui/react";
 
-import { isElicitationAnswersPayload, type ActivityRow, type ToolCall } from "../../lib/acpTypes";
+import {
+  isElicitationAnswersPayload,
+  type ActivityRow,
+  type ToolCall,
+  type ToolOutputBlock,
+} from "../../lib/acpTypes";
 import { parseJsonObject } from "../../lib/acpArgs";
 import { pickMemoryRecall } from "../../lib/memoryRecall";
 import { ArtifactImage } from "./artifactMedia";
@@ -120,7 +125,10 @@ function safeStringify(v: unknown): string {
  *  over stopped; stopped wins over complete. */
 function toToolItem(part: ToolPart): { tool: ToolCall; result?: ActivityRow; kind: string } {
   const fallbackAt = toolCallTimestamp(part.toolCallId);
-  const res = part.result as { content?: unknown; endedAt?: unknown; stopped?: unknown } | null | undefined;
+  const res = part.result as
+    | { content?: unknown; endedAt?: unknown; stopped?: unknown; output?: unknown }
+    | null
+    | undefined;
   const tool: ToolCall = {
     id: part.toolCallId,
     name: prettifyToolName(part.toolName, part.args),
@@ -141,6 +149,7 @@ function toToolItem(part: ToolPart): { tool: ToolCall; result?: ActivityRow; kin
           text: res && typeof res === "object" && "content" in res ? String(res.content ?? "") : "",
           toolCallId: part.toolCallId,
           at: typeof res?.endedAt === "string" ? res.endedAt : fallbackAt,
+          output: Array.isArray(res?.output) ? (res.output as ToolOutputBlock[]) : undefined,
         }
       : undefined;
   return { tool, result, kind: part.toolName };
@@ -150,7 +159,7 @@ interface GroupChild {
   toolCallId: string;
   toolName: string;
   argsText: string;
-  result?: { content: string; endedAt?: string; stopped?: boolean };
+  result?: { content: string; endedAt?: string; stopped?: boolean; output?: ToolOutputBlock[] };
   isError?: boolean;
 }
 

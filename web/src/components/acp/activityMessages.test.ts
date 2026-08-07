@@ -50,10 +50,14 @@ type Part = {
   toolName?: string;
   toolCallId?: string;
   argsText?: string;
-  result?: { stopped?: boolean };
+  result?: { stopped?: boolean; output?: Array<{ kind: string; data?: string }> };
   isError?: boolean;
   text?: string;
 };
+
+const imageOutput = [{ kind: "image" as const, mime_type: "image/png", data: "abc123" }];
+const completeWithImage = (id: string) =>
+  row(`done-${id}`, "tool_complete", "completed", { toolCallId: id, output: imageOutput });
 
 function assistantParts(rows: ActivityRow[], ...opts: [boolean?, boolean?]): Part[] {
   const messages = activityToThreadMessages([user(), ...rows], false, ...opts);
@@ -149,6 +153,21 @@ describe("tool-call grouping", () => {
     const assistants = messages.filter((m) => m.role === "assistant");
     expect(assistants).toHaveLength(2);
     expect(assistants.flatMap((m) => names(m.content as Part[]))).not.toContain(TOOL_GROUP_NAME);
+  });
+
+  it("preserves structured output on standalone and grouped tool calls", () => {
+    const [standalone] = toolParts([toolStart("t1"), completeWithImage("t1")]);
+    expect(standalone!.result?.output).toEqual(imageOutput);
+
+    const [group] = toolParts([
+      toolStart("g1"),
+      completeWithImage("g1"),
+      toolStart("g2"),
+      completeWithImage("g2"),
+      toolStart("g3"),
+      completeWithImage("g3"),
+    ]);
+    expect(payload(group!).children[0].result.output).toEqual(imageOutput);
   });
 
   // A reused tool_call_id gets seq-disambiguated completion rows; message ids must stay unique.
