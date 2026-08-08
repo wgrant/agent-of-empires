@@ -56,6 +56,22 @@ When an approval lands and you are away from the dashboard, two channels fire:
 - **Web push**, tagged `acp-approval-<session>`, deep-linking back to the session. Unlike status pushes, approval pushes are not suppressed when the dashboard or TUI is active; focused clients get an in-app toast. See [Push notifications](../push-notifications.md).
 - **Browser sound**: the dashboard plays `[sound] on_approval` whenever pending approvals go from zero to non-zero. It plays client-side because `aoe serve` often runs on a remote box.
 
+## Thinking traces
+
+When an ACP agent streams `agent_thought_chunk` updates, the dashboard preserves
+their text and groups adjacent chunks into a collapsed **Thinking trace** block.
+The block contains everything the adapter supplied, but the amount and kind of
+text are provider-dependent. Some providers stream substantial reasoning text;
+others expose only a reasoning summary. Private model reasoning that the
+provider does not return cannot be recovered by AoE.
+
+Codex with GPT-5.5 or GPT-5.6 can currently return only short bold progress
+headings even when the turn uses high reasoning effort and requests a
+`detailed` reasoning summary. This is an upstream Codex/model behavior issue,
+not truncation in the dashboard; Codex persists the same heading-only payload
+with no explanatory reasoning content. See
+[openai/codex#34873](https://github.com/openai/codex/issues/34873).
+
 ## Model and reasoning effort
 
 When the adapter advertises them, the composer footer shows a model dropdown and a reasoning-effort selector beside the mode pill. `claude-agent-acp` v0.39.0+ advertises a model selector for every session, and a reasoning-effort selector when the current model reports `supportsEffort`. Adapters advertising neither show no pickers, by design.
