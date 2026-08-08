@@ -56,6 +56,20 @@ function snapshot(model: string, effort: string) {
   return configOptionsUpdated([modelOption(model), effortOption(effort)]);
 }
 
+function longModelOption() {
+  return {
+    ...modelOption("model-01"),
+    options: Array.from({ length: 30 }, (_, index) => {
+      const number = String(index + 1).padStart(2, "0");
+      return {
+        value: `model-${number}`,
+        name: `OpenCode Model ${number}`,
+        description: `Provider model ${number}`,
+      };
+    }),
+  };
+}
+
 test("user sees model and effort pickers after the adapter advertises config options", async ({ page }) => {
   const mock = await mockAcpSession(page, {
     title: "ui-pickers-render",
@@ -71,6 +85,33 @@ test("user sees model and effort pickers after the adapter advertises config opt
   await expect(effortControl).toBeVisible();
   await expect(effortControl).toContainText("Default");
   await expect(effortControl).toContainText("High");
+});
+
+test("OpenCode's long model menu stays within the mobile viewport and scrolls", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 664 });
+  const mock = await mockAcpSession(page, {
+    title: "ui-pickers-mobile-scroll",
+    initialEvents: [configOptionsUpdated([longModelOption()])],
+  });
+  await openStructuredSession(page, mock);
+
+  const modelChip = page.getByTestId("config-option-model");
+  await expect(modelChip).toBeVisible({ timeout: 15_000 });
+  await modelChip.click();
+
+  const menu = page.getByRole("menu");
+  await expect(menu).toBeVisible();
+  const bounds = await menu.boundingBox();
+  expect(bounds).not.toBeNull();
+  expect(bounds!.y).toBeGreaterThanOrEqual(0);
+  expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(664);
+
+  const scrollTop = await menu.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+    return element.scrollTop;
+  });
+  expect(scrollTop).toBeGreaterThan(0);
+  await expect(page.getByTestId("config-option-model-value-model-30")).toBeVisible();
 });
 
 test("user switches the model and the chip reflects the adapter confirmation", async ({ page }) => {
