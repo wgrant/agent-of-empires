@@ -1,11 +1,6 @@
 import { MessagePrimitive, useAuiState } from "@assistant-ui/react";
 
-import {
-  isElicitationAnswersPayload,
-  type ActivityRow,
-  type ToolCall,
-  type ToolOutputBlock,
-} from "../../lib/acpTypes";
+import { isElicitationAnswersPayload, type ActivityRow, type ToolCall, type ToolOutputBlock } from "../../lib/acpTypes";
 import { parseJsonObject } from "../../lib/acpArgs";
 import { pickMemoryRecall } from "../../lib/memoryRecall";
 import { ArtifactImage } from "./artifactMedia";
@@ -63,9 +58,25 @@ export function AssistantMessage() {
   return (
     <MessagePrimitive.Root className="group mt-4 mr-auto w-full">
       <div className="text-sm text-text-primary leading-relaxed">
-        <MessagePrimitive.Parts components={{ Text: AssistantText, tools: { Override: AssistantToolCall } }} />
+        <MessagePrimitive.Parts
+          components={{ Text: AssistantText, Reasoning: AssistantReasoning, tools: { Override: AssistantToolCall } }}
+        />
       </div>
     </MessagePrimitive.Root>
+  );
+}
+
+export function AssistantReasoning({ text }: { text: string }) {
+  if (!text) return null;
+  return (
+    <details className="my-2 rounded-lg border border-surface-700 bg-surface-900/40 text-text-secondary">
+      <summary className="cursor-pointer select-none px-3 py-2 text-xs font-medium hover:text-text-primary">
+        Thinking trace
+      </summary>
+      <div className="max-h-80 overflow-y-auto border-t border-surface-700 px-3 py-2 text-xs leading-relaxed">
+        <Markdown text={text} smooth={false} />
+      </div>
+    </details>
   );
 }
 

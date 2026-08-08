@@ -1066,6 +1066,7 @@ fn event_kind(event: &crate::acp::Event) -> &'static str {
         Event::ElicitationRequested { .. } => "elicitation_requested",
         Event::ElicitationResolved { .. } => "elicitation_resolved",
         Event::DiffEmitted { .. } => "diff_emitted",
+        Event::AgentThoughtChunk { .. } => "agent_thought_chunk",
         Event::ThinkingStarted => "thinking_started",
         Event::ThinkingEnded => "thinking_ended",
         Event::RateLimit { .. } => "rate_limit",

@@ -124,8 +124,9 @@ export function activityToThreadMessages(
     } else if (row.kind === "empty_output") {
       // A turn with no output (interactive-only slash commands) gets a muted note.
       currentAssistant.appendText(`_${row.text}_`);
-    } else if (row.kind !== "thinking") {
-      // Thinking shows in the spinner; message and unknown kinds render as text.
+    } else if (row.kind === "thinking") {
+      currentAssistant.appendReasoning(row.text);
+    } else {
       currentAssistant.appendText(row.text);
     }
   }
@@ -149,6 +150,7 @@ type ToolResult = {
 // Loose part shape, cast at build time; the renderer parses argsText itself.
 type DraftPart =
   | { type: "text"; text: string }
+  | { type: "reasoning"; text: string }
   | {
       type: "tool-call";
       toolCallId: string;
@@ -174,6 +176,13 @@ class AssistantBuilder {
     const last = this.parts[this.parts.length - 1];
     if (last && last.type === "text") last.text += text;
     else this.parts.push({ type: "text", text });
+  }
+
+  appendReasoning(text: string) {
+    if (!text) return;
+    const last = this.parts[this.parts.length - 1];
+    if (last?.type === "reasoning") last.text += text;
+    else this.parts.push({ type: "reasoning", text });
   }
 
   /** assistant-ui parts carry no timestamps or titles, so they travel as namespaced args. */

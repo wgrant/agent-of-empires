@@ -2575,6 +2575,21 @@
       "components": ["web/src/components/acp/AcpRuntime.tsx", "web/src/lib/acpTypes.ts"]
     },
     {
+      "id": "acp.thinking-traces",
+      "kind": "vitest",
+      "risk": "high",
+      "specs": [
+        "src/lib/acpTypes.test.ts",
+        "src/components/acp/activityMessages.test.ts",
+        "src/components/acp/StructuredView.reasoning.test.tsx"
+      ],
+      "components": [
+        "web/src/lib/acpTypes.ts",
+        "web/src/components/acp/activityMessages.ts",
+        "web/src/components/acp/ThreadMessages.tsx"
+      ]
+    },
+    {
       "id": "acp.tool-density",
       "kind": "vitest",
       "risk": "medium",

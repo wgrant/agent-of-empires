@@ -326,3 +326,17 @@ describe("user and callout rows", () => {
     );
   });
 });
+
+describe("thinking traces", () => {
+  it("keeps reasoning distinct from assistant prose", () => {
+    const messages = activityToThreadMessages(
+      [user("solve it"), row("r1", "thinking", "Inspect constraints"), message("Done")],
+      false,
+    );
+    const assistant = messages.find((item) => item.role === "assistant");
+    expect(assistant?.content).toEqual([
+      { type: "reasoning", text: "Inspect constraints" },
+      { type: "text", text: "Done" },
+    ]);
+  });
+});

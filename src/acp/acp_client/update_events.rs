@@ -166,7 +166,10 @@ pub(super) fn map_update_to_events(
             }],
             other => vec![raw_event(&other)],
         },
-        SessionUpdate::AgentThoughtChunk(_) => vec![Event::ThinkingStarted],
+        SessionUpdate::AgentThoughtChunk(chunk) => match chunk.content {
+            ContentBlock::Text(text) => vec![Event::AgentThoughtChunk { text: text.text }],
+            other => vec![raw_event(&other)],
+        },
         SessionUpdate::ToolCall(tc) => {
             let raw_args = tc.raw_input.clone().unwrap_or(serde_json::Value::Null);
             // Empty rather than "null" without raw_input (#1713).
@@ -573,7 +576,6 @@ mod tests {
                 assert_eq!(d.observe(&text_chunk(text, id)), dropped, "{text:?} {id:?}");
             }
         }
-
         let mut d = AgentMessageDedup::default();
         assert!(!d.observe(&text_chunk("ab", Some("m1"))));
         assert!(d.observe(&text_chunk("ab", Some("m2"))));
@@ -584,6 +586,18 @@ mod tests {
         // reset() forgets the open block.
         d.reset();
         assert!(!d.observe(&text_chunk("ab", Some("m5"))));
+    }
+
+    #[test]
+    fn map_update_to_events_preserves_agent_thought_text() {
+        let update = SessionUpdate::AgentThoughtChunk(ContentChunk::new(ContentBlock::Text(
+            TextContent::new("checking the invariant"),
+        )));
+
+        assert!(matches!(
+            map_update_to_events(update, &agent_profiles::OPENCODE).as_slice(),
+            [Event::AgentThoughtChunk { text }] if text == "checking the invariant"
+        ));
     }
 
     #[test]

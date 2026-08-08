@@ -1155,6 +1155,10 @@ fn transcript_lines(
                 out.push(Line::default());
                 continue;
             }
+            // Thinking traces are available to richer clients. The native
+            // view keeps its compact live thinking status instead of adding
+            // potentially large internal-reasoning blocks to the transcript.
+            TranscriptRowKind::Thinking => {}
             TranscriptRowKind::UserPrompt => {
                 // Note attachments so an image-only prompt doesn't look empty.
                 let text = if row.attachments.is_empty() {

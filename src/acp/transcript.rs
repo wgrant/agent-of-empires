@@ -39,6 +39,9 @@ pub struct TranscriptRow {
     pub async_subagent: bool,
 }
 
+/// The kind discriminant for a [`TranscriptRow`]. Mirrors the web
+/// `ActivityRow["kind"]` union. Reasoning text is a transcript row, while the
+/// live thinking phase remains control state on `AcpState`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TranscriptRowKind {
@@ -47,6 +50,7 @@ pub enum TranscriptRowKind {
     ToolError,
     ToolStopped,
     Message,
+    Thinking,
     UserPrompt,
     UserDiffComments,
     ElicitationAnswered,
@@ -133,6 +137,16 @@ impl TranscriptModel {
                     format!("msg-{seq}"),
                     group_id,
                     TranscriptRowKind::Message,
+                    text.clone(),
+                ))]
+            }
+            Event::AgentThoughtChunk { text } => {
+                self.turn_has_output = true;
+                let group_id = self.fresh_group();
+                vec![self.append(TranscriptRow::new(
+                    format!("thinking-{seq}"),
+                    group_id,
+                    TranscriptRowKind::Thinking,
                     text.clone(),
                 ))]
             }

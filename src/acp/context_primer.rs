@@ -138,6 +138,7 @@ fn fold_turns(events: &[(u64, Event)], before_seq: Option<u64>) -> Folded {
                 .get_or_insert_with(Turn::default)
                 .assistant_text
                 .push_str(text),
+            Event::AgentThoughtChunk { .. } => {}
             Event::ToolCallStarted { tool_call } => {
                 push_tool_start(current.get_or_insert_with(Turn::default), tool_call)
             }

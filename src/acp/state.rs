@@ -491,6 +491,11 @@ pub enum Event {
     DiffEmitted {
         diff: DiffPreview,
     },
+    /// A streamed internal-reasoning text chunk from ACP. Kept separate from
+    /// assistant prose so clients can render it behind an explicit disclosure.
+    AgentThoughtChunk {
+        text: String,
+    },
     ThinkingStarted,
     ThinkingEnded,
     RateLimit {
@@ -767,7 +772,7 @@ impl AcpState {
                     .saturating_sub(Self::MAX_RECENT_DIFFS);
                 self.recent_diffs.drain(..excess);
             }
-            Event::ThinkingStarted => {
+            Event::AgentThoughtChunk { .. } | Event::ThinkingStarted => {
                 self.thinking = Some(ThinkingSignal {
                     started_at: Utc::now(),
                 });
