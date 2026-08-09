@@ -352,6 +352,7 @@ pub(super) const CITYHALL_MUTATION_DENY: &[(&str, &str)] = &[
     // ACP agent / worker lifecycle + config.
     ("DELETE", "/api/sessions/{id}/acp"),
     ("POST", "/api/sessions/{id}/acp/config-option"),
+    ("PATCH", "/api/sessions/{id}/acp/launch-options"),
     ("POST", "/api/sessions/{id}/acp/disable"),
     ("POST", "/api/sessions/{id}/acp/enable"),
     ("POST", "/api/sessions/{id}/acp/install-agent"),

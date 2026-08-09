@@ -24,7 +24,7 @@ mod view;
 mod worker;
 
 pub(crate) use attachments::{sniff_image_mime, validate_attachments};
-pub use config::{acp_set_config_option, acp_set_mode};
+pub use config::{acp_set_config_option, acp_set_mode, acp_update_launch_options};
 pub(crate) use history::read_log_tail;
 pub use history::{
     acp_context_primer, acp_files, acp_replay, acp_worker_log, list_claude_sessions,
