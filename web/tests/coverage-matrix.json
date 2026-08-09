@@ -2303,6 +2303,23 @@
       "components": ["web/src/components/acp/ContextPrimerBanner.tsx"]
     },
     {
+      "id": "acp.launch-options",
+      "kind": "vitest",
+      "risk": "medium",
+      "specs": [
+        "src/components/acp/Composer.launchOptions.test.tsx",
+        "src/components/acp/LaunchOptionRestartDialog.test.tsx",
+        "src/lib/agentLaunchOptions.test.ts"
+      ],
+      "components": [
+        "src/server/api/acp/config.rs",
+        "web/src/components/acp/Composer.tsx",
+        "web/src/components/acp/LaunchOptionRestartDialog.tsx",
+        "web/src/components/acp/StructuredView.tsx",
+        "web/src/lib/agentLaunchOptions.ts"
+      ]
+    },
+    {
       "id": "acp.completion",
       "kind": "live-playwright",
       "risk": "high",

@@ -6,11 +6,13 @@ import { ChevronUp, Paperclip, Square, X } from "lucide-react";
 
 import type { AcpState, PromptAttachmentInput } from "../../lib/acpTypes";
 import { useAgentProfile } from "../../lib/agentProfileContext";
+import { agentLaunchOptions, updateAgentLaunchOptions, type AgentLaunchOption } from "../../lib/agentLaunchOptions";
 import { resolveModeChannel } from "../../lib/modeChannel";
 import { badgeLabel, badgeTone, resolveSkillSource, type SkillIndex } from "../../lib/skillProvenance";
 import { TOUR_ANCHORS, tourAnchor } from "../../lib/tourSteps";
 import { ProvenanceBadge } from "../ProvenanceBadge";
 import { Tooltip } from "../Tooltip";
+import { LaunchOptionRestartDialog } from "./LaunchOptionRestartDialog";
 
 /** Flat item list shared by the `@` and `/` popovers; `/` passes a skill index for provenance badges. */
 export function PopoverItems({ trigger, skillIndex }: { trigger: string; skillIndex?: SkillIndex }) {
@@ -150,6 +152,8 @@ const DEFAULT_MODE_TONE = "border-surface-700 bg-surface-800 text-text-secondary
 
 export function ModePicker({
   sessionId,
+  currentAgent,
+  yoloMode,
   availableModes,
   currentModeId,
   legacyMode,
@@ -158,6 +162,8 @@ export function ModePicker({
   setConfigOption,
 }: {
   sessionId: string;
+  currentAgent: AcpState["agent"];
+  yoloMode: boolean;
   availableModes: AcpState["availableModes"];
   currentModeId: string | null;
   legacyMode: AcpState["mode"];
@@ -167,6 +173,7 @@ export function ModePicker({
 }) {
   const profile = useAgentProfile();
   const [open, setOpen] = useState(false);
+  const [launchChange, setLaunchChange] = useState<{ option: AgentLaunchOption; enabled: boolean } | null>(null);
   const ref = useRef<HTMLDivElement | null>(null);
   // Each channel (config option, SessionModeState, claude fallback) pairs with its own write path.
   const channel = resolveModeChannel({
@@ -177,6 +184,7 @@ export function ModePicker({
     pendingConfigOption,
     allowLegacyFallback: profile.capabilities.legacyModeFallback,
   });
+  const launchOptions = agentLaunchOptions(currentAgent ?? profile.key, yoloMode);
 
   useEffect(() => {
     if (!open) return;
@@ -194,73 +202,119 @@ export function ModePicker({
     };
   }, [open]);
 
-  if (!channel) return null;
-  const current = channel.modes.find((m) => m.id === channel.activeId) ?? channel.modes[0]!;
-  const tone = MODE_TONES.find(([re]) => re.test(channel.activeId))?.[1] ?? DEFAULT_MODE_TONE;
+  if (!channel && launchOptions.length === 0) return null;
+  const current = channel ? (channel.modes.find((m) => m.id === channel.activeId) ?? channel.modes[0]!) : null;
+  const activeToneId = yoloMode ? "yolo" : (channel?.activeId ?? "");
+  const tone = MODE_TONES.find(([re]) => re.test(activeToneId))?.[1] ?? DEFAULT_MODE_TONE;
+  const chipLabel = [current?.name, yoloMode ? "Yolo" : null].filter(Boolean).join(" · ") || "Agent options";
 
   const select = (id: string) => {
     setOpen(false);
-    if (id === channel.activeId || id === channel.pendingId) return;
+    if (!channel || id === channel.activeId || id === channel.pendingId) return;
     if (channel.kind === "config") void setConfigOption(channel.configId, id);
     else void postLegacyMode(sessionId, id);
   };
 
   return (
-    <div ref={ref} {...tourAnchor(TOUR_ANCHORS.modePicker)} className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        title={current.description || `Mode: ${current.name}`}
-        className={[
-          "inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium",
-          "transition-colors",
-          tone,
-        ].join(" ")}
-      >
-        <span>{current.name}</span>
-        <ChevronUp className="h-3 w-3 opacity-70" />
-      </button>
-      {open && (
-        <div
-          className="absolute bottom-full left-0 z-30 mb-1 w-56 overflow-hidden rounded-md border border-surface-700 bg-surface-850 shadow-xl"
-          role="menu"
+    <>
+      <div ref={ref} {...tourAnchor(TOUR_ANCHORS.modePicker)} className="relative">
+        <button
+          type="button"
+          onClick={() => setOpen((value) => !value)}
+          title={current?.description || `Agent mode and launch options: ${chipLabel}`}
+          className={[
+            "inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium",
+            "transition-colors",
+            tone,
+          ].join(" ")}
         >
-          <div className="border-b border-surface-800 px-3 py-1.5 text-[10px] uppercase tracking-wider text-text-dim">
-            {channel.label}
+          <span>{chipLabel}</span>
+          <ChevronUp className="h-3 w-3 opacity-70" />
+        </button>
+        {open && (
+          <div
+            className="absolute bottom-full left-0 z-30 mb-1 max-h-[min(24rem,calc(100dvh-8rem))] w-64 overflow-y-auto overscroll-contain rounded-md border border-surface-700 bg-surface-850 shadow-xl"
+            role="menu"
+          >
+            {channel && (
+              <>
+                <div className="border-b border-surface-800 px-3 py-1.5 text-[10px] uppercase tracking-wider text-text-dim">
+                  {channel.label}
+                </div>
+                {channel.modes.map((opt) => {
+                  const isPending = opt.id === channel.pendingId;
+                  const isActive = opt.id === channel.activeId;
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={isActive}
+                      disabled={isPending}
+                      onClick={() => select(opt.id)}
+                      className={[
+                        "flex w-full items-start gap-2 px-3 py-2 text-left text-xs hover:bg-surface-800",
+                        isActive ? "bg-surface-800/60" : "",
+                        isPending ? "cursor-not-allowed opacity-50" : "",
+                      ].join(" ")}
+                    >
+                      <span
+                        className={[
+                          "mt-0.5 inline-block h-3 w-3 shrink-0 rounded-full border",
+                          isActive ? "border-brand-500 bg-brand-500" : "border-surface-700",
+                        ].join(" ")}
+                      />
+                      <span className="min-w-0 flex-1">
+                        <span className="block font-medium text-text-primary">{opt.name}</span>
+                        {opt.description && <span className="block text-[11px] text-text-dim">{opt.description}</span>}
+                      </span>
+                      {isPending && <span className="text-[10px] uppercase text-text-dim">…</span>}
+                    </button>
+                  );
+                })}
+              </>
+            )}
+            {launchOptions.length > 0 && (
+              <>
+                <div className="border-y border-surface-800 px-3 py-1.5 text-[10px] uppercase tracking-wider text-text-dim first:border-t-0">
+                  Launch options · restart required
+                </div>
+                {launchOptions.map((option) => (
+                  <button
+                    key={option.id}
+                    type="button"
+                    role="menuitemcheckbox"
+                    aria-checked={option.enabled}
+                    onClick={() => {
+                      setOpen(false);
+                      setLaunchChange({ option, enabled: !option.enabled });
+                    }}
+                    className="flex w-full items-start gap-2 px-3 py-2 text-left text-xs hover:bg-surface-800"
+                  >
+                    <span className="min-w-0 flex-1">
+                      <span className="block font-medium text-text-primary">{option.name}</span>
+                      <span className="block text-[11px] text-text-dim">{option.description}</span>
+                    </span>
+                  </button>
+                ))}
+              </>
+            )}
           </div>
-          {channel.modes.map((opt) => {
-            const isPending = opt.id === channel.pendingId;
-            const isActive = opt.id === channel.activeId;
-            return (
-              <button
-                key={opt.id}
-                type="button"
-                role="menuitem"
-                disabled={isPending}
-                onClick={() => select(opt.id)}
-                className={[
-                  "flex w-full items-start gap-2 px-3 py-2 text-left text-xs hover:bg-surface-800",
-                  isActive ? "bg-surface-800/60" : "",
-                  isPending ? "cursor-not-allowed opacity-50" : "",
-                ].join(" ")}
-              >
-                <span
-                  className={[
-                    "mt-0.5 inline-block h-3 w-3 shrink-0 rounded-full border",
-                    isActive ? "border-brand-500 bg-brand-500" : "border-surface-700",
-                  ].join(" ")}
-                />
-                <span className="min-w-0 flex-1">
-                  <span className="block font-medium text-text-primary">{opt.name}</span>
-                  {opt.description && <span className="block text-[11px] text-text-dim">{opt.description}</span>}
-                </span>
-                {isPending && <span className="text-[10px] uppercase text-text-dim">…</span>}
-              </button>
-            );
-          })}
-        </div>
+        )}
+      </div>
+      {launchChange && (
+        <LaunchOptionRestartDialog
+          optionName={launchChange.option.name}
+          enabled={launchChange.enabled}
+          warning={launchChange.option.warning}
+          onCancel={() => setLaunchChange(null)}
+          onConfirm={async () => {
+            await updateAgentLaunchOptions(sessionId, { yolo_mode: launchChange.enabled });
+            setLaunchChange(null);
+          }}
+        />
       )}
-    </div>
+    </>
   );
 }
 

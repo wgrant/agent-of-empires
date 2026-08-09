@@ -62,6 +62,7 @@ import { useDictationBurstGuard } from "./useDictationBurstGuard";
 interface Props {
   sessionId: string;
   currentAgent: AcpState["agent"];
+  yoloMode?: boolean;
   availableModes: AcpState["availableModes"];
   currentModeId: AcpState["currentModeId"];
   /** Fallback when the agent advertises no modes. */
@@ -328,6 +329,8 @@ export function Composer(props: Props) {
                 <span className="mx-1 h-4 w-px bg-surface-700" aria-hidden />
                 <ModePicker
                   sessionId={sessionId}
+                  currentAgent={props.currentAgent}
+                  yoloMode={props.yoloMode ?? false}
                   availableModes={props.availableModes}
                   currentModeId={props.currentModeId}
                   legacyMode={props.legacyMode}
