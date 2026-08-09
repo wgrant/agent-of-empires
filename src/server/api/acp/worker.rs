@@ -34,7 +34,7 @@ pub struct SpawnAcpResponse {
     pub status: &'static str,
 }
 
-fn not_structured_response() -> Response {
+pub(super) fn not_structured_response() -> Response {
     super::super::api_error(
         StatusCode::CONFLICT,
         "not_structured",

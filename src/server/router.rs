@@ -332,6 +332,10 @@ pub(super) fn build_router(state: Arc<AppState>) -> Router {
             "/api/sessions/{id}/acp/config-option",
             post(api::acp_set_config_option),
         )
+        .route(
+            "/api/sessions/{id}/acp/launch-options",
+            patch(api::acp_update_launch_options),
+        )
         .route("/api/sessions/{id}/acp/enable", post(api::acp_enable))
         .route("/api/sessions/{id}/acp/disable", post(api::acp_disable))
         .route(
