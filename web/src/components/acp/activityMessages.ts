@@ -115,7 +115,7 @@ export function activityToThreadMessages(
       pushUser(
         row,
         parts.length > 0 ? parts : [{ type: "text", text: "" }],
-        withCustom("originPlugin", row.originPlugin),
+        { metadata: { custom: { originPlugin: row.originPlugin, promptSendFailure: row.sendFailure } } },
       );
       continue;
     }

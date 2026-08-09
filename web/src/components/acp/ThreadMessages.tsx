@@ -19,6 +19,9 @@ export function UserMessage() {
   const originPlugin = useAuiState(
     (s) => (s.message.metadata?.custom as { originPlugin?: unknown } | undefined)?.originPlugin,
   );
+  const sendFailure = useAuiState(
+    (s) => (s.message.metadata?.custom as { promptSendFailure?: unknown } | undefined)?.promptSendFailure,
+  );
   return (
     <MessagePrimitive.Root className="group mt-4 flex flex-col items-end gap-1">
       {typeof originPlugin === "string" && (
@@ -27,7 +30,19 @@ export function UserMessage() {
         </div>
       )}
       <MessagePrimitive.Parts components={{ Text: UserText, Image: UserImage }} />
+      {typeof sendFailure === "string" && sendFailure && <PromptSendFailureNotice reason={sendFailure} />}
     </MessagePrimitive.Root>
+  );
+}
+
+export function PromptSendFailureNotice({ reason }: { reason: string }) {
+  return (
+    <div
+      role="alert"
+      className="max-w-[80%] rounded-md border border-status-error/40 bg-status-error/10 px-2.5 py-1.5 text-xs text-status-error"
+    >
+      <span className="font-semibold">Not sent.</span> <span className="break-words">{reason}</span>
+    </div>
   );
 }
 

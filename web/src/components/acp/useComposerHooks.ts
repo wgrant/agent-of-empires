@@ -238,23 +238,34 @@ export function useAttachments(
   pendingAttachments: PromptAttachmentInput[],
   setPendingAttachments: React.Dispatch<React.SetStateAction<PromptAttachmentInput[]>>,
 ) {
+  const preparingRef = useRef(0);
+  const [preparingCount, setPreparingCount] = useState(0);
   const addFiles = useCallback(
     async (files: FileList | File[]) => {
       // Encode only what fits, so a large drop does not stall on discarded files.
       const remaining = Math.max(0, MAX_ATTACHMENTS - pendingAttachments.length);
       if (remaining === 0) return;
+      const candidates = Array.from(files).slice(0, remaining);
+      if (candidates.length === 0) return;
+      preparingRef.current += 1;
+      setPreparingCount(preparingRef.current);
       const accepted: PromptAttachmentInput[] = [];
-      for (const file of Array.from(files).slice(0, remaining)) {
-        const kind = mimeToKind(file.type || "application/octet-stream");
-        if (!kindSupported(kind, promptCapabilities)) continue;
-        const dataB64 = await fileToBase64(file);
-        if (!dataB64) continue;
-        accepted.push({
-          kind,
-          mimeType: file.type || "application/octet-stream",
-          name: file.name || undefined,
-          dataB64,
-        });
+      try {
+        for (const file of candidates) {
+          const kind = mimeToKind(file.type || "application/octet-stream");
+          if (!kindSupported(kind, promptCapabilities)) continue;
+          const dataB64 = await fileToBase64(file);
+          if (!dataB64) continue;
+          accepted.push({
+            kind,
+            mimeType: file.type || "application/octet-stream",
+            name: file.name || undefined,
+            dataB64,
+          });
+        }
+      } finally {
+        preparingRef.current = Math.max(0, preparingRef.current - 1);
+        setPreparingCount(preparingRef.current);
       }
       if (accepted.length === 0) return;
       setPendingAttachments((prev) => prev.concat(accepted).slice(0, MAX_ATTACHMENTS));
@@ -279,5 +290,5 @@ export function useAttachments(
   const enabled =
     !!promptCapabilities &&
     (promptCapabilities.image || promptCapabilities.audio || promptCapabilities.embeddedContext);
-  return { addFiles, supported, remove, enabled };
+  return { addFiles, supported, remove, enabled, preparing: preparingCount > 0, preparingRef };
 }
