@@ -2003,6 +2003,7 @@ function AppContent({
                         acpAgent={activeSession.acp_agent ?? null}
                         acpProvider={activeSession.acp_provider ?? null}
                         clearAliases={activeSession.clear_aliases}
+                        yoloMode={activeSession.yolo_mode}
                         archivedAt={activeSession.archived_at ?? null}
                         snoozedUntil={activeSession.snoozed_until ?? null}
                         trashedAt={activeSession.trashed_at ?? null}

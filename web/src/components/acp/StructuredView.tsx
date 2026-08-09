@@ -50,6 +50,7 @@ interface Props {
   acpProvider: string | null;
   /** Server-owned conversation-reset slash aliases (`/clear`, `/new`). */
   clearAliases?: readonly string[];
+  yoloMode?: boolean;
   archivedAt: string | null;
   snoozedUntil: string | null;
   /** Trashed sessions are read-only: no composer or queue strips. */
@@ -440,6 +441,7 @@ function ComposerDock({
           sessionId={sessionId}
           currentAgent={state.agent ?? acpAgent}
           currentProvider={acpProvider}
+          yoloMode={view.yoloMode}
           availableModes={state.availableModes}
           currentModeId={state.currentModeId}
           legacyMode={state.mode}
