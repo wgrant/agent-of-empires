@@ -210,10 +210,11 @@ pub struct UpdateLaunchOptionsResponse {
 }
 
 fn supports_yolo_launch(agent: &str) -> bool {
-    crate::agents::get_agent(agent).is_some_and(|definition| definition.yolo.is_some())
-        || crate::acp::agent_profiles::resolve(agent)
-            .yolo_mode_id
-            .is_some()
+    crate::agents::get_agent(agent).is_some_and(|definition| {
+        matches!(definition.yolo, Some(crate::agents::YoloMode::EnvVar(_, _)))
+    }) || crate::acp::agent_profiles::resolve(agent)
+        .yolo_mode_id
+        .is_some()
 }
 
 /// Persist launch-only options and restart only this session's ACP worker.
@@ -364,10 +365,12 @@ mod tests {
 
     #[test]
     fn launch_yolo_support_covers_env_and_acp_mode_agents() {
-        for agent in ["opencode", "claude", "codex", "gemini", "kimi", "vibe"] {
+        for agent in ["opencode", "claude", "codex", "gemini", "kimi"] {
             assert!(supports_yolo_launch(agent), "{agent}");
         }
-        assert!(!supports_yolo_launch("unknown-agent"));
+        for agent in ["vibe", "unknown-agent"] {
+            assert!(!supports_yolo_launch(agent), "{agent}");
+        }
     }
 
     #[tokio::test]
