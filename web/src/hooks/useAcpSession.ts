@@ -195,12 +195,17 @@ export function useAcpSession(
           const rejected = res.status >= 400 && res.status < 500;
           // The idle-stopped worker is still respawning: the caller re-queues it, so no banner.
           const workerNotReady = res.status === 503 && detail.startsWith("worker_not_ready");
-          const settle = rejected
-            ? "prompt_send_rejected"
-            : workerNotReady
-              ? "rollback_optimistic_prompt"
-              : "settle_inflight_prompt";
-          dispatch({ kind: settle, id: promptId });
+          if (rejected) {
+            dispatch({
+              kind: "prompt_send_rejected",
+              id: promptId,
+              reason: detail || `The server rejected this message (${res.status}).`,
+            });
+          } else if (workerNotReady) {
+            dispatch({ kind: "rollback_optimistic_prompt", id: promptId });
+          } else {
+            dispatch({ kind: "settle_inflight_prompt", id: promptId });
+          }
           if (!workerNotReady) {
             dispatch({ kind: "error", message: `Could not send prompt (${res.status}). ${detail}`.trim() });
           }

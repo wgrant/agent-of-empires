@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ComposerPrimitive, useAui } from "@assistant-ui/react";
-import { ChevronUp, Paperclip, Square, X } from "lucide-react";
+import { ChevronUp, LoaderCircle, Paperclip, Square, X } from "lucide-react";
 
 import type { AcpState, PromptAttachmentInput } from "../../lib/acpTypes";
 import { useAgentProfile } from "../../lib/agentProfileContext";
@@ -374,27 +374,33 @@ function sendButtonClass(disabled: boolean, extra = "") {
 export function SendButton({
   connected = true,
   disabled = false,
+  preparing = false,
   onSend,
 }: {
   connected?: boolean;
   disabled?: boolean;
+  preparing?: boolean;
   onSend: () => void;
 }) {
-  const title = disabled
-    ? "Type a message to send"
-    : connected
-      ? "Send, Enter"
-      : "Session not active, will send on resume";
+  const title = preparing
+    ? "Preparing attachments…"
+    : disabled
+      ? "Type a message to send"
+      : connected
+        ? "Send, Enter"
+        : "Session not active, will send on resume";
   return (
     <button
       type="button"
-      aria-label={connected ? "Send message" : "Queue message until session resumes"}
+      aria-label={
+        preparing ? "Preparing attachments" : connected ? "Send message" : "Queue message until session resumes"
+      }
       title={title}
       onClick={onSend}
       disabled={disabled}
       className={sendButtonClass(disabled)}
     >
-      <PaperPlaneIcon />
+      {preparing ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden /> : <PaperPlaneIcon />}
     </button>
   );
 }
@@ -427,31 +433,41 @@ export function QueueSendButton({
   connected,
   steering,
   disabled = false,
+  preparing = false,
   onSend,
 }: {
   connected: boolean;
   steering: boolean;
   disabled?: boolean;
+  preparing?: boolean;
   onSend: () => void;
 }) {
-  const title = disabled
-    ? "Type a message to queue"
-    : !connected
-      ? "Queue follow-up, will send on resume, Enter"
-      : steering
-        ? "Send into the current turn, Enter"
-        : "Queue follow-up (sent when current turn ends), Enter";
+  const title = preparing
+    ? "Preparing attachments…"
+    : disabled
+      ? "Type a message to queue"
+      : !connected
+        ? "Queue follow-up, will send on resume, Enter"
+        : steering
+          ? "Send into the current turn, Enter"
+          : "Queue follow-up (sent when current turn ends), Enter";
   return (
     <button
       type="button"
-      aria-label={connected && steering ? "Send message into the current turn" : "Queue follow-up message"}
+      aria-label={
+        preparing
+          ? "Preparing attachments"
+          : connected && steering
+            ? "Send message into the current turn"
+            : "Queue follow-up message"
+      }
       {...tourAnchor(TOUR_ANCHORS.queueSend)}
       title={title}
       onClick={onSend}
       disabled={disabled}
       className={sendButtonClass(disabled, "relative ")}
     >
-      <PaperPlaneIcon />
+      {preparing ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden /> : <PaperPlaneIcon />}
     </button>
   );
 }

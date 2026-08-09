@@ -161,6 +161,44 @@ describe("toolbar and send", () => {
     expect(update([])).toEqual([{ kind: "image", mimeType: "image/png", name: "shot.png", dataB64: "AQID" }]);
   });
 
+  it("blocks submission while a dropped file is being prepared", async () => {
+    const readers: Array<{
+      result: string | ArrayBuffer | null;
+      onload: ((event: ProgressEvent<FileReader>) => void) | null;
+    }> = [];
+    class DeferredFileReader {
+      result: string | ArrayBuffer | null = null;
+      error: DOMException | null = null;
+      onerror: ((event: ProgressEvent<FileReader>) => void) | null = null;
+      onload: ((event: ProgressEvent<FileReader>) => void) | null = null;
+
+      readAsDataURL() {
+        readers.push(this);
+      }
+    }
+    vi.stubGlobal("FileReader", DeferredFileReader);
+
+    const enqueuePrompt = vi.fn();
+    const { textarea } = mount({
+      enqueuePrompt,
+      promptCapabilities: { image: true, audio: false, embeddedContext: false },
+    });
+    fireEvent.change(textarea(), { target: { value: "with image" } });
+    const image = new File([new Uint8Array([1, 2, 3])], "slow.png", { type: "image/png" });
+    fireEvent.drop(textarea(), { dataTransfer: { files: [image], types: ["Files"] } });
+
+    const preparing = await screen.findByRole("button", { name: "Preparing attachments" });
+    expect((preparing as HTMLButtonElement).disabled).toBe(true);
+    expect(fireEvent.keyDown(textarea(), { key: "Enter" })).toBe(false);
+    expect(enqueuePrompt).not.toHaveBeenCalled();
+
+    const reader = readers[0];
+    if (!reader) throw new Error("file reader did not start");
+    reader.result = "data:image/png;base64,AQID";
+    reader.onload?.(new ProgressEvent("load") as ProgressEvent<FileReader>);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Send message" })).toBeTruthy());
+  });
+
   it("applies each plugin draft operation id once", async () => {
     const entry = (op: Record<string, unknown>): PluginUiEntry => ({
       plugin_id: "acme.voice",

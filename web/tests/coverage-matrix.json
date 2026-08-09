@@ -2083,15 +2083,22 @@
       "risk": "high",
       "specs": [
         "tests/live/acp-transcript.spec.ts",
+        "tests/live/acp-attachment.spec.ts",
         "src/components/acp/Composer.test.tsx",
-        "src/components/acp/ThreadMessages.test.tsx"
+        "src/components/acp/ThreadMessages.test.tsx",
+        "src/components/acp/StructuredView.promptFailure.test.tsx"
       ],
       "components": [
         "web/src/components/acp/Composer.tsx",
         "web/src/components/acp/AcpRuntime.tsx",
         "web/src/components/acp/StructuredView.tsx",
         "web/src/components/acp/ComposerControls.tsx",
+        "web/src/components/acp/useComposerHooks.ts",
+        "web/src/components/acp/activityMessages.ts",
         "web/src/components/acp/ThreadMessages.tsx",
+        "web/src/hooks/useAcpSession.ts",
+        "web/src/hooks/acpSession/reducer.ts",
+        "web/src/lib/acpTypes.ts",
         "web/src/components/acp/artifactMedia.tsx"
       ]
     },
