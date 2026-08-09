@@ -51,6 +51,7 @@ process.on("SIGHUP", () => {
   fakeDebug("SIGHUP received (ignored)");
 });
 fakeDebug(`fake-acp starting pid=${process.pid} argv=${JSON.stringify(process.argv)}`);
+fakeDebug(`launchEnv opencodePermission=${process.env.OPENCODE_PERMISSION === '{"*":"allow"}'}`);
 
 const DEFAULT_TURN = {
   updates: [
