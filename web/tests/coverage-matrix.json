@@ -2304,9 +2304,10 @@
     },
     {
       "id": "acp.launch-options",
-      "kind": "vitest",
-      "risk": "medium",
+      "kind": "live-playwright",
+      "risk": "high",
       "specs": [
+        "tests/live/acp-launch-options.spec.ts",
         "src/components/acp/Composer.launchOptions.test.tsx",
         "src/components/acp/LaunchOptionRestartDialog.test.tsx",
         "src/lib/agentLaunchOptions.test.ts"
