@@ -1,6 +1,6 @@
 //! Session mode and config-option selectors.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::acp::state::ConfigOptionCategory;
 
@@ -196,11 +196,179 @@ pub async fn acp_set_config_option(
     StatusCode::ACCEPTED.into_response()
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UpdateLaunchOptionsRequest {
+    pub yolo_mode: Option<bool>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct UpdateLaunchOptionsResponse {
+    pub status: &'static str,
+    pub restarted: bool,
+    pub yolo_mode: bool,
+}
+
+fn supports_yolo_launch(agent: &str) -> bool {
+    crate::agents::get_agent(agent).is_some_and(|definition| definition.yolo.is_some())
+        || crate::acp::agent_profiles::resolve(agent)
+            .yolo_mode_id
+            .is_some()
+}
+
+/// Persist launch-only options and restart only this session's ACP worker.
+pub async fn acp_update_launch_options(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    req: Result<Json<UpdateLaunchOptionsRequest>, axum::extract::rejection::JsonRejection>,
+) -> impl IntoResponse {
+    if let Some(resp) = read_only_block(&state) {
+        return resp;
+    }
+    if let Some(resp) = cityhall_block(&state) {
+        return resp;
+    }
+    let Json(req) = match req {
+        Ok(json) => json,
+        Err(rejection) => return rejection.into_response(),
+    };
+    let Some(yolo_mode) = req.yolo_mode else {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "error": "empty_patch",
+                "message": "No launch options were provided",
+            })),
+        )
+            .into_response();
+    };
+
+    let instance_lock = state.instance_lock(&id).await;
+    let _guard = instance_lock.lock().await;
+    let (profile, agent, previous) = {
+        let instances = state.instances.read().await;
+        let Some(instance) = instances.iter().find(|instance| instance.id == id) else {
+            return session_not_found();
+        };
+        if !instance.is_structured() {
+            return super::worker::not_structured_response();
+        }
+        let agent = instance
+            .agent_name
+            .as_deref()
+            .filter(|name| !name.is_empty())
+            .unwrap_or(instance.tool.as_str())
+            .to_string();
+        (instance.source_profile.clone(), agent, instance.yolo_mode)
+    };
+
+    if yolo_mode && !supports_yolo_launch(&agent) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "error": "unsupported_launch_option",
+                "message": format!("Agent {agent:?} has no configured auto-approve mode"),
+            })),
+        )
+            .into_response();
+    }
+    if previous == yolo_mode {
+        return Json(UpdateLaunchOptionsResponse {
+            status: "unchanged",
+            restarted: false,
+            yolo_mode,
+        })
+        .into_response();
+    }
+
+    let storage = match crate::session::Storage::new(&profile, state.file_watch.clone()) {
+        Ok(storage) => storage,
+        Err(error) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("could not open session storage: {error}"),
+            )
+                .into_response();
+        }
+    };
+    let id_for_persist = id.clone();
+    let persisted = tokio::task::spawn_blocking(move || {
+        storage.update(|instances, _groups| {
+            let Some(instance) = instances
+                .iter_mut()
+                .find(|instance| instance.id == id_for_persist)
+            else {
+                anyhow::bail!("session disappeared while updating launch options");
+            };
+            instance.yolo_mode = yolo_mode;
+            Ok(())
+        })
+    })
+    .await;
+    if let Err(message) = match persisted {
+        Ok(Ok(())) => Ok(()),
+        Ok(Err(error)) => Err(format!("could not persist launch options: {error}")),
+        Err(error) => Err(format!("launch option persistence task failed: {error}")),
+    } {
+        return (StatusCode::INTERNAL_SERVER_ERROR, message).into_response();
+    }
+
+    {
+        let mut instances = state.instances.write().await;
+        let Some(instance) = instances.iter_mut().find(|instance| instance.id == id) else {
+            return (
+                StatusCode::NOT_FOUND,
+                "session disappeared after persistence",
+            )
+                .into_response();
+        };
+        instance.yolo_mode = yolo_mode;
+    }
+
+    let generation = state
+        .acp_supervisor
+        .running_identity(&id)
+        .map(|identity| identity.generation)
+        .or_else(|| {
+            crate::process::worker_registry::load(&id)
+                .ok()
+                .flatten()
+                .map(|record| record.generation)
+        });
+    let id_for_restart = id.clone();
+    let _ = tokio::task::spawn_blocking(move || {
+        if let Some(generation) = generation {
+            crate::process::worker_registry::mark_restart_pending(&id_for_restart, generation);
+        }
+        crate::process::worker_registry::terminate(&id_for_restart);
+    })
+    .await;
+    state.acp_supervisor.request_respawn(&id);
+
+    (
+        StatusCode::ACCEPTED,
+        Json(UpdateLaunchOptionsResponse {
+            status: "restarting",
+            restarted: true,
+            yolo_mode,
+        }),
+    )
+        .into_response()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::acp::state::{ConfigOptionChoice, ConfigOptionDescriptor};
     use crate::session::test_support::isolate_app_dir;
+
+    #[test]
+    fn launch_yolo_support_covers_env_and_acp_mode_agents() {
+        for agent in ["opencode", "claude", "codex", "gemini", "kimi", "vibe"] {
+            assert!(supports_yolo_launch(agent), "{agent}");
+        }
+        assert!(!supports_yolo_launch("unknown-agent"));
+    }
 
     #[tokio::test]
     #[serial_test::serial]
