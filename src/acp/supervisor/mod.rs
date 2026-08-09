@@ -240,6 +240,9 @@ pub struct SpawnRequest {
     /// The stored row's profile. Every production launch sets it, and the launch rechecks that
     /// row before and after the handshake (#4116).
     pub source_profile: Option<String>,
+    /// Apply the agent's configured YOLO mechanism on every spawn. ACP-native
+    /// modes are selected after the handshake; env-backed agents receive the
+    /// override in the adapter environment.
     pub yolo_mode: bool,
     /// Explicit ACP mode applied after the handshake; wins over `yolo_mode`.
     pub acp_mode_id: Option<String>,

@@ -23,6 +23,18 @@ use crate::process::worker_registry;
 use crate::session::config::repo_config::resolve_config_with_repo_or_warn;
 use crate::session::SandboxInfo;
 
+fn yolo_environment(agent: &str, enabled: bool) -> Option<(String, String)> {
+    if !enabled {
+        return None;
+    }
+    let crate::agents::YoloMode::EnvVar(key, value) =
+        crate::agents::get_agent(agent)?.yolo.as_ref()?
+    else {
+        return None;
+    };
+    Some(((*key).to_string(), (*value).to_string()))
+}
+
 impl<S: BroadcastSink> Supervisor<S> {
     /// Spawn a structured view worker for the given session.
     pub async fn spawn(&self, req: SpawnRequest) -> Result<(), SupervisorError> {
@@ -168,7 +180,9 @@ impl<S: BroadcastSink> Supervisor<S> {
             )
             .await?;
 
-        if req.acp_mode_id.is_some() || req.yolo_mode {
+        if req.acp_mode_id.is_some()
+            || (req.yolo_mode && yolo_environment(&req.agent, true).is_none())
+        {
             let mode_id = req
                 .acp_mode_id
                 .as_deref()
@@ -258,6 +272,13 @@ impl<S: BroadcastSink> Supervisor<S> {
             apply_claude_store_pin(&mut host_environment, claude_store_pin.as_ref());
 
         let mut provider_env = req.provider_env.clone();
+        if let Some(entry) = yolo_environment(&req.agent, req.yolo_mode) {
+            if req.sandbox_info.is_some() {
+                overlay_env(&mut provider_env, vec![entry]);
+            } else {
+                overlay_env(&mut host_environment, vec![entry]);
+            }
+        }
         if let Some(model) = model.clone() {
             provider_env.push(("AOE_AGENT_MODEL".into(), model));
         }
@@ -1105,6 +1126,20 @@ mod tests {
             .iter()
             .any(|(key, _)| key == "CLAUDE_CONFIG_DIR"));
         assert_eq!(mcp_names(&config.mcp_servers), ["home"]);
+    }
+
+    #[test]
+    fn launch_yolo_environment_uses_agent_definition() {
+        assert_eq!(
+            yolo_environment("opencode", true),
+            Some((
+                "OPENCODE_PERMISSION".to_string(),
+                r#"{"*":"allow"}"#.to_string(),
+            ))
+        );
+        for (agent, enabled) in [("opencode", false), ("codex", true), ("unknown", true)] {
+            assert_eq!(yolo_environment(agent, enabled), None, "{agent} {enabled}");
+        }
     }
 
     #[test]
