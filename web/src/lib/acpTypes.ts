@@ -687,6 +687,7 @@ export interface ActivityRow {
     | "compacted"
     | "summary";
   text: string;
+  sendFailure?: string;
   toolCallId?: string;
   tool?: ToolCall;
   /** Rendered as `DiffCommentsUserCard`; `text` holds the markdown fallback. */

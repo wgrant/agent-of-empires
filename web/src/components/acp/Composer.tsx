@@ -115,6 +115,7 @@ export function Composer(props: Props) {
   const provider = useProviderSwitch(sessionId, props.currentAgent, props.currentProvider);
 
   const submitComposer = useCallback(() => {
+    if (attachments.preparingRef.current > 0) return;
     const cur = recall.recallRef.current;
     if (cur) {
       recall.applyRecall(null);
@@ -130,7 +131,7 @@ export function Composer(props: Props) {
     sendFromTextarea(taRef, client, props.enqueuePrompt, sessionId, attachments.supported, () =>
       props.setPendingAttachments([]),
     );
-  }, [client, props, sessionId, attachments.supported, queuedPrompts, recall]);
+  }, [client, props, sessionId, attachments, queuedPrompts, recall]);
 
   usePluginDraftOperations(sessionId, client, taRef);
   usePrimerPrefill(props.primerPrefill, loadText);
@@ -365,12 +366,18 @@ export function Composer(props: Props) {
                     <QueueSendButton
                       connected={connected}
                       steering={!!promptCapabilities?.steering}
-                      disabled={!canSend}
+                      disabled={!canSend || attachments.preparing}
+                      preparing={attachments.preparing}
                       onSend={submitComposer}
                     />
                   </>
                 ) : (
-                  <SendButton connected={connected} disabled={!canSend} onSend={submitComposer} />
+                  <SendButton
+                    connected={connected}
+                    disabled={!canSend || attachments.preparing}
+                    preparing={attachments.preparing}
+                    onSend={submitComposer}
+                  />
                 )}
               </div>
             </div>
