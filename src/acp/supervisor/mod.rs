@@ -211,6 +211,9 @@ pub struct SpawnRequest {
     pub fork_from: Option<String>,
     pub sandbox_info: Option<SandboxInfo>,
     pub source_profile: Option<String>,
+    /// Apply the agent's configured YOLO mechanism on every spawn. ACP-native
+    /// modes are selected after the handshake; env-backed agents receive the
+    /// override in the adapter environment.
     pub yolo_mode: bool,
     /// Explicit ACP mode applied after the handshake; wins over `yolo_mode`.
     pub acp_mode_id: Option<String>,
