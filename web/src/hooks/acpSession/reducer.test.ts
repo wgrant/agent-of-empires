@@ -123,10 +123,17 @@ describe("in-flight prompt settlement", () => {
     ["settle_inflight_prompt", true],
     ["rollback_optimistic_prompt", false],
   ] as const)("%s settles its id (keeps overlay row: %s)", (kind, keepsRow) => {
-    const next = reducer(sent("p1"), { kind, id: "p1" });
+    const action =
+      kind === "prompt_send_rejected"
+        ? ({ kind, id: "p1", reason: "unsupported attachment" } as const)
+        : ({ kind, id: "p1" } as const);
+    const next = reducer(sent("p1"), action);
     expect(next.inflightPromptIds).toEqual([]);
     expect(next.turnActive).toBe(false);
     expect(next.optimisticRows.length > 0).toBe(keepsRow);
+    if (kind === "prompt_send_rejected") {
+      expect(next.optimisticRows[0]?.sendFailure).toBe("unsupported attachment");
+    }
   });
 
   it("settling one prompt does not retire another or close a server-running turn", () => {

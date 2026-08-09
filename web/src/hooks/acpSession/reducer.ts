@@ -38,7 +38,7 @@ export type Action =
   | { kind: "transcript_remove"; id: string }
   | { kind: "lagged"; skipped: number }
   | { kind: "user_prompt"; text: string; attachments?: AcpAttachment[]; id?: string }
-  | { kind: "prompt_send_rejected"; id: string }
+  | { kind: "prompt_send_rejected"; id: string; reason: string }
   | { kind: "settle_inflight_prompt"; id: string }
   | { kind: "rollback_optimistic_prompt"; id: string }
   | { kind: "error"; message: string }
@@ -243,7 +243,16 @@ export function reducer(state: AcpState, action: Action): AcpState {
     }
     case "prompt_send_rejected":
       // The overlay row stays so the user sees what they tried to send.
-      return settleInflightPrompt({ ...state, inFlightTool: null }, action.id);
+      return settleInflightPrompt(
+        {
+          ...state,
+          inFlightTool: null,
+          optimisticRows: state.optimisticRows.map((row) =>
+            row.id === action.id && row.kind === "user_prompt" ? { ...row, sendFailure: action.reason } : row,
+          ),
+        },
+        action.id,
+      );
     case "settle_inflight_prompt":
       return settleInflightPrompt(state, action.id);
     case "rollback_optimistic_prompt": {
