@@ -7,6 +7,13 @@ export interface FileRef {
   column?: number;
 }
 
+const RASTER_IMAGE_RE = /\.(?:avif|bmp|gif|ico|jpe?g|png|webp)$/i;
+
+/** True for passive raster image formats the confined image viewer accepts. */
+export function isRasterImagePath(path: string): boolean {
+  return RASTER_IMAGE_RE.test(path.split(/[?#]/, 1)[0] ?? "");
+}
+
 export interface FileRefSession {
   id: string;
   project_path: string;
