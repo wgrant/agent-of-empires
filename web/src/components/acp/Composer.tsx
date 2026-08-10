@@ -243,15 +243,23 @@ export function Composer(props: Props) {
                   onClick={expandMobileComposer}
                   title={`Open message composer. ${summary}`}
                   aria-label={`Open message composer. ${summary}`}
-                  className="min-w-0 flex-1 truncate text-left text-[10px] font-medium text-text-secondary"
+                  className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
                 >
-                  {hasDraft && <span className="mr-1.5 text-brand-400">Draft ·</span>}
-                  {attachments.supported.length > 0 && (
-                    <span className="mr-1.5 text-brand-400">
-                      {attachments.supported.length} file{attachments.supported.length === 1 ? "" : "s"} ·
-                    </span>
-                  )}
-                  <span>{summary}</span>
+                  <Pencil
+                    data-testid="composer-mobile-compose-icon"
+                    className="h-3.5 w-3.5 shrink-0 text-brand-400"
+                    aria-hidden
+                  />
+                  <span className="h-3 shrink-0 border-l border-surface-700/60" aria-hidden />
+                  <span className="min-w-0 truncate text-[10px] font-medium text-text-secondary">
+                    {hasDraft && <span className="mr-1.5 text-brand-400">Draft ·</span>}
+                    {attachments.supported.length > 0 && (
+                      <span className="mr-1.5 text-brand-400">
+                        {attachments.supported.length} file{attachments.supported.length === 1 ? "" : "s"} ·
+                      </span>
+                    )}
+                    {summary}
+                  </span>
                 </button>
                 {queuedPrompts.length > 0 && (
                   <span

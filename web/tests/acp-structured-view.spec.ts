@@ -291,10 +291,9 @@ test("mobile composer footer keeps the Send action reachable when config control
   });
   await openStructuredSession(page, mock);
 
-  await page
-    .getByTestId("composer-mobile-status")
-    .getByRole("button", { name: /Open message composer/ })
-    .click();
+  const mobileStatus = page.getByTestId("composer-mobile-status");
+  await expect(mobileStatus.getByTestId("composer-mobile-compose-icon")).toBeVisible();
+  await mobileStatus.getByRole("button", { name: /Open message composer/ }).click();
 
   // The model chip rendering confirms the left cluster carries the
   // config controls that create the width pressure this story guards.
