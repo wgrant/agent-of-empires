@@ -790,6 +790,13 @@ function AppContent({
     return workspaces.find((w) => w.sessions.some((s) => s.id === activeSessionId));
   }, [workspaces, activeSessionId]);
   const activeSession = activeWorkspace?.sessions.find((s) => s.id === activeSessionId);
+  const activeProjectName = useMemo(() => {
+    if (!activeWorkspace) return null;
+    return (
+      repoGroups.find((group) => group.workspaces.some((workspace) => workspace.id === activeWorkspace.id))
+        ?.displayName ?? null
+    );
+  }, [activeWorkspace, repoGroups]);
   const allPaneIds: string[] = [
     // CityHall client mode hides the code-inspection panes (diff, files) and
     // the terminal (plus plugin panes below) so only the composer + structured
@@ -2300,6 +2307,7 @@ function AppContent({
           <TopBar
             activeWorkspace={activeWorkspace}
             activeSession={activeSession ?? null}
+            activeProjectName={activeProjectName}
             onToggleSidebar={handleToggleSidebar}
             onOpenPalette={() => setShowPalette(true)}
             onToggleDiff={toggleDiff}
