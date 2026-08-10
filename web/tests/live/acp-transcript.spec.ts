@@ -3,7 +3,7 @@
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { test, expect } from "../helpers/liveTest";
-import { writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { fakeAcpScriptPath, resolveAoeBinary } from "../helpers/aoeServe";
 import { commitAll, initWorkingRepo, writeFiles } from "../helpers/gitFixture";
 import {
@@ -140,6 +140,7 @@ test("structured view transcript file links open in-app, scroll to cited line, a
     seedFn: ({ home, env }) => {
       const projectDir = initWorkingRepo(join(home, "project"), env).path;
       writeFiles(projectDir, {
+        ".gitignore": "test-results/\n",
         "src/a.ts": "export const a = 1;\n",
         "src/b.ts": "export const unchangedConst = 42;\n",
         "src/long.ts": lines.join("\n") + "\n",
@@ -150,8 +151,11 @@ test("structured view transcript file links open in-app, scroll to cited line, a
         "src/long.ts":
           lines.map((l, i) => (i === 79 ? `export const ${sentinel} = ${i};` : `${l} // edited`)).join("\n") + "\n",
       });
+      const shotPath = join(projectDir, "test-results", "shot.png");
+      mkdirSync(join(projectDir, "test-results"), { recursive: true });
+      writeFileSync(shotPath, Buffer.from(PNG_1X1_B64, "base64"));
       // project_path is the working tree, so absolute links under it resolve to repo files.
-      const text = `See [a.ts](${projectDir}/src/a.ts:1), [b.ts](${projectDir}/src/b.ts:1), [deep](${projectDir}/src/long.ts:80) and [missing](/tmp/aoe-1718-not-a-repo/missing.ts:1).`;
+      const text = `See [shot.png](${shotPath}), [a.ts](${projectDir}/src/a.ts:1), [b.ts](${projectDir}/src/b.ts:1), [deep](${projectDir}/src/long.ts:80) and [missing](/tmp/aoe-1718-not-a-repo/missing.ts:1).`;
       writeFileSync(fakeAcpScriptPath(home), JSON.stringify(script(endTurn(chunk(text)))));
       aoeAdd(env, projectDir, "acp-filelink");
     },
@@ -165,6 +169,10 @@ test("structured view transcript file links open in-app, scroll to cited line, a
   await expect(page.locator("span.acp-inert-path", { hasText: "missing" })).toBeVisible({ timeout: 15_000 });
   await expect(page.getByRole("link", { name: "missing" })).toHaveCount(0);
   await expect(page).toHaveURL(sessionUrl);
+
+  await page.getByRole("link", { name: "shot.png" }).click();
+  await expect(page.getByRole("img", { name: "test-results/shot.png" })).toBeVisible();
+  await page.getByRole("button", { name: "Back to transcript" }).click();
 
   const links: [string, RegExp][] = [
     ["a.ts", /export const a = 11/],
