@@ -102,7 +102,7 @@ import { onSettingsChanged } from "./lib/settingsEvents";
 import { parseSystemHealthEnabled, SystemHealthEnabledContext } from "./lib/systemHealth";
 import { toastBus, reportError } from "./lib/toastBus";
 import { startPendingCreates } from "./lib/pendingCreates";
-import { isAbsolutePath, isRasterImagePath, resolveToRepoRelative, type FileRef } from "./lib/fileRef";
+import { isAbsolutePath, resolveToRepoRelative, type FileRef } from "./lib/fileRef";
 import { NAVIGATE_EVENT, OPEN_SESSION_EVENT } from "./lib/sessionRoute";
 import { dispatchFocusTerminal, requestSessionInputFocus, setPendingTerminalFocus } from "./lib/terminalFocus";
 import {
@@ -539,7 +539,7 @@ function AppContent({
   } | null>(null);
   const selectedFilePath = selectedFile?.path ?? null;
   const selectedFileExternal = selectedFile?.external ?? false;
-  const selectedFileImage = selectedFilePath ? isRasterImagePath(selectedFilePath) : false;
+  const selectedFileCited = selectedFile?.cited ?? false;
   const selectedRepoName = selectedFile?.repoName;
   const selectedFileLine = selectedFile?.line;
   // Dock panes render as tabbed groups (#2437): each dock holds an ordered set
@@ -1943,7 +1943,8 @@ function AppContent({
           selectedFilePath={selectedFilePath}
           selectedRepoName={selectedRepoName}
           selectedFileLine={selectedFileLine}
-          selectedFileImage={selectedFileImage}
+          selectedFileCited={selectedFileCited}
+          selectedFileExternal={selectedFileExternal}
           revision={revision}
           diffFiles={diffFiles}
           perRepoBases={perRepoBases}
@@ -2057,8 +2058,32 @@ function AppContent({
 
                 {selectedFilePath &&
                   activeSessionId &&
-                  (selectedFileImage ? (
-                    <FileImageViewer sessionId={activeSessionId} filePath={selectedFilePath} onBack={handleCloseFile} />
+                  (selectedFileCited ? (
+                    <FileImageViewer
+                      sessionId={activeSessionId}
+                      filePath={selectedFilePath}
+                      onBack={handleCloseFile}
+                      fallback={
+                        selectedFileExternal ? (
+                          <FileContentViewer
+                            sessionId={activeSessionId}
+                            filePath={selectedFilePath}
+                            onBack={handleCloseFile}
+                          />
+                        ) : (
+                          <DiffFileViewer
+                            sessionId={activeSessionId}
+                            filePath={selectedFilePath}
+                            repoName={selectedRepoName}
+                            targetLine={selectedFileLine}
+                            revision={revision}
+                            onClose={handleCloseFile}
+                            commentsEnabled={commentsEnabled}
+                            commentsStore={diffComments}
+                          />
+                        )
+                      }
+                    />
                   ) : selectedFileExternal ? (
                     <FileContentViewer
                       sessionId={activeSessionId}
