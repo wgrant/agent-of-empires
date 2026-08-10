@@ -6,14 +6,22 @@ interface Props {
   onBack?: () => void;
 }
 
+function loadErrorForStatus(status: number): string {
+  if (status === 404) return "Image not found";
+  if (status === 403) return "Image is not available to this session";
+  if (status === 413) return "Image is too large to preview";
+  if (status === 415) return "Unsupported image format";
+  return "Failed to load image";
+}
+
 /** Displays a workspace image through the authenticated, session-confined
  * byte endpoint. A blob URL is required because token authentication is
  * injected into fetch requests, not bare img navigations. */
 export function FileImageViewer({ sessionId, filePath, onBack }: Props) {
-  const [loaded, setLoaded] = useState<{ key: string; url: string | null; error: boolean }>({
+  const [loaded, setLoaded] = useState<{ key: string; url: string | null; error: string | null }>({
     key: "",
     url: null,
-    error: false,
+    error: null,
   });
   const key = `${sessionId} ${filePath}`;
 
@@ -22,14 +30,19 @@ export function FileImageViewer({ sessionId, filePath, onBack }: Props) {
     let objectUrl: string | null = null;
     const params = new URLSearchParams({ path: filePath });
     fetch(`/api/sessions/${encodeURIComponent(sessionId)}/file/image?${params.toString()}`)
-      .then((response) => (response.ok ? response.blob() : Promise.reject(new Error(`HTTP ${response.status}`))))
+      .then((response) => {
+        if (response.ok) return response.blob();
+        return Promise.reject(new Error(loadErrorForStatus(response.status)));
+      })
       .then((blob) => {
         if (disposed) return;
         objectUrl = URL.createObjectURL(blob);
-        setLoaded({ key, url: objectUrl, error: false });
+        setLoaded({ key, url: objectUrl, error: null });
       })
-      .catch(() => {
-        if (!disposed) setLoaded({ key, url: null, error: true });
+      .catch((error: unknown) => {
+        if (!disposed) {
+          setLoaded({ key, url: null, error: error instanceof Error ? error.message : "Failed to load image" });
+        }
       });
     return () => {
       disposed = true;
@@ -37,7 +50,7 @@ export function FileImageViewer({ sessionId, filePath, onBack }: Props) {
     };
   }, [sessionId, filePath, key]);
 
-  const current = loaded.key === key ? loaded : { key, url: null, error: false };
+  const current = loaded.key === key ? loaded : { key, url: null, error: null };
   return (
     <div className="flex-1 flex flex-col bg-surface-900 overflow-hidden">
       <div className="px-3 py-2 border-b border-surface-700/20 flex items-center gap-2 shrink-0">
@@ -62,7 +75,7 @@ export function FileImageViewer({ sessionId, filePath, onBack }: Props) {
         <div
           className={`flex-1 flex items-center justify-center ${current.error ? "text-status-error" : "text-text-dim"}`}
         >
-          <span className="text-sm">{current.error ? "Failed to load image" : "Loading image..."}</span>
+          <span className="text-sm">{current.error ?? "Loading image..."}</span>
         </div>
       )}
     </div>

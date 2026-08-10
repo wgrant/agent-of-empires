@@ -31,4 +31,14 @@ describe("FileImageViewer", () => {
     expect(onBack).toHaveBeenCalledOnce();
     await waitFor(() => expect(image).toBeTruthy());
   });
+
+  it("distinguishes a missing image from a generic load failure", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 404 }));
+
+    render(<FileImageViewer sessionId="s1" filePath="test-results/old-shot.png" onBack={() => {}} />);
+
+    expect(await screen.findByText("Image not found")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Back to transcript" })).toBeTruthy();
+    expect(screen.getByText("test-results/old-shot.png")).toBeTruthy();
+  });
 });
