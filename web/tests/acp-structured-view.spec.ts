@@ -128,6 +128,30 @@ test("multi-chunk agent response assembles in the transcript", async ({ page }) 
   });
 });
 
+test.describe("mobile transcript file links", () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
+
+  test("opens the file pane and can return to the transcript", async ({ page }) => {
+    const title = "story-mobile-file-link";
+    const mock = await mockAcpSession(page, {
+      title,
+      initialEvents: [agentMessageChunk(`See [a.ts](/tmp/${title}/src/a.ts:1).`), stopped()],
+    });
+    await openStructuredSession(page, mock);
+
+    const fileLink = page.getByRole("link", { name: "a.ts" });
+    await expect(fileLink).toBeVisible({ timeout: 10_000 });
+    await fileLink.click();
+
+    const back = page.getByTestId("mobile-back-to-agent");
+    await expect(back).toBeVisible();
+    await expect(fileLink).not.toBeVisible();
+
+    await back.click();
+    await expect(fileLink).toBeVisible();
+  });
+});
+
 // ─────────────────────────── tool cards ───────────────────────────
 // #1568: an edit card's diff scrolls horizontally inside the card; the transcript never does.
 test.describe("edit card diff scroll", () => {

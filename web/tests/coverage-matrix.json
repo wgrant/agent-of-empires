@@ -2566,7 +2566,7 @@
       "id": "acp.file-links",
       "kind": "live-playwright",
       "risk": "high",
-      "specs": ["tests/live/acp-transcript.spec.ts"],
+      "specs": ["tests/live/acp-transcript.spec.ts", "tests/acp-structured-view.spec.ts"],
       "components": [
         "web/src/components/acp/AcpFileRefContext.tsx",
         "web/src/components/acp/Markdown.tsx",
