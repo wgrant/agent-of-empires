@@ -343,18 +343,20 @@ export function UsageHint({ usage }: { usage: AcpState["sessionUsage"] }) {
   const cost = usage.cost ? formatCost(usage.cost.amount, usage.cost.currency) : null;
   const explanation =
     `Context window: ${usage.used.toLocaleString()} of ${usage.size.toLocaleString()} tokens used (${pct}%). ` +
-    `Color warns as the window fills.` +
+    `The color warms as the window fills.` +
     (cost ? ` ${cost} is cumulative session spend since the last /clear or /compact.` : "");
   return (
     <Tooltip text={explanation} multiline>
       <span
-        className={`hidden sm:inline-flex items-center gap-1 text-[11px] tabular-nums ${tone}`}
+        data-testid="usage-hint"
+        className={`inline-flex items-center gap-1 text-[11px] tabular-nums ${tone}`}
         aria-label={explanation}
       >
-        <span>
+        <span className="sm:hidden">{pct}%</span>
+        <span className="hidden sm:inline">
           {formatTokens(usage.used)}/{formatTokens(usage.size)}
         </span>
-        <span className="opacity-70">({pct}%)</span>
+        <span className="hidden opacity-70 sm:inline">({pct}%)</span>
         {cost ? <span className="opacity-70">· {cost}</span> : null}
       </span>
     </Tooltip>

@@ -3326,6 +3326,13 @@
       "components": ["web/src/components/acp/Composer.tsx", "web/src/components/acp/SessionConfigControls.tsx"]
     },
     {
+      "id": "acp.story.composer-mobile-usage",
+      "kind": "mocked-playwright",
+      "risk": "medium",
+      "specs": ["tests/acp-structured-view.spec.ts"],
+      "components": ["web/src/components/acp/ComposerControls.tsx"]
+    },
+    {
       "id": "acp.story.mobile-model-picker-scroll",
       "kind": "mocked-playwright",
       "risk": "high",

@@ -135,6 +135,7 @@ describe("toolbar and send", () => {
     fireEvent.mouseEnter(screen.getByLabelText(/Context window:/).parentElement!);
     const tip = screen.getByRole("tooltip").textContent ?? "";
     expect(tip).toContain(`${used.toLocaleString()} of ${(200_000).toLocaleString()} tokens used (${pct})`);
+    expect(tip).toContain("The color warms as the window fills.");
     expect(tip.includes("cumulative session spend since the last /clear or /compact")).toBe(mentionsSpend);
   });
 

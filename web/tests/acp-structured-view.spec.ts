@@ -240,6 +240,11 @@ test("mobile composer footer keeps the Send action reachable when config control
           ],
         },
       ]),
+      {
+        UsageUpdated: {
+          usage: { used: 120_000, size: 200_000, cost: { amount: 0.42, currency: "USD" } },
+        },
+      },
     ],
   });
   await openStructuredSession(page, mock);
@@ -255,6 +260,11 @@ test("mobile composer footer keeps the Send action reachable when config control
   const footer = page.getByTestId("composer-footer");
   await expect(footer).toBeVisible();
   await expect.poll(() => overflowX(footer)).toBeLessThanOrEqual(0);
+
+  const usage = page.getByTestId("usage-hint");
+  await expect(usage).toBeVisible();
+  await expect(usage).toHaveText(/60%.*\$0\.42/);
+  await expect(usage).toHaveAttribute("aria-label", /120,000 of 200,000 tokens used \(60%\)/);
 
   // The Send button sits entirely within the viewport (pre-fix its
   // right edge exceeded the 360px viewport width).
