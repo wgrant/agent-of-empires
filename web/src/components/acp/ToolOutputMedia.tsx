@@ -1,7 +1,8 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { FileDown, Image as ImageIcon, Link as LinkIcon, Music } from "lucide-react";
 
 import type { ToolOutputBlock } from "../../lib/acpTypes";
+import { ImageLightbox } from "../ImageLightbox";
 import { SAFE_LINK_SCHEMES, SAFE_MEDIA_SCHEMES, safeUri } from "./ToolCardChrome";
 
 /** Structured completion payload rendered under any tool card. A block with no
@@ -38,45 +39,6 @@ function LinkRow({ icon, label, ...anchor }: { icon: ReactNode; label: string } 
       {icon}
       {label}
     </a>
-  );
-}
-
-function ImageLightbox({ src, alt, onClose }: { src: string; alt: string; onClose: () => void }) {
-  const [zoomed, setZoomed] = useState(false);
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
-  return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label={alt}
-      className={
-        zoomed
-          ? "fixed inset-0 z-50 overflow-auto bg-black/80 p-4 animate-fade-in"
-          : "fixed inset-0 z-50 flex cursor-zoom-out items-center justify-center bg-black/80 p-4 animate-fade-in"
-      }
-      onClick={onClose}
-    >
-      <img
-        src={src}
-        alt={alt}
-        className={
-          zoomed
-            ? "max-w-none cursor-zoom-out rounded shadow-2xl"
-            : "max-h-[90vh] max-w-[90vw] cursor-zoom-in rounded object-contain shadow-2xl"
-        }
-        onClick={(event) => {
-          event.stopPropagation();
-          setZoomed((value) => !value);
-        }}
-      />
-    </div>
   );
 }
 

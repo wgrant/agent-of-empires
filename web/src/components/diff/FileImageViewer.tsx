@@ -1,4 +1,5 @@
 import { type ReactNode, useEffect, useState } from "react";
+import { ZoomableImage } from "../ImageLightbox";
 
 interface Props {
   sessionId: string;
@@ -86,9 +87,14 @@ export function FileImageViewer({ sessionId, filePath, onBack, fallback }: Props
         <span className="font-mono text-[12px] text-text-primary truncate">{filePath}</span>
       </div>
       {current.url ? (
-        <div className="flex-1 min-h-0 overflow-auto p-3 flex items-start justify-center">
-          <img src={current.url} alt={filePath} className="max-w-full h-auto object-contain" />
-        </div>
+        <ZoomableImage
+          src={current.url}
+          alt={filePath}
+          className="flex-1 min-h-0 p-3"
+          onError={() =>
+            setLoaded((value) => (value.key === key ? { ...value, url: null, error: "Could not decode image" } : value))
+          }
+        />
       ) : (
         <div
           className={`flex-1 flex items-center justify-center ${current.error ? "text-status-error" : "text-text-dim"}`}
