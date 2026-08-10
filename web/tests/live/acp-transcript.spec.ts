@@ -151,11 +151,11 @@ test("structured view transcript file links open in-app, scroll to cited line, a
         "src/long.ts":
           lines.map((l, i) => (i === 79 ? `export const ${sentinel} = ${i};` : `${l} // edited`)).join("\n") + "\n",
       });
-      const shotPath = join(projectDir, "test-results", "shot.png");
+      const shotPath = join(projectDir, "test-results", "shot.dat");
       mkdirSync(join(projectDir, "test-results"), { recursive: true });
       writeFileSync(shotPath, Buffer.from(PNG_1X1_B64, "base64"));
       // project_path is the working tree, so absolute links under it resolve to repo files.
-      const text = `See [shot.png](${shotPath}), [a.ts](${projectDir}/src/a.ts:1), [b.ts](${projectDir}/src/b.ts:1), [deep](${projectDir}/src/long.ts:80) and [missing](/tmp/aoe-1718-not-a-repo/missing.ts:1).`;
+      const text = `See [shot.dat](${shotPath}), [a.ts](${projectDir}/src/a.ts:1), [b.ts](${projectDir}/src/b.ts:1), [deep](${projectDir}/src/long.ts:80) and [missing](/tmp/aoe-1718-not-a-repo/missing.ts:1).`;
       writeFileSync(fakeAcpScriptPath(home), JSON.stringify(script(endTurn(chunk(text)))));
       aoeAdd(env, projectDir, "acp-filelink");
     },
@@ -170,8 +170,8 @@ test("structured view transcript file links open in-app, scroll to cited line, a
   await expect(page.getByRole("link", { name: "missing" })).toHaveCount(0);
   await expect(page).toHaveURL(sessionUrl);
 
-  await page.getByRole("link", { name: "shot.png" }).click();
-  await expect(page.getByRole("img", { name: "test-results/shot.png" })).toBeVisible();
+  await page.getByRole("link", { name: "shot.dat" }).click();
+  await expect(page.getByRole("img", { name: "test-results/shot.dat" })).toBeVisible();
   await page.getByRole("button", { name: "Back to transcript" }).click();
 
   const links: [string, RegExp][] = [
