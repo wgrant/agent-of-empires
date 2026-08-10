@@ -3,7 +3,7 @@
 
 import { ComposerPrimitive } from "@assistant-ui/react";
 import { unstable_defaultDirectiveFormatter as defaultDirectiveFormatter } from "@assistant-ui/core";
-import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { AtSign, Paperclip, Pencil, Slash } from "lucide-react";
 
 import { useFocusTerminalTarget } from "../../hooks/useFocusTerminalTarget";
@@ -11,6 +11,8 @@ import { useMobileKeyboard } from "../../hooks/useMobileKeyboard";
 import { useSkillIndex } from "../../hooks/useSkillIndex";
 import { clearDraft, clearDraftAttachments } from "../../lib/acpDrafts";
 import type { AcpState, PromptAttachmentInput, PromptCapabilities, QueuedPrompt } from "../../lib/acpTypes";
+import { useAgentProfile } from "../../lib/agentProfileContext";
+import { resolveModeChannel } from "../../lib/modeChannel";
 import { isIOS, isStandalone } from "../../lib/platform";
 import { sessionEntries } from "../../lib/pluginUi";
 import { usePluginUiEntries } from "../../lib/pluginUiContext";
@@ -95,6 +97,7 @@ const POPOVER_CLASS =
 export function Composer(props: Props) {
   const { sessionId, turnActive, connected, promptCapabilities, queuedPrompts } = props;
   const taRef = useRef<HTMLTextAreaElement | null>(null);
+  const rootRef = useRef<HTMLFormElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const { client, composerText, draftTextRef } = useComposerClient();
   const loadText = useLoadText(client, taRef);
@@ -102,6 +105,7 @@ export function Composer(props: Props) {
   const { fileAdapter, slashAdapter } = useTriggerAdapters(sessionId, props.availableCommands);
   const skillIndex = useSkillIndex();
   const isMobile = useIsMobileInput();
+  const [mobileExpanded, setMobileExpanded] = useState(false);
   const { keyboardOpen } = useMobileKeyboard();
   // Regular iOS Safari already lifts the composer by keyboardHeight; only the PWA needs this.
   const iosPwa = useMemo(() => isIOS() && isStandalone(), []);
@@ -177,6 +181,27 @@ export function Composer(props: Props) {
   };
 
   const wrapperLayout = composerWrapperLayout({ keyboardOpen, accessoryBarPx: iosPwa ? IOS_ACCESSORY_BAR_PX : 0 });
+  const profile = useAgentProfile();
+  const modeChannel = resolveModeChannel({
+    configOptions: props.configOptions,
+    availableModes: props.availableModes,
+    currentModeId: props.currentModeId,
+    legacyMode: props.legacyMode,
+    pendingConfigOption: props.pendingConfigOption,
+    allowLegacyFallback: profile.capabilities.legacyModeFallback,
+  });
+  const activeMode = modeChannel?.modes.find((mode) => mode.id === modeChannel.activeId)?.name;
+  const summary = composerStatusSummary({
+    agent: props.currentAgent ?? profile.key,
+    mode: activeMode,
+    yoloMode: props.yoloMode ?? false,
+    configOptions: props.configOptions,
+  });
+  const hasDraft = composerText.trim().length > 0 || attachments.supported.length > 0;
+  const expandMobileComposer = () => {
+    setMobileExpanded(true);
+    requestAnimationFrame(() => taRef.current?.focus());
+  };
   return (
     <div className={wrapperLayout.className} style={wrapperLayout.style}>
       <div
@@ -194,15 +219,60 @@ export function Composer(props: Props) {
       >
         <ComposerPrimitive.Unstable_TriggerPopoverRoot>
           <ComposerPrimitive.Root
+            ref={rootRef}
+            data-testid="composer-root"
             className={[
               "group relative flex flex-col gap-2 rounded-xl border border-surface-700 bg-surface-850",
               "shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]",
               "focus-within:border-brand-600/70 focus-within:shadow-[inset_0_1px_0_rgba(255,255,255,0.02),0_0_0_3px_rgba(217,119,6,0.12)]",
               "transition-colors duration-150",
             ].join(" ")}
+            onBlurCapture={() => {
+              requestAnimationFrame(() => {
+                if (!rootRef.current?.contains(document.activeElement)) setMobileExpanded(false);
+              });
+            }}
           >
+            {!mobileExpanded && (
+              <div
+                data-testid="composer-mobile-status"
+                className="flex min-h-8 min-w-0 items-center gap-2 px-2 py-1 sm:hidden"
+              >
+                <button
+                  type="button"
+                  onClick={expandMobileComposer}
+                  title={`Open message composer. ${summary}`}
+                  aria-label={`Open message composer. ${summary}`}
+                  className="min-w-0 flex-1 truncate text-left text-[10px] font-medium text-text-secondary"
+                >
+                  {hasDraft && <span className="mr-1.5 text-brand-400">Draft ·</span>}
+                  {attachments.supported.length > 0 && (
+                    <span className="mr-1.5 text-brand-400">
+                      {attachments.supported.length} file{attachments.supported.length === 1 ? "" : "s"} ·
+                    </span>
+                  )}
+                  <span>{summary}</span>
+                </button>
+                {queuedPrompts.length > 0 && (
+                  <span
+                    data-testid="composer-mobile-queued-count"
+                    className="shrink-0 text-[10px] font-medium tabular-nums text-sky-400"
+                    title={`${queuedPrompts.length} queued follow-up${queuedPrompts.length === 1 ? "" : "s"}`}
+                  >
+                    Q{queuedPrompts.length}
+                  </span>
+                )}
+                <div className="shrink-0">
+                  <UsageHint usage={props.sessionUsage} />
+                </div>
+                {turnActive && <StopButton compact />}
+              </div>
+            )}
+
             {recall.recallInfo && (
-              <div className="flex items-center justify-between gap-2 rounded-t-lg border-b border-surface-700 bg-surface-800 px-3 py-1.5 text-xs text-text-secondary">
+              <div
+                className={`${mobileExpanded ? "flex" : "hidden sm:flex"} items-center justify-between gap-2 rounded-t-lg border-b border-surface-700 bg-surface-800 px-3 py-1.5 text-xs text-text-secondary`}
+              >
                 <span className="flex items-center gap-1.5 font-medium text-text-primary">
                   <Pencil className="h-3.5 w-3.5 text-brand-400" />
                   Editing queued message {recall.recallInfo.pos} of {recall.recallInfo.total}
@@ -276,18 +346,21 @@ export function Composer(props: Props) {
               }}
               autoFocus={!isMobile}
               className={[
+                mobileExpanded ? "" : "hidden sm:block",
                 "min-h-[56px] max-h-[200px] resize-none bg-transparent",
                 "px-4 pt-3 pb-1 text-sm leading-6 text-text-primary",
                 "placeholder:text-text-dim focus:outline-none",
               ].join(" ")}
             />
 
-            <AttachmentChips attachments={attachments.supported} onRemove={attachments.remove} />
+            <div className={mobileExpanded ? "block" : "hidden sm:block"}>
+              <AttachmentChips attachments={attachments.supported} onRemove={attachments.remove} />
+            </div>
 
             {/* The left cluster wraps rather than scrolls, which would clip the upward model dropdown. */}
             <div
               data-testid="composer-footer"
-              className="flex items-end gap-2 border-t border-surface-800/60 px-2 pb-2 pt-1.5"
+              className={`${mobileExpanded ? "flex" : "hidden sm:flex"} items-end gap-2 border-t border-surface-800/60 px-2 pb-2 pt-1.5`}
             >
               <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-0.5 gap-y-1">
                 <ToolbarButton
@@ -383,6 +456,53 @@ export function Composer(props: Props) {
       />
     </div>
   );
+}
+
+function agentDisplayName(agent: string): string {
+  const known: Record<string, string> = {
+    claude: "Claude",
+    "claude-code": "Claude",
+    codex: "Codex",
+    opencode: "OpenCode",
+    gemini: "Gemini",
+  };
+  return (
+    known[agent] ??
+    agent.replace(/(^|[-_ ])([a-z])/g, (_, prefix: string, letter: string) => `${prefix}${letter.toUpperCase()}`)
+  );
+}
+
+function compactModeName(mode: string): string {
+  const parenthesised = mode.match(/^Agent \((.+)\)$/i);
+  if (!parenthesised) return mode;
+  const inner = parenthesised[1]!;
+  return inner.charAt(0).toUpperCase() + inner.slice(1);
+}
+
+export function composerStatusSummary({
+  agent,
+  mode,
+  yoloMode,
+  configOptions,
+}: {
+  agent: string;
+  mode?: string;
+  yoloMode: boolean;
+  configOptions: AcpState["configOptions"];
+}): string {
+  const currentLabel = (category: "model" | "thought_level") => {
+    const option = configOptions.find((candidate) => candidate.category === category);
+    return option?.options.find((candidate) => candidate.value === option.current_value)?.name ?? option?.current_value;
+  };
+  return [
+    agentDisplayName(agent),
+    mode ? compactModeName(mode) : null,
+    yoloMode ? "Yolo" : null,
+    currentLabel("model"),
+    currentLabel("thought_level"),
+  ]
+    .filter((part): part is string => Boolean(part))
+    .join(" · ");
 }
 
 function pluginSnapshot(client: ComposerClient, taRef: React.RefObject<HTMLTextAreaElement | null>) {
