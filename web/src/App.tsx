@@ -1541,6 +1541,14 @@ function AppContent({
     [activeSession],
   );
 
+  const handleOpenMobileFileRef = useCallback(
+    (ref: FileRef) => {
+      handleOpenFileRef(ref);
+      setRightPanelView("diff");
+    },
+    [handleOpenFileRef],
+  );
+
   const handleCloseFile = useCallback(() => {
     setSelectedFile(null);
   }, []);
@@ -1939,7 +1947,7 @@ function AppContent({
           warning={warning}
           diffFilesLoading={diffFilesLoading}
           onSelectFile={handleSelectFile}
-          onOpenFileRef={handleOpenFileRef}
+          onOpenFileRef={handleOpenMobileFileRef}
           onCloseFile={handleCloseFile}
           onDiffRefresh={refreshDiffFiles}
           commentsEnabled={commentsEnabled}
