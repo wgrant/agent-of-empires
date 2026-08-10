@@ -2,6 +2,7 @@
 // a bare <img src> would carry no token.
 
 import { useEffect, useState } from "react";
+import { ImageLightbox } from "../ImageLightbox";
 
 function useArtifactObjectUrl(url: string): string | null {
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
@@ -32,8 +33,21 @@ function useArtifactObjectUrl(url: string): string | null {
 /** Alt text stands in while loading and on failure, never a broken image. */
 export function ArtifactImage({ url, alt }: { url: string; alt?: string }) {
   const objectUrl = useArtifactObjectUrl(url);
+  const [open, setOpen] = useState(false);
   if (!objectUrl) {
     return <span className="acp-inert-path">{alt || "artifact"}</span>;
   }
-  return <img className="acp-artifact-image" src={objectUrl} alt={alt ?? ""} />;
+  return (
+    <>
+      <button
+        type="button"
+        className="block cursor-zoom-in rounded"
+        aria-label="View full-size image"
+        onClick={() => setOpen(true)}
+      >
+        <img className="acp-artifact-image" src={objectUrl} alt={alt ?? ""} />
+      </button>
+      {open && <ImageLightbox src={objectUrl} alt={alt || "artifact image"} onClose={() => setOpen(false)} />}
+    </>
+  );
 }

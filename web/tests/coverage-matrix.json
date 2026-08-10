@@ -2370,6 +2370,7 @@
         "web/src/components/acp/NamedToolCards.tsx",
         "web/src/components/acp/TodoCards.tsx",
         "web/src/components/acp/ToolCardChrome.tsx",
+        "web/src/components/ImageLightbox.tsx",
         "web/src/components/acp/ToolOutputMedia.tsx"
       ]
     },

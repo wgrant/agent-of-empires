@@ -473,14 +473,15 @@ describe("structured output media", () => {
     const { container } = withOutput([{ kind: "image", mime_type: "image/png", data: "AAAA" }]);
     fireEvent.click(container.querySelector("img")!);
     const dialog = container.querySelector('[role="dialog"]')!;
+    const viewport = dialog.querySelector('[data-testid="zoomable-image-viewport"]')!;
     const image = dialog.querySelector("img")!;
     expect(image.className).toContain("max-h-[90vh]");
-    expect(dialog.className).not.toContain("overflow-auto");
+    expect(viewport.className).not.toContain("overflow-auto");
 
     fireEvent.click(image);
     expect(image.className).toContain("max-w-none");
     expect(image.className).not.toContain("max-h-[90vh]");
-    expect(dialog.className).toContain("overflow-auto");
+    expect(viewport.className).toContain("overflow-auto");
 
     fireEvent.click(image);
     expect(image.className).toContain("max-h-[90vh]");

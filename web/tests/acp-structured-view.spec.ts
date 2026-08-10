@@ -175,6 +175,8 @@ test("desktop transcript image links open in the authenticated image viewer with
   const image = page.getByRole("img", { name: "test-results/shot.dat" });
   await expect(image).toBeVisible();
   await expect(image).toHaveAttribute("src", /^blob:/);
+  await page.getByRole("button", { name: "View image at actual size" }).click();
+  await expect(page.getByRole("button", { name: "Fit image to viewer" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Back to transcript" })).toBeVisible();
 });
 

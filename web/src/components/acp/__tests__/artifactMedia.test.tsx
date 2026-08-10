@@ -5,7 +5,7 @@
 // load path, the failure fallback, and the new-tab open.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 import { ArtifactImage } from "../artifactMedia";
 import { openArtifactInNewTab } from "../../../lib/artifacts";
@@ -37,6 +37,11 @@ describe("ArtifactImage", () => {
       expect(img?.getAttribute("src")).toBe("blob:mock-url");
     });
     expect(fetch).toHaveBeenCalledWith(URL_ANY);
+
+    fireEvent.click(screen.getByRole("button", { name: "View full-size image" }));
+    expect(screen.getByRole("dialog", { name: "a shot" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Close image viewer" }));
+    expect(screen.queryByRole("dialog", { name: "a shot" })).toBeNull();
   });
 
   it("keeps the alt text as inert placeholder when the fetch fails", async () => {
