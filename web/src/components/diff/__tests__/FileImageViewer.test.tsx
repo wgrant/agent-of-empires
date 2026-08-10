@@ -29,9 +29,29 @@ describe("FileImageViewer", () => {
     expect(image.getAttribute("src")).toBe("blob:preview");
     expect(fetchMock).toHaveBeenCalledWith("/api/sessions/s%201/file/image?path=test-results%2Fshot.dat");
 
+    const zoomButton = screen.getByRole("button", { name: "View image at actual size" });
+    fireEvent.click(zoomButton);
+    expect(screen.getByRole("button", { name: "Fit image to viewer" })).toBeTruthy();
+    expect(image.className).toContain("max-w-none");
+    expect(screen.getByTestId("zoomable-image-viewport").className).toContain("overflow-auto");
+
     fireEvent.click(screen.getByRole("button", { name: "Back to transcript" }));
     expect(onBack).toHaveBeenCalledOnce();
     await waitFor(() => expect(image).toBeTruthy());
+  });
+
+  it("explains when bytes accepted as an image cannot be decoded", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, blob: () => Promise.resolve(new Blob(["bad"])) }));
+    vi.stubGlobal("URL", {
+      ...URL,
+      createObjectURL: vi.fn(() => "blob:broken-preview"),
+      revokeObjectURL: vi.fn(),
+    });
+
+    render(<FileImageViewer sessionId="s1" filePath="broken.dat" fallback={<p>fallback</p>} />);
+
+    fireEvent.error(await screen.findByRole("img", { name: "broken.dat" }));
+    expect(await screen.findByText("Could not decode image")).toBeTruthy();
   });
 
   it("distinguishes a missing image from a generic load failure", async () => {
