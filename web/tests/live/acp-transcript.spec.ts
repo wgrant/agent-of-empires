@@ -182,7 +182,7 @@ test("structured view transcript file links open in-app, scroll to cited line, a
     ["b.ts", /export const unchangedConst = 42/],
   ];
   for (const [name, content] of links) {
-    if (name !== "a.ts") await page.getByRole("button", { name: "Back to terminal" }).click();
+    if (name !== "a.ts") await page.getByRole("button", { name: "Back to transcript" }).click();
     const link = page.getByRole("link", { name });
     await expect(link).toBeVisible();
     await link.click();

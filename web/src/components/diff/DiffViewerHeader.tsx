@@ -17,6 +17,7 @@ const STATUS: Record<string, [label: string, color: string]> = {
 interface Props {
   file: RichDiffFile;
   onClose?: () => void;
+  backLabel?: string;
   markdownAvailable: boolean;
   showRendered: boolean;
   findOpen: boolean;
@@ -28,6 +29,7 @@ interface Props {
 export function DiffViewerHeader({
   file,
   onClose,
+  backLabel = "Transcript",
   markdownAvailable,
   showRendered,
   findOpen,
@@ -40,7 +42,7 @@ export function DiffViewerHeader({
   const split = settings.diffViewLayout === "split";
   return (
     <div className="px-3 py-2 border-b border-surface-700/20 flex items-center gap-2 shrink-0 flex-wrap">
-      {onClose && <BackButton label="Terminal" onClick={onClose} />}
+      {onClose && <BackButton label={backLabel} onClick={onClose} />}
       <span className={`font-mono text-[11px] font-semibold ${color}`}>{label}</span>
       <span className="font-mono text-[12px] text-text-primary truncate">
         {file.old_path ? `${file.old_path} → ${file.path}` : file.path}

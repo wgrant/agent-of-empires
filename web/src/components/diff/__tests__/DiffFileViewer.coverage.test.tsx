@@ -176,10 +176,20 @@ describe("DiffFileViewer states and header", () => {
     expect(screen.getByText(text)).toBeTruthy();
   });
 
+  it("keeps navigation available when the fetch fails", () => {
+    mock.contents = undefined;
+    mock.error = "boom";
+    const onClose = vi.fn();
+    render(<DiffFileViewer sessionId="s1" filePath="a.ts" onClose={onClose} />);
+    expect(screen.getByText("boom")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Back to transcript" }));
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
   it("renders status, counts, and no back button without onClose", () => {
     render(<DiffFileViewer sessionId="s1" filePath="a.ts" />);
     for (const t of ["Modified", "+2", "-1"]) expect(screen.getByText(t)).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Back to terminal" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Back to transcript" })).toBeNull();
   });
 
   it("renders a rename arrow and calls onClose from the back button", () => {
@@ -191,7 +201,7 @@ describe("DiffFileViewer states and header", () => {
     render(<DiffFileViewer sessionId="s1" filePath="new.ts" onClose={onClose} />);
     expect(screen.getByText("Renamed")).toBeTruthy();
     expect(screen.getByText("old.ts → new.ts")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Back to terminal" }));
+    fireEvent.click(screen.getByRole("button", { name: "Back to transcript" }));
     expect(onClose).toHaveBeenCalled();
   });
 });

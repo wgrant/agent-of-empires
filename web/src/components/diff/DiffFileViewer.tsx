@@ -21,7 +21,7 @@ import { changedLines } from "./find/changedLines";
 import type { FindMatch } from "./find/findMatches";
 import { targetScrollFraction } from "./scrollFraction";
 import { useDiffScrollHold } from "./useDiffScrollHold";
-import { Centered, TooLarge } from "./viewerChrome";
+import { BackButton, Centered, TooLarge } from "./viewerChrome";
 
 interface Props {
   sessionId: string;
@@ -33,6 +33,8 @@ interface Props {
   /** Triggers a re-fetch when the file list changes. */
   revision?: number;
   onClose?: () => void;
+  /** Destination shown by the back button. */
+  backLabel?: string;
   /** Enables line selection comments; requires `commentsStore`. */
   commentsEnabled?: boolean;
   commentsStore?: UseDiffCommentsResult;
@@ -62,6 +64,7 @@ export function DiffFileViewer({
   targetLine,
   revision,
   onClose,
+  backLabel = "Transcript",
   commentsEnabled = false,
   commentsStore,
 }: Props) {
@@ -253,9 +256,15 @@ export function DiffFileViewer({
   }
   if (error) {
     return (
-      <Centered className="bg-surface-900 text-status-error">
-        <span className="text-sm">{error}</span>
-      </Centered>
+      <div className="flex-1 flex flex-col bg-surface-900 overflow-hidden">
+        <div className="px-3 py-2 border-b border-surface-700/20 flex items-center gap-2 shrink-0">
+          {onClose && <BackButton onClick={onClose} label={backLabel} />}
+          <span className="font-mono text-[12px] text-text-primary truncate">{filePath}</span>
+        </div>
+        <Centered className="text-status-error">
+          <span className="text-sm">{error}</span>
+        </Centered>
+      </div>
     );
   }
   if (!contents) {
@@ -326,6 +335,7 @@ export function DiffFileViewer({
       <DiffViewerHeader
         file={contents.file}
         onClose={onClose}
+        backLabel={backLabel}
         markdownAvailable={markdownAvailable}
         showRendered={showRendered}
         findOpen={findOpen}
