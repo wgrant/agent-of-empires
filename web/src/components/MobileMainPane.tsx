@@ -183,6 +183,7 @@ export function MobileMainPane({
                   targetLine={selectedFileLine}
                   revision={revision}
                   onClose={onCloseFile}
+                  backLabel="Files"
                   commentsEnabled={commentsEnabled}
                   commentsStore={diffComments}
                 />
