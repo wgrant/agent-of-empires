@@ -9,9 +9,9 @@ import {
 } from "@assistant-ui/react";
 
 import type { PluginUiEntry } from "../../lib/api";
-import type { PromptAttachmentInput, QueuedPrompt } from "../../lib/acpTypes";
+import type { ConfigOptionDescriptor, PromptAttachmentInput, QueuedPrompt } from "../../lib/acpTypes";
 import { buildSkillIndex, type SkillIndex } from "../../lib/skillProvenance";
-import { Composer } from "./Composer";
+import { Composer, composerStatusSummary } from "./Composer";
 
 const { skillIndexRef, entriesRef } = vi.hoisted(() => ({
   skillIndexRef: { current: { labelsByKey: new Map<string, Set<string>>() } as SkillIndex },
@@ -109,6 +109,28 @@ async function flush() {
 }
 
 describe("toolbar and send", () => {
+  it("compacts the active agent configuration into one readable line", () => {
+    const configOptions: ConfigOptionDescriptor[] = [
+      {
+        id: "model",
+        name: "Model",
+        category: "model",
+        current_value: "gpt-5.6-terra",
+        options: [{ value: "gpt-5.6-terra", name: "GPT-5.6 Terra" }],
+      },
+      {
+        id: "effort",
+        name: "Reasoning Effort",
+        category: "thought_level",
+        current_value: "medium",
+        options: [{ value: "medium", name: "Medium" }],
+      },
+    ];
+    expect(composerStatusSummary({ agent: "codex", mode: "Agent (full access)", yoloMode: true, configOptions })).toBe(
+      "Codex · Full access · Yolo · GPT-5.6 Terra · Medium",
+    );
+  });
+
   it("inserts @ then / from the toolbar buttons", () => {
     const { textarea } = mount();
     fireEvent.click(screen.getByRole("button", { name: "Add file context (@)" }));
@@ -132,7 +154,7 @@ describe("toolbar and send", () => {
     [null, 50_000, "25%", false],
   ])("explains usage on hover (cost %o)", (cost, used, pct, mentionsSpend) => {
     mount({ sessionUsage: { used, size: 200_000, cost } });
-    fireEvent.mouseEnter(screen.getByLabelText(/Context window:/).parentElement!);
+    fireEvent.mouseEnter(screen.getAllByLabelText(/Context window:/)[0]!.parentElement!);
     const tip = screen.getByRole("tooltip").textContent ?? "";
     expect(tip).toContain(`${used.toLocaleString()} of ${(200_000).toLocaleString()} tokens used (${pct})`);
     expect(tip).toContain("The color warms as the window fills.");

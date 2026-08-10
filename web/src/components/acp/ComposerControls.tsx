@@ -407,7 +407,7 @@ export function SendButton({
   );
 }
 
-export function StopButton() {
+export function StopButton({ compact = false }: { compact?: boolean }) {
   const aui = useAui();
   return (
     <button
@@ -418,7 +418,8 @@ export function StopButton() {
       className={[
         "inline-flex items-center justify-center gap-1.5",
         "rounded-lg border border-surface-600 bg-surface-800",
-        "px-2.5 py-1.5 text-[12px] font-medium text-text-secondary",
+        compact ? "px-2 py-1 text-[11px]" : "px-2.5 py-1.5 text-[12px]",
+        "font-medium text-text-secondary",
         "hover:border-rose-700/60 hover:bg-rose-950/30 hover:text-rose-300",
         "active:scale-[0.98] transition-all duration-100",
       ].join(" ")}

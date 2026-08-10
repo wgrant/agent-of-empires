@@ -56,7 +56,7 @@ function snapshot(model: string, effort: string) {
   return configOptionsUpdated([modelOption(model), effortOption(effort)]);
 }
 
-function longModelOption() {
+function openCodeLongModelOption() {
   return {
     ...modelOption("model-01"),
     options: Array.from({ length: 30 }, (_, index) => {
@@ -91,10 +91,14 @@ test("OpenCode's long model menu stays within the mobile viewport and scrolls", 
   await page.setViewportSize({ width: 390, height: 664 });
   const mock = await mockAcpSession(page, {
     title: "ui-pickers-mobile-scroll",
-    initialEvents: [configOptionsUpdated([longModelOption()])],
+    initialEvents: [configOptionsUpdated([openCodeLongModelOption()])],
   });
   await openStructuredSession(page, mock);
 
+  await page
+    .getByTestId("composer-mobile-status")
+    .getByRole("button", { name: /Open message composer/ })
+    .click();
   const modelChip = page.getByTestId("config-option-model");
   await expect(modelChip).toBeVisible({ timeout: 15_000 });
   await modelChip.click();
