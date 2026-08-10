@@ -787,6 +787,60 @@ pub struct VolumeIgnoresPreviewQuery {
     pub profile: Option<String>,
 }
 
+/// Serve a transcript-cited file only when its bytes are a passive raster
+/// image. The path is an untrusted label, so the type comes from the content,
+/// and SVG is refused because a same-origin blob of it can run script.
+pub async fn session_file_image(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    axum::extract::Query(query): axum::extract::Query<SessionFileQuery>,
+) -> impl IntoResponse {
+    if let Some(resp) = crate::server::api::cityhall_block(&state) {
+        return resp;
+    }
+    let scope = match SessionFileScope::of(&state, &id).await {
+        Ok(s) => s,
+        Err(resp) => return resp,
+    };
+    let result = tokio::task::spawn_blocking(move || {
+        let confined = scope.confine(std::path::Path::new(&query.path))?;
+        let bytes = crate::server::api::file_provenance::read_confined_bytes(
+            &confined,
+            super::artifacts::MAX_RAW_FILE_BYTES,
+        )?;
+        let media_type = crate::server::api::file_provenance::raster_media_type(&bytes)
+            .ok_or((StatusCode::UNSUPPORTED_MEDIA_TYPE, "unsupported image type"))?;
+        Ok::<_, (StatusCode, &'static str)>((bytes, media_type))
+    })
+    .await;
+
+    match result {
+        Ok(Ok((bytes, media_type))) => {
+            use axum::http::{header, HeaderMap, HeaderValue};
+            let mut headers = HeaderMap::new();
+            headers.insert(header::CONTENT_TYPE, HeaderValue::from_static(media_type));
+            headers.insert(
+                header::X_CONTENT_TYPE_OPTIONS,
+                HeaderValue::from_static("nosniff"),
+            );
+            headers.insert(
+                header::CACHE_CONTROL,
+                HeaderValue::from_static("private, max-age=60"),
+            );
+            (StatusCode::OK, headers, bytes).into_response()
+        }
+        Ok(Err((status, message))) => (
+            status,
+            Json(serde_json::json!({"error": "file_read", "message": message})),
+        )
+            .into_response(),
+        Err(error) => {
+            tracing::error!(target: "http.api.sessions", "session_file_image panicked: {error}");
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
 #[derive(Serialize)]
 pub struct VolumeIgnoresGlobPreview {
     pub pattern: String,
