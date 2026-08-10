@@ -343,7 +343,7 @@ export function UsageHint({ usage }: { usage: AcpState["sessionUsage"] }) {
   const cost = usage.cost ? formatCost(usage.cost.amount, usage.cost.currency) : null;
   const explanation =
     `Context window: ${usage.used.toLocaleString()} of ${usage.size.toLocaleString()} tokens used (${pct}%). ` +
-    `Color warns as the window fills.` +
+    `The color warms as the window fills.` +
     (cost ? ` ${cost} is cumulative session spend since the last /clear or /compact.` : "");
   // Last in the wrapping cluster: on a narrow footer it takes its own row
   // instead of pushing Stop and Send off screen.
