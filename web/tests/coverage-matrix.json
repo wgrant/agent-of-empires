@@ -749,6 +749,13 @@
       "components": ["web/src/components/TopBar.tsx"]
     },
     {
+      "id": "app-shell.topbar-session-identity",
+      "kind": "mocked-playwright",
+      "risk": "low",
+      "specs": ["tests/top-bar.spec.ts", "src/components/__tests__/TopBar.test.tsx"],
+      "components": ["web/src/App.tsx", "web/src/components/TopBar.tsx", "web/src/components/PaletteTriggerPill.tsx"]
+    },
+    {
       "id": "app-shell.activity-bar",
       "kind": "vitest",
       "risk": "low",

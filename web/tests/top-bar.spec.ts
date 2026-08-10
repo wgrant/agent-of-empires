@@ -96,4 +96,29 @@ test.describe("Top bar", () => {
     // The icon-only variant is still accessible via the same aria-label
     await expect(page.getByRole("button", { name: "Open command palette" }).first()).toBeVisible();
   });
+
+  test("session header uses the sidebar project alias and adapts to mobile", async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem("aoe-repo-appearance-v1", JSON.stringify({ "/tmp/pinch-test": { alias: "AoE prod" } }));
+    });
+    await mockTerminalApis(page);
+    await page.setViewportSize({ width: 320, height: 568 });
+    await page.goto("/session/pinch-test");
+
+    const mobileIdentity = page.getByTestId("topbar-session-identity-mobile");
+    await expect(mobileIdentity).toBeVisible();
+    await expect(mobileIdentity).toContainText("AoE prod");
+    await expect(mobileIdentity).toContainText("pinch-test");
+    await expect(page.getByText("aoe", { exact: true })).toBeHidden();
+    await expect(page.getByRole("button", { name: "Open command palette" })).toBeVisible();
+    await expect
+      .poll(() => page.locator("header").evaluate((header) => header.scrollWidth <= header.clientWidth))
+      .toBe(true);
+
+    await page.setViewportSize({ width: 1280, height: 720 });
+    const desktopIdentity = page.getByTestId("topbar-session-identity-desktop");
+    await expect(desktopIdentity).toBeVisible();
+    await expect(desktopIdentity).toHaveAttribute("aria-label", "Current session: AoE prod / pinch-test");
+    await expect(mobileIdentity).toBeHidden();
+  });
 });

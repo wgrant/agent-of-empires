@@ -16,6 +16,7 @@ function renderTopBar(
     isOffline?: boolean;
     activeWorkspace?: Workspace;
     activeSession?: SessionResponse | null;
+    activeProjectName?: string | null;
     onOpenTips?: () => void;
   } = {},
 ) {
@@ -23,6 +24,7 @@ function renderTopBar(
     <TopBar
       activeWorkspace={overrides.activeWorkspace}
       activeSession={overrides.activeSession ?? null}
+      activeProjectName={overrides.activeProjectName ?? null}
       onToggleSidebar={vi.fn()}
       onOpenPalette={vi.fn()}
       onToggleDiff={vi.fn()}
@@ -61,7 +63,7 @@ describe("TopBar", () => {
     expect(queryByText("DEV")).toBeNull();
   });
 
-  it("does not render the workspace/repo breadcrumb even with an active workspace and session", () => {
+  it("renders the sidebar project name and session title as the current identity", () => {
     const workspace = {
       id: "ws-1",
       branch: null,
@@ -72,14 +74,15 @@ describe("TopBar", () => {
       status: "idle",
       sessions: [],
     } as unknown as Workspace;
-    const { queryByText } = renderTopBar({
+    const session = { title: "Fix mobile header" } as SessionResponse;
+    const { getAllByText, getAllByLabelText } = renderTopBar({
       activeWorkspace: workspace,
-      activeSession: {} as SessionResponse,
+      activeSession: session,
+      activeProjectName: "AoE prod",
     });
-    // The old breadcrumb rendered the repo name (last path segment) and the
-    // workspace display name; both must be gone now that #1456 removed it.
-    expect(queryByText("breadcrumb-repo")).toBeNull();
-    expect(queryByText("breadcrumb-feature")).toBeNull();
+    expect(getAllByText("AoE prod")).toHaveLength(2);
+    expect(getAllByText("Fix mobile header")).toHaveLength(2);
+    expect(getAllByLabelText("Current session: AoE prod / Fix mobile header")).toHaveLength(2);
   });
 
   it("renders the offline badge independent of the DEV badge", () => {

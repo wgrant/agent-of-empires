@@ -12,6 +12,9 @@ import { StrokeIcon } from "./icons";
 interface Props {
   activeWorkspace: Workspace | undefined;
   activeSession: SessionResponse | null;
+  /** Resolved project label from the same RepoGroup rendered by the sidebar,
+   *  including any user-defined alias. */
+  activeProjectName: string | null;
   onToggleSidebar: () => void;
   onOpenPalette: () => void;
   /** Mobile (below md): opens the view picker. The desktop activity bar uses
@@ -49,6 +52,7 @@ interface Props {
 export function TopBar({
   activeWorkspace,
   activeSession,
+  activeProjectName,
   onToggleSidebar,
   onOpenPalette,
   onToggleDiff,
@@ -83,6 +87,8 @@ export function TopBar({
   // the wordmark in that combination.
   const { settings: webSettings } = useWebSettings();
   const hideWordmark = sidebarColumnVisible && webSettings.sidebarCompact;
+  const hasSessionIdentity = activeProjectName !== null && activeSession !== null;
+  const sessionIdentityLabel = hasSessionIdentity ? `${activeProjectName} / ${activeSession.title}` : undefined;
 
   return (
     <header {...tourAnchor(TOUR_ANCHORS.topbar)} className="h-12 bg-surface-850 flex items-stretch shrink-0">
@@ -111,17 +117,49 @@ export function TopBar({
           aria-label="Go to dashboard"
         >
           <img src="/icon-192.png" alt="" width="18" height="18" className="rounded-sm shrink-0" />
-          {/* This zone matches the sidebar column, so a compact rail leaves no room for the wordmark next to the
-             toggle and the logo: it would sit flush against the divider and read as clipped. */}
-          <span className={`font-mono text-xs leading-none truncate ${hideWordmark ? "md:hidden" : ""}`}>aoe</span>
+          {/* This zone matches the sidebar column, so a compact rail leaves no
+              room for the wordmark next to the toggle and the logo: it would sit
+              flush against the divider and read as clipped. The logo alone still
+              links to the dashboard. On a mobile session page the project and
+              session identity takes the wordmark's space. See #2288. */}
+          <span
+            className={`font-mono text-xs leading-none truncate ${hasSessionIdentity ? "hidden sm:inline" : ""} ${
+              hideWordmark ? "md:hidden" : ""
+            }`}
+          >
+            aoe
+          </span>
         </button>
       </div>
 
-      {/* Center zone: palette trigger; carries the bottom border across the
-          middle, between the two column-aligned zones. */}
+      {/* CENTER ZONE — session identity and desktop palette trigger; carries
+          the bottom border across the middle between the column-aligned zones. */}
       <div className="flex-1 flex items-center px-3 min-w-0 border-b border-surface-700/60">
-        <div className="flex-1 flex justify-center px-2">
-          <PaletteTriggerPill onClick={onOpenPalette} />
+        {hasSessionIdentity && (
+          <div
+            className="sm:hidden flex-1 min-w-0 flex flex-col justify-center font-mono"
+            title={sessionIdentityLabel}
+            aria-label={`Current session: ${sessionIdentityLabel}`}
+            data-testid="topbar-session-identity-mobile"
+          >
+            <span className="text-[10px] leading-3 text-text-dim truncate">{activeProjectName}</span>
+            <span className="text-xs leading-4 text-text-secondary truncate">{activeSession.title}</span>
+          </div>
+        )}
+        {hasSessionIdentity && (
+          <div
+            className="hidden sm:flex flex-1 min-w-0 items-center gap-1.5 text-xs font-mono"
+            title={sessionIdentityLabel}
+            aria-label={`Current session: ${sessionIdentityLabel}`}
+            data-testid="topbar-session-identity-desktop"
+          >
+            <span className="max-w-[35%] truncate text-text-muted">{activeProjectName}</span>
+            <span className="shrink-0 text-text-dim">/</span>
+            <span className="min-w-0 truncate text-text-secondary">{activeSession.title}</span>
+          </div>
+        )}
+        <div className={`${hasSessionIdentity ? "hidden sm:flex" : "flex"} flex-1 justify-center px-2 min-w-0`}>
+          <PaletteTriggerPill onClick={onOpenPalette} showMobile={!hasSessionIdentity} />
         </div>
       </div>
 
@@ -151,6 +189,8 @@ export function TopBar({
             offline
           </span>
         )}
+
+        {hasSessionIdentity && <PaletteTriggerPill onClick={onOpenPalette} showDesktop={false} />}
 
         {activeWorkspace && activeSession && (
           <>
