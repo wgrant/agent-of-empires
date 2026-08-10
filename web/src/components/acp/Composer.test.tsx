@@ -9,9 +9,9 @@ import {
 } from "@assistant-ui/react";
 
 import type { PluginUiEntry } from "../../lib/api";
-import type { PromptAttachmentInput, QueuedPrompt } from "../../lib/acpTypes";
+import type { ConfigOptionDescriptor, PromptAttachmentInput, QueuedPrompt } from "../../lib/acpTypes";
 import { buildSkillIndex, type SkillIndex } from "../../lib/skillProvenance";
-import { Composer } from "./Composer";
+import { Composer, composerStatusSummary } from "./Composer";
 
 const { skillIndexRef, entriesRef } = vi.hoisted(() => ({
   skillIndexRef: { current: { labelsByKey: new Map<string, Set<string>>() } as SkillIndex },
@@ -109,6 +109,28 @@ async function flush() {
 }
 
 describe("toolbar and send", () => {
+  it("compacts the active agent configuration into one readable line", () => {
+    const configOptions: ConfigOptionDescriptor[] = [
+      {
+        id: "model",
+        name: "Model",
+        category: "model",
+        current_value: "gpt-5.6-terra",
+        options: [{ value: "gpt-5.6-terra", name: "GPT-5.6 Terra" }],
+      },
+      {
+        id: "effort",
+        name: "Reasoning Effort",
+        category: "thought_level",
+        current_value: "medium",
+        options: [{ value: "medium", name: "Medium" }],
+      },
+    ];
+    expect(composerStatusSummary({ agent: "codex", mode: "Agent (full access)", yoloMode: true, configOptions })).toBe(
+      "Codex · Full access · Yolo · GPT-5.6 Terra · Medium",
+    );
+  });
+
   it("enables Send only for non-whitespace text", () => {
     const { textarea } = mount();
     const send = screen.getByRole("button", { name: "Send message" }) as HTMLButtonElement;
@@ -125,7 +147,7 @@ describe("toolbar and send", () => {
   ])("exposes usage and optional spend in the hint and tooltip (cost %o)", (cost, used, pct) => {
     mount({ sessionUsage: { used, size: 200_000, cost } });
     const spend = new Intl.NumberFormat(undefined, { style: "currency", currency: "USD" }).format(0.42);
-    const hint = screen.getByLabelText(/Context window:/);
+    const hint = screen.getAllByLabelText(/Context window:/)[0]!;
     expect(hint.textContent).toContain(pct);
     expect(hint.textContent?.includes(spend)).toBe(cost !== null);
     fireEvent.mouseEnter(hint.parentElement!);
