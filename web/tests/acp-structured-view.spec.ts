@@ -152,6 +152,24 @@ test.describe("mobile transcript file links", () => {
   });
 });
 
+test("desktop transcript image links open in the authenticated image viewer", async ({ page }) => {
+  const title = "story-image-link";
+  const mock = await mockAcpSession(page, {
+    title,
+    initialEvents: [agentMessageChunk(`See [shot.png](/tmp/${title}/test-results/shot.png).`), stopped()],
+  });
+  await page.route("**/api/sessions/*/file/image?*", (route) =>
+    route.fulfill({ contentType: "image/png", body: "image bytes" }),
+  );
+  await openStructuredSession(page, mock);
+
+  await page.getByRole("link", { name: "shot.png" }).click();
+  const image = page.getByRole("img", { name: "test-results/shot.png" });
+  await expect(image).toBeVisible();
+  await expect(image).toHaveAttribute("src", /^blob:/);
+  await expect(page.getByRole("button", { name: "Back to transcript" })).toBeVisible();
+});
+
 // ─────────────────────────── tool cards ───────────────────────────
 // #1568: an edit card's diff scrolls horizontally inside the card; the transcript never does.
 test.describe("edit card diff scroll", () => {

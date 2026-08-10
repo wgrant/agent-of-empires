@@ -537,6 +537,8 @@ pub struct SessionFileQuery {
     pub path: String,
 }
 
+const MAX_SESSION_IMAGE_BYTES: usize = 50 * 1024 * 1024;
+
 /// Response for the session file-read endpoint, mirroring
 /// [`RichFileContentsResponse`]. `content` is empty for a binary or truncated
 /// file, and the client renders a notice.
@@ -632,6 +634,113 @@ pub async fn session_file(
                 "internal",
                 "Internal server error",
             )
+        }
+    }
+}
+
+/// Serve a confined raster image as bytes. Executable image formats are not
+/// accepted because the client opens the response through a same-origin blob.
+pub async fn session_file_image(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    axum::extract::Query(query): axum::extract::Query<SessionFileQuery>,
+) -> impl IntoResponse {
+    if let Some(resp) = crate::server::api::cityhall_block(&state) {
+        return resp;
+    }
+    let mime = mime_guess::from_path(&query.path).first_or_octet_stream();
+    let essence = mime.essence_str();
+    if !matches!(
+        essence,
+        "image/png"
+            | "image/jpeg"
+            | "image/gif"
+            | "image/webp"
+            | "image/avif"
+            | "image/bmp"
+            | "image/x-icon"
+    ) {
+        return (
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            Json(serde_json::json!({"error": "file_read", "message": "unsupported image type"})),
+        )
+            .into_response();
+    }
+
+    let ctx = match resolve_diff_repos(&state, &id).await {
+        Ok(ctx) => ctx,
+        Err(resp) => return resp,
+    };
+    let project_paths: Vec<std::path::PathBuf> = ctx
+        .repos
+        .iter()
+        .map(|repo| std::path::PathBuf::from(&repo.path))
+        .collect();
+    let store = state.acp_event_store.clone();
+    let requested = query.path;
+
+    let result = tokio::task::spawn_blocking(move || {
+        let roots: Vec<std::path::PathBuf> = project_paths
+            .iter()
+            .filter_map(|path| path.canonicalize().ok())
+            .collect();
+        let touched = || {
+            let mut events = Vec::new();
+            let mut since = 0u64;
+            loop {
+                let page = store.replay_page(&id, since, Some(1000));
+                let advance = page.last_scanned_seq;
+                events.extend(page.events);
+                match (page.has_more, advance) {
+                    (true, Some(seq)) => since = seq,
+                    _ => break,
+                }
+            }
+            crate::server::api::file_provenance::collect_touched_paths(&events)
+        };
+        let confined = crate::server::api::file_provenance::confine_path(
+            &roots,
+            touched,
+            std::path::Path::new(&requested),
+        )?;
+        let (bytes, truncated) = crate::server::api::file_provenance::read_confined_bytes(
+            &confined,
+            MAX_SESSION_IMAGE_BYTES,
+        )?;
+        if truncated {
+            return Err((StatusCode::PAYLOAD_TOO_LARGE, "image too large"));
+        }
+        Ok::<_, (StatusCode, &'static str)>(bytes)
+    })
+    .await;
+
+    match result {
+        Ok(Ok(bytes)) => {
+            use axum::http::{header, HeaderMap, HeaderValue};
+            let mut headers = HeaderMap::new();
+            headers.insert(
+                header::CONTENT_TYPE,
+                HeaderValue::from_str(essence)
+                    .unwrap_or(HeaderValue::from_static("application/octet-stream")),
+            );
+            headers.insert(
+                header::X_CONTENT_TYPE_OPTIONS,
+                HeaderValue::from_static("nosniff"),
+            );
+            headers.insert(
+                header::CACHE_CONTROL,
+                HeaderValue::from_static("private, max-age=60"),
+            );
+            (StatusCode::OK, headers, bytes).into_response()
+        }
+        Ok(Err((status, message))) => (
+            status,
+            Json(serde_json::json!({"error": "file_read", "message": message})),
+        )
+            .into_response(),
+        Err(error) => {
+            tracing::error!(target: "http.api.sessions", "session_file_image panicked: {error}");
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
     }
 }

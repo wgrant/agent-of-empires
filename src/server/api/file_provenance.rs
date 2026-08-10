@@ -178,12 +178,11 @@ pub fn confine_path(
 ///
 /// Rejects non-regular files before reading, so a blocking or endless special
 /// file cannot stall or OOM the server, and reads at most `cap + 1` bytes to
-/// detect truncation. Binary content yields an empty string, matching the diff
-/// endpoint.
-pub fn read_confined(
+/// detect truncation. Returns the bytes and whether the result was truncated.
+pub fn read_confined_bytes(
     confined: &Confined,
     cap: usize,
-) -> Result<(String, bool, bool), (StatusCode, &'static str)> {
+) -> Result<(Vec<u8>, bool), (StatusCode, &'static str)> {
     let dir = Dir::open_ambient_dir(&confined.root, ambient_authority())
         .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "open root failed"))?;
     let rel = confined
@@ -212,6 +211,16 @@ pub fn read_confined(
     if truncated {
         bytes.truncate(cap);
     }
+    Ok((bytes, truncated))
+}
+
+/// Read a confined target as displayable text. Binary content yields an empty
+/// string (the client shows a "binary file" notice), matching the diff endpoint.
+pub fn read_confined(
+    confined: &Confined,
+    cap: usize,
+) -> Result<(String, bool, bool), (StatusCode, &'static str)> {
+    let (bytes, truncated) = read_confined_bytes(confined, cap)?;
     let is_binary = bytes.contains(&0);
     let content = if is_binary {
         String::new()

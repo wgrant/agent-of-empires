@@ -2566,12 +2566,17 @@
       "id": "acp.file-links",
       "kind": "live-playwright",
       "risk": "high",
-      "specs": ["tests/live/acp-transcript.spec.ts", "tests/acp-structured-view.spec.ts"],
+      "specs": [
+        "tests/live/acp-transcript.spec.ts",
+        "tests/acp-structured-view.spec.ts",
+        "src/components/diff/__tests__/FileImageViewer.test.tsx"
+      ],
       "components": [
         "web/src/components/acp/AcpFileRefContext.tsx",
         "web/src/components/acp/Markdown.tsx",
         "web/src/components/acp/StructuredView.tsx",
         "web/src/components/MobileMainPane.tsx",
+        "web/src/components/diff/FileImageViewer.tsx",
         "web/src/components/diff/DiffFileViewer.tsx",
         "web/src/components/diff/FullFileViewer.tsx"
       ]

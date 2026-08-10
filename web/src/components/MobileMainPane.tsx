@@ -6,6 +6,7 @@ import { BackgroundAgentsPanel } from "./acp/BackgroundAgentsPanel";
 import { FilesPane } from "./FilesPane";
 import { DiffFileList } from "./diff/DiffFileList";
 import { DiffFileViewer } from "./diff/DiffFileViewer";
+import { FileImageViewer } from "./diff/FileImageViewer";
 import { CommentsBanner } from "./diff/comments/CommentsBanner";
 import { SendCommentsDialog } from "./diff/comments/SendCommentsDialog";
 import { PluginPaneBody } from "./plugin/PluginPane";
@@ -30,6 +31,7 @@ interface Props {
   selectedFilePath: string | null;
   selectedRepoName: string | undefined;
   selectedFileLine: number | undefined;
+  selectedFileImage: boolean;
   revision: number;
   diffFiles: RichDiffFile[];
   perRepoBases: RepoBase[];
@@ -70,6 +72,7 @@ export function MobileMainPane({
   selectedFilePath,
   selectedRepoName,
   selectedFileLine,
+  selectedFileImage,
   revision,
   diffFiles,
   perRepoBases,
@@ -174,16 +177,20 @@ export function MobileMainPane({
             style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
           >
             {selectedFilePath && activeSessionId ? (
-              <DiffFileViewer
-                sessionId={activeSessionId}
-                filePath={selectedFilePath}
-                repoName={selectedRepoName}
-                targetLine={selectedFileLine}
-                revision={revision}
-                onClose={onCloseFile}
-                commentsEnabled={commentsEnabled}
-                commentsStore={diffComments}
-              />
+              selectedFileImage ? (
+                <FileImageViewer sessionId={activeSessionId} filePath={selectedFilePath} onBack={onCloseFile} />
+              ) : (
+                <DiffFileViewer
+                  sessionId={activeSessionId}
+                  filePath={selectedFilePath}
+                  repoName={selectedRepoName}
+                  targetLine={selectedFileLine}
+                  revision={revision}
+                  onClose={onCloseFile}
+                  commentsEnabled={commentsEnabled}
+                  commentsStore={diffComments}
+                />
+              )
             ) : (
               <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
                 {commentsEnabled && diffComments.count > 0 && (
