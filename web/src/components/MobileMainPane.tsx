@@ -7,6 +7,7 @@ import { FilesPane } from "./FilesPane";
 import { DiffFileList } from "./diff/DiffFileList";
 import { DiffFileViewer } from "./diff/DiffFileViewer";
 import { FileImageViewer } from "./diff/FileImageViewer";
+import { FileContentViewer } from "./diff/FileContentViewer";
 import { CommentsBanner } from "./diff/comments/CommentsBanner";
 import { SendCommentsDialog } from "./diff/comments/SendCommentsDialog";
 import { PluginPaneBody } from "./plugin/PluginPane";
@@ -31,7 +32,8 @@ interface Props {
   selectedFilePath: string | null;
   selectedRepoName: string | undefined;
   selectedFileLine: number | undefined;
-  selectedFileImage: boolean;
+  selectedFileCited: boolean;
+  selectedFileExternal: boolean;
   revision: number;
   diffFiles: RichDiffFile[];
   perRepoBases: RepoBase[];
@@ -72,7 +74,8 @@ export function MobileMainPane({
   selectedFilePath,
   selectedRepoName,
   selectedFileLine,
-  selectedFileImage,
+  selectedFileCited,
+  selectedFileExternal,
   revision,
   diffFiles,
   perRepoBases,
@@ -177,8 +180,29 @@ export function MobileMainPane({
             style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
           >
             {selectedFilePath && activeSessionId ? (
-              selectedFileImage ? (
-                <FileImageViewer sessionId={activeSessionId} filePath={selectedFilePath} onBack={onCloseFile} />
+              selectedFileCited ? (
+                <FileImageViewer
+                  sessionId={activeSessionId}
+                  filePath={selectedFilePath}
+                  onBack={onCloseFile}
+                  fallback={
+                    selectedFileExternal ? (
+                      <FileContentViewer sessionId={activeSessionId} filePath={selectedFilePath} onBack={onCloseFile} />
+                    ) : (
+                      <DiffFileViewer
+                        sessionId={activeSessionId}
+                        filePath={selectedFilePath}
+                        repoName={selectedRepoName}
+                        targetLine={selectedFileLine}
+                        revision={revision}
+                        onClose={onCloseFile}
+                        backLabel="Files"
+                        commentsEnabled={commentsEnabled}
+                        commentsStore={diffComments}
+                      />
+                    )
+                  }
+                />
               ) : (
                 <DiffFileViewer
                   sessionId={activeSessionId}

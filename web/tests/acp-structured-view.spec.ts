@@ -152,19 +152,27 @@ test.describe("mobile transcript file links", () => {
   });
 });
 
-test("desktop transcript image links open in the authenticated image viewer", async ({ page }) => {
+test("desktop transcript image links open in the authenticated image viewer without an image extension", async ({
+  page,
+}) => {
   const title = "story-image-link";
   const mock = await mockAcpSession(page, {
     title,
-    initialEvents: [agentMessageChunk(`See [shot.png](/tmp/${title}/test-results/shot.png).`), stopped()],
+    initialEvents: [agentMessageChunk(`See [shot.dat](/tmp/${title}/test-results/shot.dat).`), stopped()],
   });
   await page.route("**/api/sessions/*/file/image?*", (route) =>
-    route.fulfill({ contentType: "image/png", body: "image bytes" }),
+    route.fulfill({
+      contentType: "image/png",
+      body: Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+        "base64",
+      ),
+    }),
   );
   await openStructuredSession(page, mock);
 
-  await page.getByRole("link", { name: "shot.png" }).click();
-  const image = page.getByRole("img", { name: "test-results/shot.png" });
+  await page.getByRole("link", { name: "shot.dat" }).click();
+  const image = page.getByRole("img", { name: "test-results/shot.dat" });
   await expect(image).toBeVisible();
   await expect(image).toHaveAttribute("src", /^blob:/);
   await expect(page.getByRole("button", { name: "Back to transcript" })).toBeVisible();

@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  isRasterImagePath,
   parseFileRef,
   relativeDisplayPath,
   resolveArtifactUrl,
@@ -22,17 +21,6 @@ const workspace = session({
     { name: "api", source_path: "/Users/me/api" },
     { name: "web", source_path: "/Users/me/web" },
   ],
-});
-
-it("recognizes passive raster image paths", () => {
-  const cases: Array<[string, boolean]> = [
-    ["shot.png", true],
-    ["PHOTO.JPEG", true],
-    ["frame.webp?rev=2", true],
-    ["vector.svg", false],
-    ["notes.md", false],
-  ];
-  for (const [path, expected] of cases) expect(isRasterImagePath(path)).toBe(expected);
 });
 
 it.each<[string, string | null]>([

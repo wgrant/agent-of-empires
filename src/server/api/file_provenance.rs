@@ -230,6 +230,35 @@ pub fn read_confined(
     Ok((content, is_binary, truncated))
 }
 
+/// Detect passive raster image formats from their file signatures. This is
+/// intentionally content-based: transcript paths are untrusted labels and may
+/// have a missing or misleading extension. SVG is excluded because it can
+/// execute script when opened through a same-origin blob URL.
+pub fn raster_media_type(bytes: &[u8]) -> Option<&'static str> {
+    if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        return Some("image/png");
+    }
+    if bytes.starts_with(b"\xff\xd8\xff") {
+        return Some("image/jpeg");
+    }
+    if bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a") {
+        return Some("image/gif");
+    }
+    if bytes.len() >= 12 && &bytes[..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
+        return Some("image/webp");
+    }
+    if bytes.starts_with(b"BM") {
+        return Some("image/bmp");
+    }
+    if bytes.starts_with(b"\x00\x00\x01\x00") {
+        return Some("image/x-icon");
+    }
+    if bytes.len() >= 12 && &bytes[4..8] == b"ftyp" && matches!(&bytes[8..12], b"avif" | b"avis") {
+        return Some("image/avif");
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -515,5 +544,23 @@ mod tests {
 
         assert_eq!(confined.root, root);
         assert!(!called, "event log replayed for an in-project file");
+    }
+
+    #[test]
+    fn detects_raster_content_without_filename_help() {
+        let cases: &[(&[u8], Option<&str>)] = &[
+            (b"\x89PNG\r\n\x1a\nrest", Some("image/png")),
+            (b"\xff\xd8\xffrest", Some("image/jpeg")),
+            (b"GIF89arest", Some("image/gif")),
+            (b"RIFFxxxxWEBPrest", Some("image/webp")),
+            (b"BMrest", Some("image/bmp")),
+            (b"\x00\x00\x01\x00rest", Some("image/x-icon")),
+            (b"xxxxftypavifrest", Some("image/avif")),
+            (b"<svg></svg>", None),
+            (b"plain text", None),
+        ];
+        for (bytes, expected) in cases {
+            assert_eq!(raster_media_type(bytes), *expected, "{bytes:?}");
+        }
     }
 }

@@ -648,25 +648,6 @@ pub async fn session_file_image(
     if let Some(resp) = crate::server::api::cityhall_block(&state) {
         return resp;
     }
-    let mime = mime_guess::from_path(&query.path).first_or_octet_stream();
-    let essence = mime.essence_str();
-    if !matches!(
-        essence,
-        "image/png"
-            | "image/jpeg"
-            | "image/gif"
-            | "image/webp"
-            | "image/avif"
-            | "image/bmp"
-            | "image/x-icon"
-    ) {
-        return (
-            StatusCode::UNSUPPORTED_MEDIA_TYPE,
-            Json(serde_json::json!({"error": "file_read", "message": "unsupported image type"})),
-        )
-            .into_response();
-    }
-
     let ctx = match resolve_diff_repos(&state, &id).await {
         Ok(ctx) => ctx,
         Err(resp) => return resp,
@@ -710,17 +691,19 @@ pub async fn session_file_image(
         if truncated {
             return Err((StatusCode::PAYLOAD_TOO_LARGE, "image too large"));
         }
-        Ok::<_, (StatusCode, &'static str)>(bytes)
+        let media_type = crate::server::api::file_provenance::raster_media_type(&bytes)
+            .ok_or((StatusCode::UNSUPPORTED_MEDIA_TYPE, "unsupported image type"))?;
+        Ok::<_, (StatusCode, &'static str)>((bytes, media_type))
     })
     .await;
 
     match result {
-        Ok(Ok(bytes)) => {
+        Ok(Ok((bytes, media_type))) => {
             use axum::http::{header, HeaderMap, HeaderValue};
             let mut headers = HeaderMap::new();
             headers.insert(
                 header::CONTENT_TYPE,
-                HeaderValue::from_str(essence)
+                HeaderValue::from_str(media_type)
                     .unwrap_or(HeaderValue::from_static("application/octet-stream")),
             );
             headers.insert(
