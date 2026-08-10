@@ -132,6 +132,7 @@ describe("toolbar and send", () => {
     const tip = screen.getByRole("tooltip").textContent ?? "";
     expect(tip).toContain(used.toLocaleString());
     expect(tip).toContain(pct);
+    expect(tip).toContain("The color warms as the window fills.");
     expect(tip.includes(spend)).toBe(cost !== null);
   });
 
