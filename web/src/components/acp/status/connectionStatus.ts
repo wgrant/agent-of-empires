@@ -21,6 +21,7 @@ export interface ConnectionIncident {
 
 export interface ConnectionStatusInput {
   status: ConnectionStatus;
+  serverReachability: "reachable" | "unreachable" | "unknown";
   lagged: boolean;
   rateLimit: AcpState["rateLimit"];
   hasEverOpened: boolean;
@@ -93,7 +94,12 @@ export function deriveConnectionIncident(input: ConnectionStatusInput): Connecti
   return {
     device:
       input.status === "open" ? "ready" : input.reconnecting || input.status === "connecting" ? "working" : "failed",
-    server: "unknown",
+    server:
+      input.serverReachability === "reachable"
+        ? "ready"
+        : input.serverReachability === "unreachable"
+          ? "failed"
+          : "unknown",
     agent,
     notices,
     retriesExhausted,
