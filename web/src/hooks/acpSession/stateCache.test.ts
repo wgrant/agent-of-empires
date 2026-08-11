@@ -8,11 +8,28 @@ import { STORAGE_KEY_PREFIX } from "../../lib/acpStateStorage";
 import {
   cacheSet,
   clearAcpCache,
+  inspectAcpStateCache,
   evictOldestPersistedAcpState,
   loadPersistedState,
   persistState,
   useBackgroundAgents,
 } from "./stateCache";
+
+it("summarises the in-memory cache without exposing state contents", () => {
+  clearAcpCache();
+  cacheSet("sess-small", emptyAcpState());
+  cacheSet("sess-large", { ...emptyAcpState(), assistantMessage: "x".repeat(512) });
+
+  const summary = inspectAcpStateCache();
+
+  expect(summary).toMatchObject({ entryCount: 2, capacity: 32 });
+  expect(summary.totalEstimatedJsonBytes).toBeGreaterThan(0);
+  expect(summary.entries).toEqual([
+    expect.objectContaining({ sessionId: "sess-small", lruPosition: 0, activityRows: 0, queuedPrompts: 0 }),
+    expect.objectContaining({ sessionId: "sess-large", lruPosition: 1, activityRows: 0, queuedPrompts: 0 }),
+  ]);
+  expect(summary.entries[1]!.estimatedJsonBytes).toBeGreaterThan(summary.entries[0]!.estimatedJsonBytes);
+});
 
 const key = (id: string) => STORAGE_KEY_PREFIX + id;
 const CURRENT = key("sess-current");
