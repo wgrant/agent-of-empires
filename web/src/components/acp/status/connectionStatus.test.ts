@@ -12,6 +12,11 @@ const base = {
   retryCountdown: 0,
   maxRetries: 7,
   rateLimitText: () => "Rate-limited (provider); resets at 10:42:00.",
+  startupError: false,
+  workerStopped: false,
+  workerRestarting: false,
+  agentUnresponsive: false,
+  agentOrphaned: false,
 };
 
 describe("deriveConnectionIncident", () => {
@@ -48,5 +53,10 @@ describe("deriveConnectionIncident", () => {
     });
     expect(incident).toMatchObject({ agent: "blocked", server: "unknown" });
     expect(incident?.notices[0]?.text).toContain("Rate-limited");
+  });
+
+  it("classifies lifecycle failures without requiring a separate status model", () => {
+    expect(deriveConnectionIncident({ ...base, workerRestarting: true })?.agent).toBe("working");
+    expect(deriveConnectionIncident({ ...base, startupError: true })?.agent).toBe("failed");
   });
 });

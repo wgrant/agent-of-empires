@@ -53,6 +53,11 @@ export function SystemNotices({
   rateLimit,
   rateLimitAutoResume,
   rateLimitRetriesExhausted,
+  startupError,
+  workerStopped,
+  workerRestarting,
+  agentUnresponsive,
+  agentOrphaned,
   hasEverOpened,
   reconnecting,
   retryCount,
@@ -70,6 +75,11 @@ export function SystemNotices({
   /** Omitted when unknown, in which case nothing is claimed about auto-resume. */
   rateLimitAutoResume?: boolean;
   rateLimitRetriesExhausted: boolean;
+  startupError: boolean;
+  workerStopped: boolean;
+  workerRestarting: boolean;
+  agentUnresponsive: boolean;
+  agentOrphaned: boolean;
   hasEverOpened: boolean;
   reconnecting: boolean;
   retryCount: number;
@@ -96,6 +106,11 @@ export function SystemNotices({
         ? `Rate-limited (${limit.kind}); resets at ${reset.toLocaleTimeString()}.`
         : `Rate-limited (${limit.kind}); ${rateLimitWording(limit.status)}`;
     },
+    startupError,
+    workerStopped,
+    workerRestarting,
+    agentUnresponsive,
+    agentOrphaned,
   });
   const messages: { kind: "warn" | "info" | "muted"; text: string }[] = incident ? [...incident.notices] : [];
   if (rateLimit) {

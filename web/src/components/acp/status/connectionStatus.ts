@@ -29,6 +29,11 @@ export interface ConnectionStatusInput {
   retryCountdown: number;
   maxRetries: number;
   rateLimitText: (rateLimit: NonNullable<AcpState["rateLimit"]>) => string;
+  startupError: boolean;
+  workerStopped: boolean;
+  workerRestarting: boolean;
+  agentUnresponsive: boolean;
+  agentOrphaned: boolean;
 }
 
 /**
@@ -71,13 +76,21 @@ export function deriveConnectionIncident(input: ConnectionStatusInput): Connecti
   }
   if (input.lagged) notices.push({ kind: "warn", text: "Some events were missed during reconnect." });
   if (input.rateLimit) notices.push({ kind: "warn", text: input.rateLimitText(input.rateLimit) });
-  if (notices.length === 0 && !retriesExhausted) return null;
+  const agent =
+    input.startupError || input.workerStopped
+      ? "failed"
+      : input.rateLimit
+        ? "blocked"
+        : input.workerRestarting || input.agentUnresponsive || input.agentOrphaned
+          ? "working"
+          : "unknown";
+  if (notices.length === 0 && !retriesExhausted && agent === "unknown") return null;
 
   return {
     device:
       input.status === "open" ? "ready" : input.reconnecting || input.status === "connecting" ? "working" : "failed",
     server: "unknown",
-    agent: input.rateLimit ? "blocked" : "unknown",
+    agent,
     notices,
     retriesExhausted,
   };
