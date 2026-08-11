@@ -53,6 +53,16 @@ export function scrollRestoreDelta(prevScrollHeight: number, nextScrollHeight: n
   return delta > 0 ? delta : 0;
 }
 
+/** Scroll adjustment for a transient inset at the transcript's top. Readers
+ * who are already at the top deliberately see the new breathing room; readers
+ * partway through the transcript keep the same row under their eyes. The same
+ * rule will be used by the history-loading affordance when it gains a floating
+ * progress indicator. */
+export function topInsetScrollAdjustment(previousInset: number, nextInset: number, scrollTop: number): number {
+  if (scrollTop <= previousInset + 4) return 0;
+  return nextInset - previousInset;
+}
+
 export type EarlierAction = "reveal" | "fetch" | "none";
 
 /** Reveal already-loaded rows first, then fetch an older page. */

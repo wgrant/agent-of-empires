@@ -10,6 +10,7 @@ import {
   isPinnedToBottom,
   PINNED_BOTTOM_SLOP_PX,
   scrollRestoreDelta,
+  topInsetScrollAdjustment,
 } from "./historyScroll";
 
 const base = {
@@ -57,6 +58,13 @@ it("scrollRestoreDelta compensates growth only when scrolled up", () => {
   expect(scrollRestoreDelta(1000, 1300, true)).toBe(0);
   expect(scrollRestoreDelta(1300, 1300, false)).toBe(0);
   expect(scrollRestoreDelta(1300, 1000, false)).toBe(0);
+});
+
+it("topInsetScrollAdjustment keeps a scrolled reader's row fixed but leaves room at the top", () => {
+  expect(topInsetScrollAdjustment(0, 44, 0)).toBe(0);
+  expect(topInsetScrollAdjustment(44, 0, 43)).toBe(0);
+  expect(topInsetScrollAdjustment(0, 44, 120)).toBe(44);
+  expect(topInsetScrollAdjustment(44, 0, 120)).toBe(-44);
 });
 
 it("earlierAction reveals loaded rows before fetching; canOfferEarlier needs either source", () => {
