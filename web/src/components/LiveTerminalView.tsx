@@ -10,7 +10,9 @@ import { KeyboardFab } from "./KeyboardFab";
 import { ArrowJoystick } from "./ArrowJoystick";
 import { useWebSettings } from "../hooks/useWebSettings";
 import { invalidateRetainedImeContext } from "../lib/mobileKeyboardProxy";
-import { TerminalConnectionBanners } from "./TerminalConnectionBanners";
+import { ConnectionIncidentBubble } from "./connection/ConnectionStatusView";
+import { deriveTerminalConnectionDiagnostics } from "./acp/status/connectionStatus";
+import { useConnectionDiagnosticsPublisher } from "../lib/connectionDiagnosticsContext";
 import { ensureSession, ensureTerminal, isStartRefusal, pasteImage } from "../lib/api";
 import { armClipboardWrite, writeClipboard } from "../lib/clipboard";
 import type { ArmedClipboardWrite } from "../lib/clipboard";
@@ -77,8 +79,25 @@ export function LiveTerminalView({ session, active = true, surface = "agent", te
     [],
   );
   const live = useLiveTerminal(ensureState === "ready" ? session.id : null, wsPath, receiveAgentClipboard);
-  // The viewport hook supplies the iOS-regular-Safari bottom inset and the occlusion-based keyboardOpen used to
-  // gate the pane's sizing latch (occlusion is what shrinks the container, whichever element is focused).
+  const publishConnectionDiagnostics = useConnectionDiagnosticsPublisher();
+  const terminalDiagnostics = deriveTerminalConnectionDiagnostics({
+    connected: live.state.connected,
+    reconnecting: live.state.reconnecting,
+    retryCount: live.state.retryCount,
+    retryCountdown: live.state.retryCountdown,
+    maxRetries: live.maxRetries,
+  });
+  useEffect(() => {
+    publishConnectionDiagnostics({
+      sessionId: session.id,
+      kind: "terminal",
+      diagnostics: terminalDiagnostics,
+      onReconnect: live.manualReconnect,
+    });
+  }, [live.manualReconnect, publishConnectionDiagnostics, session.id, terminalDiagnostics]);
+  useEffect(() => () => publishConnectionDiagnostics(null), [publishConnectionDiagnostics]);
+  // The viewport hook supplies the Safari bottom inset and the occlusion-based
+  // keyboard state used to gate the pane's sizing latch.
   const { keyboardHeight, keyboardOpen } = useMobileKeyboard();
   const [inputFocused, setInputFocused] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -290,14 +309,9 @@ export function LiveTerminalView({ session, active = true, surface = "agent", te
         }`}
       />
 
-      <TerminalConnectionBanners
-        connected={live.state.connected}
-        reconnecting={live.state.reconnecting}
-        retryCount={live.state.retryCount}
-        retryCountdown={live.state.retryCountdown}
-        maxRetries={live.maxRetries}
-        onRetry={live.manualReconnect}
-      />
+      {terminalDiagnostics.hasIncident && (
+        <ConnectionIncidentBubble diagnostics={terminalDiagnostics} onReconnect={live.manualReconnect} />
+      )}
 
       {ensureWarning && (
         <div className="absolute left-0 right-0 top-12 z-20 flex justify-center px-3 pointer-events-none">
