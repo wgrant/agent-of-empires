@@ -1,6 +1,8 @@
 import { test, expect } from "./helpers/mockedTest";
 import { mockStructuredSessionApis, openStructuredViewFor } from "./helpers/structuredSessionMocks";
 import { devices, type Page } from "@playwright/test";
+import { clickSidebarSession, openMobileSidebar } from "./helpers/sidebar";
+import { seedSettings } from "./helpers/terminal-mocks";
 
 // Tapping the structured-view transcript must NOT focus the composer / open the
 // soft keyboard: the keyboard should open only when the user taps the input
@@ -20,6 +22,21 @@ async function setup(page: Page) {
 const openStructuredSession = (page: Page) => openStructuredViewFor(page, TITLE);
 
 test.describe("Structured-view transcript tap does not open the keyboard", () => {
+  test("session selection does not raise the keyboard for a collapsed composer", async ({ page }) => {
+    await setup(page);
+    await page.goto("/");
+    await seedSettings(page, { autoOpenKeyboard: true });
+    await page.reload();
+    await expect(page.locator("header")).toBeVisible();
+    await page.locator('textarea.fixed[aria-hidden="true"]').blur();
+    await openMobileSidebar(page);
+    await clickSidebarSession(page, TITLE);
+    await expect(page.getByTestId("structured-view-root")).toBeVisible({ timeout: 10000 });
+
+    await expect(page.getByTestId("composer-mobile-status")).toBeVisible();
+    await expect(page.getByPlaceholder(/Send a message/)).not.toBeFocused();
+  });
+
   test("tapping the transcript does not focus the composer; tapping the input does", async ({ page }) => {
     await setup(page);
     await openStructuredSession(page);
