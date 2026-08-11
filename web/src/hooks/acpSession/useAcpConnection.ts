@@ -82,7 +82,6 @@ export function useAcpConnection(
   const [serverReachability, setServerReachability] = useState<"reachable" | "unreachable" | "unknown">("unknown");
   const [lastWebSocketOpenAt, setLastWebSocketOpenAt] = useState<number | null>(null);
   const [lastServerMessageAt, setLastServerMessageAt] = useState<number | null>(null);
-  const [lastSuccessfulReplayAt, setLastSuccessfulReplayAt] = useState<number | null>(null);
   const [lastTransportDiagnostic, setLastTransportDiagnostic] = useState<TransportDiagnostic | null>(null);
   const [reconnectingSince, setReconnectingSince] = useState<number | null>(null);
   const [liveUpdatesStale, setLiveUpdatesStale] = useState(false);
@@ -214,7 +213,6 @@ export function useAcpConnection(
     setServerReachability("unknown");
     setLastWebSocketOpenAt(null);
     setLastServerMessageAt(null);
-    setLastSuccessfulReplayAt(null);
     setLastTransportDiagnostic(null);
     setReconnectingSince(null);
     setLiveUpdatesStale(false);
@@ -273,7 +271,6 @@ export function useAcpConnection(
             dispatch,
             setHasMoreOlder,
             setServerReachability,
-            setLastSuccessfulReplayAt,
             setLastTransportDiagnostic,
           );
           return;
@@ -322,7 +319,6 @@ export function useAcpConnection(
           dispatch,
           setHasMoreOlder,
           setServerReachability,
-          setLastSuccessfulReplayAt,
           setLastTransportDiagnostic,
         );
         if (!isCurrentDial()) return;
@@ -413,7 +409,6 @@ export function useAcpConnection(
     serverReachability,
     lastWebSocketOpenAt,
     lastServerMessageAt,
-    lastSuccessfulReplayAt,
     lastTransportDiagnostic,
     reconnectingSince,
     liveUpdatesStale,
