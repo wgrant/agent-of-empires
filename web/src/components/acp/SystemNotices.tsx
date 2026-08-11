@@ -129,7 +129,6 @@ export function SystemNotices({
   rateLimitResumeState?: RespawnState;
   rateLimitResumeError?: string | null;
 }) {
-  const { publish, clear } = useConnectionDiagnosticsPublisher();
   const diagnostics =
     suppliedDiagnostics ??
     deriveStructuredConnectionDiagnostics({
@@ -155,16 +154,7 @@ export function SystemNotices({
       liveUpdatesStale,
     });
   const initialSessionLoad = conversationSync === "initial";
-  useEffect(() => {
-    if (initialSessionLoad) {
-      clear(sessionId);
-      return;
-    }
-    publish({ sessionId, kind: "structured", diagnostics, onReconnect: manualReconnect });
-  }, [clear, diagnostics, initialSessionLoad, manualReconnect, publish, sessionId]);
-  useEffect(() => () => clear(sessionId), [clear, sessionId]);
-  if (initialSessionLoad) return <ConversationLoadingBubble />;
-  if (!diagnostics.hasIncident) return null;
+  if (initialSessionLoad) return <InitialConversationLoadNotice sessionId={sessionId} />;
   const rateLimitIncident =
     conversationStatus?.kind === "blocked" && conversationStatus.cause === "rate_limited"
       ? true
@@ -221,7 +211,39 @@ export function SystemNotices({
         )}
       </>
     ) : undefined;
-  return <ConnectionIncidentBubble diagnostics={diagnostics} onReconnect={manualReconnect} actions={actions} />;
+  return (
+    <>
+      <PublishedConnectionDiagnostics sessionId={sessionId} diagnostics={diagnostics} onReconnect={manualReconnect} />
+      {diagnostics.hasIncident && (
+        <ConnectionIncidentBubble diagnostics={diagnostics} onReconnect={manualReconnect} actions={actions} />
+      )}
+    </>
+  );
+}
+
+function PublishedConnectionDiagnostics({
+  sessionId,
+  diagnostics,
+  onReconnect,
+}: {
+  sessionId: string;
+  diagnostics: ConnectionDiagnostics;
+  onReconnect: () => void;
+}) {
+  const { publish, clear } = useConnectionDiagnosticsPublisher();
+  useEffect(() => {
+    publish({ sessionId, kind: "structured", diagnostics, onReconnect });
+    return () => clear(sessionId);
+  }, [clear, diagnostics, onReconnect, publish, sessionId]);
+  return null;
+}
+
+function InitialConversationLoadNotice({ sessionId }: { sessionId: string }) {
+  const { clear } = useConnectionDiagnosticsPublisher();
+  useEffect(() => {
+    clear(sessionId);
+  }, [clear, sessionId]);
+  return <ConversationLoadingBubble />;
 }
 
 function ConversationLoadingBubble() {
