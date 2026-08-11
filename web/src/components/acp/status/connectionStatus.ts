@@ -1,5 +1,5 @@
 import type { AcpState } from "../../../lib/acpTypes";
-import type { ConnectionStatus } from "../../../hooks/useAcpSession";
+import type { ConnectionStatus, TransportDiagnostic } from "../../../hooks/useAcpSession";
 
 /** State of one user-visible connection hop. The first migration retains the
  * existing notices; later presentation work renders these as the compact
@@ -63,6 +63,14 @@ export interface ConnectionStatusInput {
   workerRestarting: boolean;
   agentUnresponsive: boolean;
   agentOrphaned: boolean;
+  lastWebSocketOpenAt: number | null;
+  lastServerMessageAt: number | null;
+  lastSuccessfulReplayAt: number | null;
+  lastTransportDiagnostic: TransportDiagnostic | null;
+}
+
+function displayTime(timestamp: number | null): string | null {
+  return timestamp === null ? null : new Date(timestamp).toLocaleTimeString();
 }
 
 /**
@@ -201,6 +209,19 @@ export function deriveConnectionDiagnostics(input: ConnectionStatusInput): Conne
                       ? "Connection error"
                       : "Disconnected",
           },
+          ...(displayTime(input.lastWebSocketOpenAt)
+            ? [{ label: "Last connected", state: "ready" as const, value: displayTime(input.lastWebSocketOpenAt)! }]
+            : []),
+          ...(input.lastTransportDiagnostic
+            ? [
+                {
+                  label: "Last transport result",
+                  state:
+                    input.lastTransportDiagnostic.kind === "replay_http" ? ("failed" as const) : ("working" as const),
+                  value: input.lastTransportDiagnostic.text,
+                },
+              ]
+            : []),
         ],
       },
       {
@@ -221,6 +242,24 @@ export function deriveConnectionDiagnostics(input: ConnectionStatusInput): Conne
           },
           ...(input.lagged
             ? [{ label: "Replay", state: "blocked" as const, value: "Some events were missed during reconnect." }]
+            : []),
+          ...(displayTime(input.lastSuccessfulReplayAt)
+            ? [
+                {
+                  label: "Last successful replay",
+                  state: "ready" as const,
+                  value: displayTime(input.lastSuccessfulReplayAt)!,
+                },
+              ]
+            : []),
+          ...(displayTime(input.lastServerMessageAt)
+            ? [
+                {
+                  label: "Last server message",
+                  state: "ready" as const,
+                  value: displayTime(input.lastServerMessageAt)!,
+                },
+              ]
             : []),
         ],
       },

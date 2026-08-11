@@ -14,10 +14,11 @@ import { getToken } from "../../lib/token";
 import { listen } from "../domEvents";
 import { useLatestRef } from "../useLatestRef";
 import { toActivityRows, transcriptDeltaAction, type Action } from "./reducer";
-import { fetchOlderPage, fetchReplay } from "./replay";
+import { fetchOlderPage, fetchReplay, type TransportDiagnostic } from "./replay";
 import { cacheGet } from "./stateCache";
 
 export type ConnectionStatus = "connecting" | "open" | "closed" | "error";
+export type { TransportDiagnostic } from "./replay";
 
 export const ACP_MAX_RETRIES = 7;
 const ACP_RETRY_BASE_MS = 1000;
@@ -83,6 +84,10 @@ export function useAcpConnection(
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [hasEverOpened, setHasEverOpened] = useState(false);
   const [serverReachability, setServerReachability] = useState<"reachable" | "unreachable" | "unknown">("unknown");
+  const [lastWebSocketOpenAt, setLastWebSocketOpenAt] = useState<number | null>(null);
+  const [lastServerMessageAt, setLastServerMessageAt] = useState<number | null>(null);
+  const [lastSuccessfulReplayAt, setLastSuccessfulReplayAt] = useState<number | null>(null);
+  const [lastTransportDiagnostic, setLastTransportDiagnostic] = useState<TransportDiagnostic | null>(null);
 
   const lastSeqRef = useLatestRef(state.lastSeq);
   const oldestSeqRef = useLatestRef(state.oldestSeq);
@@ -98,6 +103,7 @@ export function useAcpConnection(
   // Aborted when a newer replay, a dial timeout or teardown supersedes the in-flight one.
   const replayAbortRef = useRef<AbortController | null>(null);
   const lastServerMsgRef = useRef(0);
+  const lastPublishedServerMsgRef = useRef(0);
   // Last applied frame or submit, polled by the force-end-turn affordance without re-rendering.
   const lastActivityRef = useRef(0);
   // Setters behind a ref: the socket handlers below are not an external-store subscription.
@@ -128,6 +134,13 @@ export function useAcpConnection(
     if (ready === WebSocket.CONNECTING) return;
     // An OPEN socket only counts as alive while it keeps hearing from the server.
     if (ready === WebSocket.OPEN && Date.now() - lastServerMsgRef.current < ACP_WS_STALE_MS) return;
+    if (ready === WebSocket.OPEN) {
+      setLastTransportDiagnostic({
+        kind: "stale_heartbeat",
+        text: `No server message for ${Math.round(ACP_WS_STALE_MS / 1000)} seconds; reconnecting.`,
+        at: Date.now(),
+      });
+    }
     redial();
   }, [redial]);
 
@@ -201,6 +214,10 @@ export function useAcpConnection(
     setLoadingOlder(false);
     setHasEverOpened(false);
     setServerReachability("unknown");
+    setLastWebSocketOpenAt(null);
+    setLastServerMessageAt(null);
+    setLastSuccessfulReplayAt(null);
+    setLastTransportDiagnostic(null);
   }
 
   useEffect(() => {
@@ -247,7 +264,7 @@ export function useAcpConnection(
       const controller = new AbortController();
       replayAbortRef.current = controller;
       return {
-        done: fetchReplay(sessionId, lastSeqRef, dispatch, setHasMoreOlder, controller.signal, setServerReachability),
+        done: fetchReplay(sessionId, lastSeqRef, dispatch, setHasMoreOlder, controller.signal, setServerReachability, setLastSuccessfulReplayAt, setLastTransportDiagnostic),
         abort: () => controller.abort(),
       };
     };
@@ -336,25 +353,49 @@ export function useAcpConnection(
           }
           setStatus("open");
           setHasEverOpened(true);
-          lastServerMsgRef.current = Date.now();
+          const openedAt = Date.now();
+          lastServerMsgRef.current = openedAt;
+          lastPublishedServerMsgRef.current = openedAt;
+          setLastWebSocketOpenAt(openedAt);
+          setLastServerMessageAt(openedAt);
+          setLastTransportDiagnostic(null);
           retryCountRef.current = 0;
           setReconnecting(false);
           setRetryCount(0);
           setRetryCountdown(0);
         };
         ws.onerror = () => {
-          if (isCurrentDial()) setStatus("error");
+          if (!isCurrentDial()) return;
+          setStatus("error");
+          setLastTransportDiagnostic({
+            kind: "websocket_opaque",
+            text: "WebSocket handshake failed; browser did not expose a status.",
+            at: Date.now(),
+          });
         };
-        ws.onclose = () => {
+        ws.onclose = (event) => {
           clearTimeout(handshakeTimer);
           if (!isCurrentDial()) return;
           setStatus("closed");
+          setLastTransportDiagnostic({
+            kind: event.code === 1006 && !event.reason ? "websocket_opaque" : "websocket_close",
+            text:
+              event.code === 1006 && !event.reason
+                ? "WebSocket closed unexpectedly; browser did not expose a reason."
+                : `WebSocket closed: ${event.code}${event.reason ? `, ${event.reason}` : ""}.`,
+            at: Date.now(),
+          });
           wsRef.current = null;
           scheduleReconnect();
         };
         ws.onmessage = (ev) => {
           if (!isCurrentDial()) return;
-          lastServerMsgRef.current = Date.now();
+          const receivedAt = Date.now();
+          lastServerMsgRef.current = receivedAt;
+          if (receivedAt - lastPublishedServerMsgRef.current >= 1000) {
+            lastPublishedServerMsgRef.current = receivedAt;
+            setLastServerMessageAt(receivedAt);
+          }
           try {
             handleMessage(JSON.parse(ev.data) as ServerMessage);
           } catch {
@@ -386,6 +427,10 @@ export function useAcpConnection(
   return {
     status,
     serverReachability,
+    lastWebSocketOpenAt,
+    lastServerMessageAt,
+    lastSuccessfulReplayAt,
+    lastTransportDiagnostic,
     reconnecting,
     retryCount,
     retryCountdown,
