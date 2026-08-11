@@ -5,11 +5,15 @@ import { renderHook } from "@testing-library/react";
 import { useRef } from "react";
 
 import { useFocusTerminalTarget } from "../useFocusTerminalTarget";
-import { consumePendingTerminalFocus, dispatchFocusTerminal, setPendingTerminalFocus } from "../../lib/terminalFocus";
+import {
+  clearPendingTerminalFocus,
+  consumePendingTerminalFocus,
+  dispatchFocusTerminal,
+  setPendingTerminalFocus,
+} from "../../lib/terminalFocus";
 
 afterEach(() => {
-  consumePendingTerminalFocus("composer");
-  consumePendingTerminalFocus("agent");
+  clearPendingTerminalFocus();
   document.body.replaceChildren();
 });
 
@@ -61,6 +65,11 @@ describe("useFocusTerminalTarget", () => {
     expect(consumePendingTerminalFocus("composer")).toBe(false);
   });
 
+  it("clears a stale pending focus request", () => {
+    setPendingTerminalFocus("composer");
+    clearPendingTerminalFocus();
+    expect(consumePendingTerminalFocus("composer")).toBe(false);
+  });
   it("removes its listener on unmount", () => {
     const el = mountTextarea();
     const { unmount } = renderWithElement("composer", el);

@@ -21,6 +21,12 @@ export function setPendingTerminalFocus(target: TerminalFocusTarget) {
   pendingFocus = target;
 }
 
+/** Drop a deferred focus request when navigation deliberately opens a view
+ * without an input target, such as the collapsed structured composer. */
+export function clearPendingTerminalFocus() {
+  pendingFocus = null;
+}
+
 export function consumePendingTerminalFocus(target: TerminalFocusTarget): boolean {
   if (pendingFocus === target) {
     pendingFocus = null;
