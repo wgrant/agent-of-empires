@@ -1,6 +1,8 @@
 import { useState, type ReactNode } from "react";
 import { ChevronDown, LoaderCircle, RotateCcw, X } from "lucide-react";
 
+import { connectionStatusCompactLabel, connectionStatusPresentation } from "../acp/status/connectionStatus";
+
 import type {
   ConnectionDiagnosticObservation,
   ConnectionDiagnostics,
@@ -150,7 +152,8 @@ export function ConnectionIncidentBubble({
   actions?: ReactNode;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const tone = diagnostics.severity === "failed" ? "text-status-error" : "text-status-warning";
+  const presentation = connectionStatusPresentation(diagnostics.primary);
+  const tone = presentation.tone === "error" ? "text-status-error" : "text-status-warning";
   return (
     <div className="pointer-events-none absolute inset-x-0 top-2 z-30 flex justify-center px-3" role="status">
       <div className="pointer-events-auto relative max-w-full">
@@ -159,15 +162,16 @@ export function ConnectionIncidentBubble({
           onClick={() => setExpanded((value) => !value)}
           aria-expanded={expanded}
           aria-label="Show connection details"
+          aria-description={presentation.description}
           className="flex max-w-full items-center gap-2 rounded-full border border-surface-700 bg-surface-850/95 px-3 py-1.5 shadow-lg backdrop-blur-sm hover:bg-surface-800"
         >
           <ConnectionRoute diagnostics={diagnostics} />
           <span
             className={`hidden max-w-40 truncate text-xs sm:inline ${tone}`}
             data-testid="connection-incident-summary"
-            title={diagnostics.summary}
+            title={presentation.description}
           >
-            {diagnostics.capsuleLabel}
+            {connectionStatusCompactLabel(diagnostics)}
           </span>
           <ChevronDown
             className={`size-3 shrink-0 text-text-muted transition-transform ${expanded ? "rotate-180" : ""}`}
@@ -196,10 +200,11 @@ export function GlobalConnectionStatusButton({
   onReconnect?: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const presentation = connectionStatusPresentation(diagnostics.primary);
   const tone =
-    diagnostics.severity === "failed"
+    presentation.tone === "error"
       ? "text-status-error"
-      : diagnostics.severity === "working" || diagnostics.severity === "warning"
+      : presentation.tone === "warning"
         ? "text-status-warning"
         : "text-text-muted";
   return (
@@ -209,23 +214,24 @@ export function GlobalConnectionStatusButton({
         onClick={() => setExpanded((value) => !value)}
         aria-expanded={expanded}
         aria-label="Show connection status"
-        title={diagnostics.summary}
+        aria-description={presentation.description}
+        title={presentation.description}
         className={`flex h-8 items-center gap-1.5 rounded-md px-2 text-[10px] font-mono uppercase tracking-wide transition-colors hover:bg-surface-700/60 ${tone}`}
       >
-        {diagnostics.severity === "working" ? (
+        {presentation.working ? (
           <LoaderCircle className="size-3 animate-spin" />
         ) : (
           <span
             className={`size-2 rounded-full ${
-              diagnostics.severity === "failed"
+              presentation.tone === "error"
                 ? "bg-status-error"
-                : diagnostics.severity === "warning"
+                : presentation.tone === "warning"
                   ? "bg-status-warning"
                   : "bg-text-muted"
             }`}
           />
         )}
-        <span className="hidden lg:inline">{diagnostics.headerLabel}</span>
+        <span className="hidden lg:inline">{connectionStatusCompactLabel(diagnostics)}</span>
       </button>
       {expanded && (
         <div className="fixed right-3 top-14 z-50 max-md:inset-x-3 max-md:top-auto max-md:bottom-3">

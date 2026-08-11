@@ -1,26 +1,50 @@
 import type { AcpState } from "../../../lib/acpTypes";
 import type { ConnectionStatus, TransportDiagnostic } from "../../../hooks/useAcpSession";
 
-/** State of one user-visible connection hop. The first migration retains the
- * existing notices; later presentation work renders these as the compact
- * This device → AoE → Agent route. */
 export type ConnectionHopState = "ready" | "working" | "blocked" | "failed" | "unknown";
 export type ConnectionEdgeState = "ready" | "working" | "blocked" | "failed" | "inactive";
-export type ConnectionSeverity = "healthy" | "working" | "warning" | "failed";
 
-export interface ConnectionNotice {
-  kind: "info" | "warn";
-  text: string;
-}
+/** What the browser can currently establish about its route to AoE. */
+export type ConnectionRouteStatus = "connected" | "connecting" | "reconnecting" | "disconnected";
 
-export interface ConnectionIncident {
-  device: ConnectionHopState;
-  deviceToServer: ConnectionEdgeState;
-  server: ConnectionHopState;
-  serverToAgent: ConnectionEdgeState;
-  agent: ConnectionHopState;
-  notices: ConnectionNotice[];
-  retriesExhausted: boolean;
+/** The last observed ACP-session availability. This is gated by route status
+ * before it is presented as current state. */
+export type AgentSessionStatus =
+  | "ready"
+  | "starting"
+  | "restarting"
+  | "stopped"
+  | "failed"
+  | "unresponsive"
+  | "rate_limited"
+  | "unknown";
+
+/** Whether transcript updates can be treated as current. */
+export type ConversationContinuity = "current" | "delayed" | "missed" | "unavailable";
+
+/** The sole status used by compact and expanded status entry points. */
+export type PrimaryConnectionStatus =
+  | "connected"
+  | "connecting"
+  | "reconnecting"
+  | "disconnected"
+  | "agent_starting"
+  | "agent_restarting"
+  | "agent_stopped"
+  | "agent_failed"
+  | "agent_unresponsive"
+  | "rate_limited"
+  | "updates_delayed"
+  | "updates_missed"
+  | "updates_unavailable";
+
+export type ConnectionStatusTone = "neutral" | "warning" | "error";
+
+export interface ConnectionStatusPresentation {
+  headline: string;
+  description: string;
+  tone: ConnectionStatusTone;
+  working: boolean;
 }
 
 export interface ConnectionDiagnosticObservation {
@@ -35,15 +59,20 @@ export interface ConnectionDiagnosticSection {
   observations: ConnectionDiagnosticObservation[];
 }
 
-/** The complete, always-available presentation model for a structured
- * connection. The compact incident capsule and the expanded diagnostics view
- * deliberately consume the same snapshot. */
-export interface ConnectionDiagnostics extends ConnectionIncident {
+export interface ConnectionDiagnostics {
+  device: ConnectionHopState;
+  deviceToServer: ConnectionEdgeState;
+  server: ConnectionHopState;
+  serverToAgent: ConnectionEdgeState;
+  agent: ConnectionHopState;
   targetLabel: "Agent" | "Terminal" | null;
-  severity: ConnectionSeverity;
-  headerLabel: string;
-  capsuleLabel: string;
-  summary: string;
+  route: ConnectionRouteStatus;
+  session: AgentSessionStatus;
+  continuity: ConversationContinuity;
+  primary: PrimaryConnectionStatus;
+  retriesExhausted: boolean;
+  retryCount: number | null;
+  maxRetries: number | null;
   hasIncident: boolean;
   sections: ConnectionDiagnosticSection[];
 }
@@ -76,78 +105,178 @@ function displayTime(timestamp: number | null): string | null {
   return timestamp === null ? null : new Date(timestamp).toLocaleTimeString();
 }
 
+export function connectionStatusPresentation(primary: PrimaryConnectionStatus): ConnectionStatusPresentation {
+  switch (primary) {
+    case "connected":
+      return { headline: "Connected", description: "Connection healthy.", tone: "neutral", working: false };
+    case "connecting":
+      return { headline: "Connecting", description: "Connecting to AoE.", tone: "warning", working: true };
+    case "reconnecting":
+      return { headline: "Reconnecting", description: "Reconnecting to AoE.", tone: "warning", working: true };
+    case "disconnected":
+      return {
+        headline: "Disconnected",
+        description: "Connection to AoE is unavailable.",
+        tone: "error",
+        working: false,
+      };
+    case "agent_starting":
+      return { headline: "Starting agent", description: "Agent session is starting.", tone: "warning", working: true };
+    case "agent_restarting":
+      return {
+        headline: "Restarting agent",
+        description: "Agent session is restarting.",
+        tone: "warning",
+        working: true,
+      };
+    case "agent_stopped":
+      return { headline: "Agent stopped", description: "Agent worker stopped.", tone: "error", working: false };
+    case "agent_failed":
+      return { headline: "Agent failed", description: "Agent session could not start.", tone: "error", working: false };
+    case "agent_unresponsive":
+      return {
+        headline: "Agent unresponsive",
+        description: "Agent session has not responded.",
+        tone: "warning",
+        working: false,
+      };
+    case "rate_limited":
+      return {
+        headline: "Rate limited",
+        description: "The agent provider is rate limiting requests.",
+        tone: "warning",
+        working: false,
+      };
+    case "updates_delayed":
+      return {
+        headline: "Updates delayed",
+        description: "Live transcript updates are behind.",
+        tone: "warning",
+        working: false,
+      };
+    case "updates_missed":
+      return {
+        headline: "Updates missed",
+        description: "Some transcript updates were missed while reconnecting.",
+        tone: "warning",
+        working: false,
+      };
+    case "updates_unavailable":
+      return {
+        headline: "Updates unavailable",
+        description: "Transcript updates are currently unavailable.",
+        tone: "error",
+        working: false,
+      };
+  }
+}
+
+export function connectionStatusCompactLabel(diagnostics: ConnectionDiagnostics): string {
+  const presentation = connectionStatusPresentation(diagnostics.primary);
+  return diagnostics.primary === "reconnecting"
+    ? `${presentation.headline} · ${diagnostics.retryCount ?? 0}/${diagnostics.maxRetries ?? 0}`
+    : presentation.headline;
+}
+
+function primaryStatus({
+  route,
+  session,
+  continuity,
+}: Pick<ConnectionDiagnostics, "route" | "session" | "continuity">): PrimaryConnectionStatus {
+  if (route === "disconnected") return "disconnected";
+  if (route === "reconnecting") return "reconnecting";
+  if (route === "connecting") return "connecting";
+  if (session === "failed") return "agent_failed";
+  if (session === "stopped") return "agent_stopped";
+  if (session === "unresponsive") return "agent_unresponsive";
+  if (session === "rate_limited") return "rate_limited";
+  if (session === "starting") return "agent_starting";
+  if (session === "restarting") return "agent_restarting";
+  if (continuity === "unavailable") return "updates_unavailable";
+  if (continuity === "missed") return "updates_missed";
+  if (continuity === "delayed") return "updates_delayed";
+  return "connected";
+}
+
+function sessionDescription(session: AgentSessionStatus): string {
+  switch (session) {
+    case "failed":
+      return "Could not start";
+    case "stopped":
+      return "Worker stopped";
+    case "unresponsive":
+      return "Not responding";
+    case "rate_limited":
+      return "Provider is rate limiting requests";
+    case "starting":
+      return "Starting";
+    case "restarting":
+      return "Restarting";
+    case "ready":
+      return "No issue reported";
+    case "unknown":
+      return "Not observed";
+  }
+}
+
 /**
- * Turn raw socket/reducer flags into the single connection-status model.
- *
- * A closed browser WebSocket alone does not prove that the server is down,
- * so the server hop deliberately remains unknown until the reachability
- * observation lands. Keeping that uncertainty in the contract prevents the
- * renderer from inventing an Internet/VPN diagnosis.
+ * Turn raw socket and lifecycle observations into one status model. Route is
+ * evaluated first: while the browser cannot reach AoE, every downstream ACP
+ * observation is historical rather than a current diagnosis.
  */
 export function deriveConnectionDiagnostics(input: ConnectionStatusInput): ConnectionDiagnostics {
   const retriesExhausted =
     input.status !== "open" && input.hasEverOpened && !input.reconnecting && input.retryCount >= input.maxRetries;
-  const notices: ConnectionNotice[] = [];
-  if (input.reconnecting && input.status !== "open") {
-    const countdownPart = input.retryCountdown > 0 ? ` in ${input.retryCountdown}s` : "";
-    notices.push({
-      kind: "warn",
-      text: `Reconnecting, attempt ${input.retryCount} of ${input.maxRetries}${countdownPart}.`,
-    });
-  } else if (input.status === "connecting") {
-    notices.push({
-      kind: "info",
-      text: input.hasEverOpened ? "Reconnecting…" : "Starting structured view…",
-    });
-  } else if (input.status === "error") {
-    notices.push({
-      kind: "warn",
-      text: input.hasEverOpened ? "Reconnecting… transcript remains available." : "Starting structured view…",
-    });
-  } else if (input.status === "closed" && !retriesExhausted) {
-    notices.push({
-      kind: "warn",
-      text: input.hasEverOpened ? "Disconnected. Transcript remains available." : "Waiting for structured view…",
-    });
-  }
-  if (input.lagged) notices.push({ kind: "warn", text: "Some updates were missed while reconnecting." });
-  if (input.rateLimit) notices.push({ kind: "warn", text: input.rateLimitText(input.rateLimit) });
-  if (input.startupError) notices.push({ kind: "warn", text: "Couldn't start agent." });
-  else if (input.workerRestarting || input.agentUnresponsive || input.agentOrphaned) {
-    notices.push({ kind: "info", text: "Restarting agent. Transcript remains available." });
-  }
-  const observedAgent =
-    input.startupError || input.workerStopped
-      ? "failed"
-      : input.rateLimit
-        ? "blocked"
-        : input.workerRestarting || input.agentUnresponsive || input.agentOrphaned
-          ? "working"
-          : "unknown";
-  const deviceToServer: ConnectionEdgeState =
+  const route: ConnectionRouteStatus =
     input.status === "open"
-      ? "ready"
-      : input.reconnecting || input.status === "connecting" || input.status === "error"
-        ? "working"
-        : "failed";
+      ? "connected"
+      : input.reconnecting
+        ? "reconnecting"
+        : input.status === "connecting" || input.status === "error"
+          ? "connecting"
+          : "disconnected";
+  const session: AgentSessionStatus = input.startupError
+    ? "failed"
+    : input.workerStopped
+      ? "stopped"
+      : input.rateLimit || input.rateLimitRetriesExhausted
+        ? "rate_limited"
+        : input.agentUnresponsive
+          ? "unresponsive"
+          : input.workerRestarting || input.agentOrphaned
+            ? "restarting"
+            : input.status === "connecting" && !input.hasEverOpened
+              ? "starting"
+              : "ready";
+  const continuity: ConversationContinuity =
+    route !== "connected" || input.serverReachability === "unreachable"
+      ? "unavailable"
+      : input.lagged
+        ? "missed"
+        : input.liveUpdatesStale
+          ? "delayed"
+          : "current";
+  const primary = primaryStatus({ route, session, continuity });
+  const deviceToServer: ConnectionEdgeState =
+    route === "connected" ? "ready" : route === "disconnected" ? "failed" : "working";
+  const observedAgent: ConnectionHopState =
+    session === "failed" || session === "stopped"
+      ? "failed"
+      : session === "rate_limited"
+        ? "blocked"
+        : session === "starting" || session === "restarting" || session === "unresponsive"
+          ? "working"
+          : "ready";
   const serverToAgent: ConnectionEdgeState =
-    deviceToServer !== "ready"
-      ? "inactive"
-      : observedAgent === "working"
-        ? "working"
+    route === "connected"
+      ? observedAgent === "failed"
+        ? "failed"
         : observedAgent === "blocked"
           ? "blocked"
-          : observedAgent === "failed"
-            ? "failed"
-            : "ready";
-  // An agent without a reported lifecycle problem is the healthy default.
-  // The adapter does not provide a separate affirmative heartbeat, but a
-  // hollow endpoint reads as disconnected despite a ready AoE-to-agent path.
-  // Explicit stopped, restart, rate-limit, orphaned, and unresponsive states
-  // above continue to override this optimistic presentation.
-  const displayedAgent: ConnectionHopState =
-    serverToAgent === "inactive" ? "unknown" : observedAgent === "unknown" ? "ready" : observedAgent;
-
+          : observedAgent === "working"
+            ? "working"
+            : "ready"
+      : "inactive";
   const observedServer: ConnectionHopState =
     input.serverReachability === "reachable"
       ? "ready"
@@ -158,87 +287,47 @@ export function deriveConnectionDiagnostics(input: ConnectionStatusInput): Conne
   const lastReceivedAt = displayTime(input.lastServerMessageAt);
   const transportAt = displayTime(input.lastTransportDiagnostic?.at ?? null);
   const socketDescription =
-    input.status === "open"
+    route === "connected"
       ? `Connected${displayTime(input.lastWebSocketOpenAt) ? ` since ${displayTime(input.lastWebSocketOpenAt)}` : ""}`
-      : input.reconnecting
+      : route === "reconnecting"
         ? `Reconnecting${reconnectingAt ? ` since ${reconnectingAt}` : ""} · attempt ${input.retryCount} of ${input.maxRetries}`
-        : input.status === "connecting"
+        : route === "connecting"
           ? "Connecting"
           : "Disconnected";
   const liveUpdatesDescription =
-    input.status !== "open"
-      ? input.reconnecting
-        ? "Unavailable while reconnecting"
-        : "Unavailable while disconnected"
-      : input.liveUpdatesStale
+    continuity === "current"
+      ? "Current"
+      : continuity === "delayed"
         ? `Behind${lastReceivedAt ? `, last update ${lastReceivedAt}` : ""}`
-        : "Current";
+        : continuity === "missed"
+          ? "Some updates were missed while reconnecting"
+          : route === "reconnecting"
+            ? "Unavailable while reconnecting"
+            : "Unavailable while disconnected";
+  const routeIsCurrent = route === "connected";
 
-  const hasIncident =
-    notices.length > 0 || retriesExhausted || input.rateLimitRetriesExhausted || observedAgent !== "unknown";
-  const severity: ConnectionSeverity =
-    retriesExhausted || deviceToServer === "failed" || observedAgent === "failed"
-      ? "failed"
-      : deviceToServer === "working" || observedAgent === "working"
-        ? "working"
-        : input.rateLimit || input.lagged || notices.some((notice) => notice.kind === "warn")
-          ? "warning"
-          : "healthy";
-  const summary =
-    notices.map((notice) => notice.text).join(" · ") ||
-    (retriesExhausted
-      ? "Disconnected. Auto-retry stopped."
-      : input.rateLimitRetriesExhausted
-        ? "Provider auto-resume stopped."
-        : "Connected.");
-  const headerLabel =
-    severity === "healthy"
-      ? "Connected"
-      : severity === "working"
-        ? "Reconnecting"
-        : severity === "warning"
-          ? "Attention"
-          : "Disconnected";
-  const capsuleLabel =
-    severity === "working" && input.reconnecting
-      ? `Reconnecting · ${input.retryCount}/${input.maxRetries}`
-      : headerLabel;
-  const incident: ConnectionIncident = {
-    // The browser rendering this header is necessarily alive. Connection
-    // progress belongs on the route edge, not on the device itself.
+  return {
     device: "ready",
     deviceToServer,
-    // Do not present a stale successful replay as current reachability while
-    // the transport is down. Downstream state resumes once this edge is live.
-    server: deviceToServer === "ready" ? observedServer : "unknown",
+    server: routeIsCurrent ? observedServer : "unknown",
     serverToAgent,
-    agent: displayedAgent,
-    notices,
-    retriesExhausted,
-  };
-  return {
-    ...incident,
+    agent: routeIsCurrent ? observedAgent : "unknown",
     targetLabel: "Agent",
-    severity,
-    headerLabel,
-    capsuleLabel,
-    summary,
-    hasIncident,
+    route,
+    session,
+    continuity,
+    primary,
+    retriesExhausted,
+    retryCount: input.retryCount,
+    maxRetries: input.maxRetries,
+    hasIncident: primary !== "connected",
     sections: [
-      {
-        id: "device",
-        label: "Device",
-        observations: [{ label: "Dashboard", state: "ready", value: "Active" }],
-      },
+      { id: "device", label: "Device", observations: [{ label: "Dashboard", state: "ready", value: "Active" }] },
       {
         id: "transport",
         label: "Device to AoE",
         observations: [
-          {
-            label: "Structured view",
-            state: deviceToServer,
-            value: socketDescription,
-          },
+          { label: "Structured view", state: deviceToServer, value: socketDescription },
           ...(input.lastTransportDiagnostic
             ? [
                 {
@@ -266,7 +355,14 @@ export function deriveConnectionDiagnostics(input: ConnectionStatusInput): Conne
             : []),
           {
             label: "Live updates",
-            state: input.status === "open" ? (input.liveUpdatesStale ? "working" : "ready") : "unknown",
+            state:
+              continuity === "current"
+                ? "ready"
+                : continuity === "delayed"
+                  ? "working"
+                  : continuity === "unavailable"
+                    ? "unknown"
+                    : "blocked",
             value: liveUpdatesDescription,
           },
         ],
@@ -277,17 +373,8 @@ export function deriveConnectionDiagnostics(input: ConnectionStatusInput): Conne
         observations: [
           {
             label: "Agent session",
-            state: serverToAgent === "inactive" ? "inactive" : displayedAgent,
-            value:
-              serverToAgent === "inactive"
-                ? "Waiting for the AoE connection"
-                : input.startupError
-                  ? "Could not start"
-                  : input.workerStopped
-                    ? "Worker stopped"
-                    : input.workerRestarting || input.agentUnresponsive || input.agentOrphaned
-                      ? "Restarting"
-                      : "No issue reported",
+            state: routeIsCurrent ? observedAgent : "inactive",
+            value: routeIsCurrent ? sessionDescription(session) : `Last known: ${sessionDescription(session)}`,
           },
         ],
       },
@@ -306,30 +393,25 @@ export function deriveConnectionDiagnostics(input: ConnectionStatusInput): Conne
   };
 }
 
-/** Dashboard health comes from the existing session-polling signal. It has no
- * active agent observation, so the route intentionally stops at AoE. */
 export function deriveDashboardConnectionDiagnostics(serverDown: boolean): ConnectionDiagnostics {
-  const deviceToServer: ConnectionEdgeState = serverDown ? "failed" : "ready";
+  const route: ConnectionRouteStatus = serverDown ? "disconnected" : "connected";
   return {
     device: "ready",
-    deviceToServer,
+    deviceToServer: serverDown ? "failed" : "ready",
     server: serverDown ? "failed" : "ready",
     serverToAgent: "inactive",
     agent: "unknown",
     targetLabel: null,
-    notices: serverDown ? [{ kind: "warn", text: "Dashboard server unreachable." }] : [],
+    route,
+    session: "unknown",
+    continuity: serverDown ? "unavailable" : "current",
+    primary: serverDown ? "disconnected" : "connected",
     retriesExhausted: false,
-    severity: serverDown ? "failed" : "healthy",
-    headerLabel: serverDown ? "Disconnected" : "Connected",
-    capsuleLabel: serverDown ? "Disconnected" : "Connected",
-    summary: serverDown ? "Dashboard unavailable." : "Connected.",
+    retryCount: null,
+    maxRetries: null,
     hasIncident: serverDown,
     sections: [
-      {
-        id: "device",
-        label: "Device",
-        observations: [{ label: "Dashboard", state: "ready", value: "Active" }],
-      },
+      { id: "device", label: "Device", observations: [{ label: "Dashboard", state: "ready", value: "Active" }] },
       {
         id: "server",
         label: "AoE",
@@ -353,14 +435,13 @@ export function deriveTerminalConnectionDiagnostics(input: {
   maxRetries: number;
 }): ConnectionDiagnostics {
   const retriesExhausted = !input.connected && !input.reconnecting && input.retryCount >= input.maxRetries;
-  const deviceToServer: ConnectionEdgeState = input.connected ? "ready" : input.reconnecting ? "working" : "failed";
-  const summary = input.connected
-    ? "Connected."
+  const route: ConnectionRouteStatus = input.connected
+    ? "connected"
     : input.reconnecting
-      ? `Reconnecting, attempt ${input.retryCount} of ${input.maxRetries}${input.retryCountdown > 0 ? ` in ${input.retryCountdown}s` : ""}.`
-      : retriesExhausted
-        ? "Disconnected. Auto-retry stopped."
-        : "Disconnected.";
+      ? "reconnecting"
+      : "disconnected";
+  const deviceToServer: ConnectionEdgeState =
+    route === "connected" ? "ready" : route === "reconnecting" ? "working" : "failed";
   return {
     device: "ready",
     deviceToServer,
@@ -368,19 +449,16 @@ export function deriveTerminalConnectionDiagnostics(input: {
     serverToAgent: input.connected ? "ready" : "inactive",
     agent: input.connected ? "ready" : "unknown",
     targetLabel: "Terminal",
-    notices: input.connected ? [] : [{ kind: retriesExhausted ? "warn" : "info", text: summary }],
+    route,
+    session: input.connected ? "ready" : "unknown",
+    continuity: input.connected ? "current" : "unavailable",
+    primary: route,
     retriesExhausted,
-    severity: input.connected ? "healthy" : retriesExhausted ? "failed" : "working",
-    headerLabel: input.connected ? "Connected" : retriesExhausted ? "Disconnected" : "Reconnecting",
-    capsuleLabel: input.connected ? "Connected" : retriesExhausted ? "Disconnected" : "Reconnecting",
-    summary,
+    retryCount: input.retryCount,
+    maxRetries: input.maxRetries,
     hasIncident: !input.connected,
     sections: [
-      {
-        id: "device",
-        label: "Device",
-        observations: [{ label: "Dashboard", state: "ready", value: "Active" }],
-      },
+      { id: "device", label: "Device", observations: [{ label: "Dashboard", state: "ready", value: "Active" }] },
       {
         id: "transport",
         label: "Device to AoE",
@@ -422,7 +500,7 @@ export function deriveTerminalConnectionDiagnostics(input: {
   };
 }
 
-/** Compatibility selector for the incident-only placements. */
+/** Compatibility selector for incident-only placements. */
 export function deriveConnectionIncident(input: ConnectionStatusInput): ConnectionDiagnostics | null {
   const diagnostics = deriveConnectionDiagnostics(input);
   return diagnostics.hasIncident ? diagnostics : null;
