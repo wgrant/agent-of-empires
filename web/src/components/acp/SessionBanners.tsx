@@ -32,8 +32,6 @@ export function SessionBanners({
     snoozedUntil,
     workerStopping: acpWorkerState === "stopping",
   });
-  const healthy = !state.startupError && !state.workerStopped && !state.workerRestarting;
-  const idle = healthy && !state.turnActive;
   return (
     <>
       {variant === "trashed" && <TrashedWorkerStoppedBanner sessionId={sessionId} onRestore={onRestore} />}
@@ -43,16 +41,16 @@ export function SessionBanners({
       )}
       {variant === "generic" && <WorkerStoppedBanner sessionId={sessionId} />}
       {showWorkerStoppingBanner({ acpWorkerState, startupError: state.startupError }) && <WorkerStoppingBanner />}
-      {state.nextWakeupAt && idle && (
-        <ScheduledWakeupBanner wakeAt={state.nextWakeupAt} reason={state.nextWakeupReason} />
-      )}
-      {state.monitorArmed && !state.nextWakeupAt && idle && (
-        <ChipBanner tone="violet" icon="👁" detail={state.monitorDescription}>
-          Monitoring a background job
-        </ChipBanner>
-      )}
       {state.lastError && <InteractionErrorBanner message={state.lastError} onDismiss={dismissError} />}
     </>
+  );
+}
+
+export function MonitoringBanner({ description }: { description: string | null }) {
+  return (
+    <ChipBanner tone="violet" icon="👁" detail={description}>
+      Monitoring a background job
+    </ChipBanner>
   );
 }
 

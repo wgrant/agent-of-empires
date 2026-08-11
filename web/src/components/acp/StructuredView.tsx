@@ -26,10 +26,11 @@ import { Composer } from "./Composer";
 import { ContextPrimerBanner } from "./ContextPrimerBanner";
 import { PlanStrip } from "./PlanStrip";
 import { ModeSwitchFailedNotice, QueuedPromptsStrip, RejectedPromptsStrip } from "./PromptStrips";
-import { SessionBanners } from "./SessionBanners";
+import { MonitoringBanner, ScheduledWakeupBanner, SessionBanners } from "./SessionBanners";
 import { ConfigOptionSwitchFailedNotice } from "./SessionConfigControls";
 import { StartupErrorScreen } from "./StartupErrorScreen";
 import { RateLimitRecoverySection, SystemNotices } from "./SystemNotices";
+import { deriveConversationNextStep } from "./status/conversationStatus";
 import { AssistantMessage, UserMessage } from "./ThreadMessages";
 import { ToolDensityToggle, ToolDisplayModeProvider, useToolDensityPref } from "./ToolDisplayMode";
 import { useTranscriptScroll } from "./useTranscriptScroll";
@@ -162,6 +163,12 @@ function AcpChrome({
     sessionId,
     state.rateLimit ? (state.rateLimit.resets_at ?? "unknown") : null,
   );
+  const conversationNextStep = deriveConversationNextStep({
+    initialCatchup: false,
+    turnActive: state.turnActive,
+    nextWakeupAt: state.nextWakeupAt,
+    monitorArmed: state.monitorArmed,
+  });
   // Phone-width only: fold the composer away for reading.
   const composerCollapsible = !useIsWideViewport();
   const [composerCollapsed, setComposerCollapsed] = useState(false);
@@ -310,6 +317,17 @@ function AcpChrome({
                   </div>
                 ) : null}
               </ThreadPrimitive.If>
+
+              {conversationNextStep?.kind === "scheduled_wakeup" && state.nextWakeupAt && (
+                <div className="mt-3">
+                  <ScheduledWakeupBanner wakeAt={state.nextWakeupAt} reason={state.nextWakeupReason} />
+                </div>
+              )}
+              {conversationNextStep?.kind === "monitoring" && (
+                <div className="mt-3">
+                  <MonitoringBanner description={state.monitorDescription} />
+                </div>
+              )}
 
               {state.pendingApprovals.map((approval) => (
                 <ApprovalCard
