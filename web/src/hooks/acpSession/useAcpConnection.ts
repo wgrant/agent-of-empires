@@ -89,6 +89,7 @@ export function useAcpConnection(
   const [lastTransportDiagnostic, setLastTransportDiagnostic] = useState<TransportDiagnostic | null>(null);
   const [reconnectingSince, setReconnectingSince] = useState<number | null>(null);
   const [liveUpdatesStale, setLiveUpdatesStale] = useState(false);
+  const [replaySyncing, setReplaySyncing] = useState(false);
 
   const lastSeqRef = useLatestRef(state.lastSeq);
   const oldestSeqRef = useLatestRef(state.oldestSeq);
@@ -105,6 +106,7 @@ export function useAcpConnection(
   const replayAbortRef = useRef<AbortController | null>(null);
   const lastServerMsgRef = useRef(0);
   const lastPublishedServerMsgRef = useRef(0);
+  const replaySyncCountRef = useRef(0);
   // Last applied frame or submit, polled by the force-end-turn affordance without re-rendering.
   const lastActivityRef = useRef(0);
   // Setters behind a ref: the socket handlers below are not an external-store subscription.
@@ -270,9 +272,27 @@ export function useAcpConnection(
       const controller = new AbortController();
       replayAbortRef.current = controller;
       return {
-        done: fetchReplay(sessionId, lastSeqRef, dispatch, setHasMoreOlder, controller.signal, setServerReachability, setLastTransportDiagnostic),
+        done: syncReplay(controller.signal),
         abort: () => controller.abort(),
       };
+    };
+    const syncReplay = async (signal: AbortSignal) => {
+      replaySyncCountRef.current += 1;
+      setReplaySyncing(true);
+      try {
+        await fetchReplay(
+          sessionId,
+          lastSeqRef,
+          dispatch,
+          setHasMoreOlder,
+          signal,
+          setServerReachability,
+          setLastTransportDiagnostic,
+        );
+      } finally {
+        replaySyncCountRef.current -= 1;
+        if (replaySyncCountRef.current === 0) setReplaySyncing(false);
+      }
     };
 
     const handleMessage = (data: ServerMessage) => {
@@ -441,6 +461,7 @@ export function useAcpConnection(
     lastTransportDiagnostic,
     reconnectingSince,
     liveUpdatesStale,
+    replaySyncing,
     reconnecting,
     retryCount,
     retryCountdown,
