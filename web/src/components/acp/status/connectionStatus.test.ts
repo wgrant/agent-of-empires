@@ -36,7 +36,7 @@ describe("deriveConnectionIncident", () => {
   it("only creates an incident for a current connection problem", () => {
     expect(deriveConnectionIncident(base)).toBeNull();
     expect(deriveConnectionIncident({ ...base, lagged: true })?.notices).toEqual([
-      { kind: "warn", text: "Some events were missed during reconnect." },
+      { kind: "warn", text: "Some updates were missed while reconnecting." },
     ]);
   });
 
@@ -55,7 +55,7 @@ describe("deriveConnectionIncident", () => {
       serverToAgent: "inactive",
       agent: "unknown",
       retriesExhausted: false,
-      notices: [{ kind: "warn", text: "Structured view disconnected. Reconnecting (3/7) in 4s…" }],
+      notices: [{ kind: "warn", text: "Reconnecting, attempt 3 of 7 in 4s." }],
     });
 
     const exhausted = deriveConnectionIncident({ ...base, status: "closed", retryCount: 7 });
@@ -149,12 +149,12 @@ describe("deriveConnectionIncident", () => {
     });
     const observations = diagnostics?.sections.flatMap((section) => section.observations) ?? [];
     expect(observations).toContainEqual({
-      label: "Last transport",
+      label: "Last connection event",
       state: "failed",
       value: expect.stringContaining("Replay request rejected: HTTP 403 Forbidden."),
     });
     expect(observations.map((observation) => observation.label)).toEqual(
-      expect.arrayContaining(["Structured-view WebSocket", "Event replay", "Live updates"]),
+      expect.arrayContaining(["Structured view", "Transcript sync", "Live updates"]),
     );
   });
 
@@ -168,8 +168,8 @@ describe("deriveConnectionIncident", () => {
     };
 
     const connected = observation({ ...base, lastWebSocketOpenAt: timestamp, lastServerMessageAt: timestamp });
-    expect(connected["Structured-view WebSocket"]).toMatch(/^Connected since /);
-    expect(connected["Live updates"]).toBe("Connected");
+    expect(connected["Structured view"]).toMatch(/^Connected since /);
+    expect(connected["Live updates"]).toBe("Current");
 
     const stale = observation({
       ...base,
@@ -177,7 +177,7 @@ describe("deriveConnectionIncident", () => {
       lastServerMessageAt: timestamp,
       liveUpdatesStale: true,
     });
-    expect(stale["Live updates"]).toMatch(/^Out of date, last received /);
+    expect(stale["Live updates"]).toMatch(/^Behind, last update /);
 
     const reconnecting = observation({
       ...base,
@@ -186,7 +186,7 @@ describe("deriveConnectionIncident", () => {
       retryCount: 2,
       reconnectingSince: timestamp,
     });
-    expect(reconnecting["Structured-view WebSocket"]).toMatch(/^Reconnecting since .*retry 2 of 7$/);
+    expect(reconnecting["Structured view"]).toMatch(/^Reconnecting since .*attempt 2 of 7$/);
     expect(reconnecting["Live updates"]).toBe("Unavailable while reconnecting");
   });
 });

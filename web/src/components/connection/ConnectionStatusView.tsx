@@ -167,7 +167,7 @@ export function ConnectionIncidentBubble({
             data-testid="connection-incident-summary"
             title={diagnostics.summary}
           >
-            {diagnostics.summary}
+            {diagnostics.capsuleLabel}
           </span>
           <ChevronDown
             className={`size-3 shrink-0 text-text-muted transition-transform ${expanded ? "rotate-180" : ""}`}
@@ -225,9 +225,7 @@ export function GlobalConnectionStatusButton({
             }`}
           />
         )}
-        <span className="hidden lg:inline">
-          {diagnostics.severity === "healthy" ? "connection" : diagnostics.summary}
-        </span>
+        <span className="hidden lg:inline">{diagnostics.headerLabel}</span>
       </button>
       {expanded && (
         <div className="fixed right-3 top-14 z-50 max-md:inset-x-3 max-md:top-auto max-md:bottom-3">
