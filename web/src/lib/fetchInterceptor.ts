@@ -112,7 +112,8 @@ export function installFetchErrorToasts(): void {
       if (err instanceof DOMException && (err.name === "AbortError" || err.name === "TimeoutError")) {
         throw err;
       }
-      // The DisconnectBanner covers a known-down server.
+      // When the server is known to be down, suppress per-request toasts.
+      // The global connection control is the persistent user-facing status.
       if (isApi && !isServerDown() && !isPageLifecycleNetworkGlitch()) {
         reportError(`Network error contacting ${path}. Check your connection.`);
       }

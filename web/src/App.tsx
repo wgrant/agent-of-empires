@@ -115,6 +115,7 @@ import {
   clearMobileKeyboardProxyInput,
   deliverMobileKeyboardProxyInput,
 } from "./lib/mobileKeyboardProxy";
+import { ConnectionDiagnosticsProvider } from "./lib/connectionDiagnosticsContext";
 import { hydrateWebUiStateFromServer, initWebUiSync } from "./lib/webUiSync";
 import { WorkspaceSidebar } from "./components/WorkspaceSidebar";
 import { SnoozeModal } from "./components/sidebar/SnoozeModal";
@@ -2338,7 +2339,8 @@ function AppContent({
 
   return (
     <AcpPrefsProvider value={acpPrefs}>
-      <div className="h-(--app-height) flex flex-col bg-surface-900 text-text-primary overflow-hidden safe-area-inset">
+      <ConnectionDiagnosticsProvider>
+        <div className="h-(--app-height) flex flex-col bg-surface-900 text-text-primary overflow-hidden safe-area-inset">
         {/* Wrapped unconditionally, not behind the `headerCollapsible`
             ternary: swapping the element type at this position would remount
             `TopBar` (and reset its overflow menu) every time the boundary
@@ -2601,7 +2603,8 @@ function AppContent({
           autoComplete="off"
           spellCheck={false}
         />
-      </div>
+        </div>
+      </ConnectionDiagnosticsProvider>
     </AcpPrefsProvider>
   );
 }
