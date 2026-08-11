@@ -3,63 +3,171 @@ import { useCallback, useMemo, useState } from "react";
 import type { ActivityRow } from "../lib/acpTypes";
 import {
   DEFAULT_HISTORY_WINDOW,
-  HISTORY_WINDOW_STEP,
-  canLoadEarlierFrom,
   historyWindow,
-  initialHistoryWindow,
+  historyWindowStart,
+  nextHistoryWindowSize,
 } from "../lib/acpHistoryWindow";
 
-export interface HistoryWindowState {
-  windowedActivity: ActivityRow[];
-  canLoadEarlier: boolean;
-  loadEarlier: () => void;
+const MAX_REMEMBERED_HISTORY_WINDOWS = 50;
+const rememberedHistoryWindows = new Map<string, number>();
+
+function rememberedHistoryWindow(sessionId: string): number {
+  const value = rememberedHistoryWindows.get(sessionId);
+  if (value === undefined) return DEFAULT_HISTORY_WINDOW;
+  rememberedHistoryWindows.delete(sessionId);
+  rememberedHistoryWindows.set(sessionId, value);
+  return Math.min(value, MAX_HISTORY_WINDOW);
 }
 
+function rememberHistoryWindow(sessionId: string, visibleRows: number): void {
+  if (!sessionId) return;
+  rememberedHistoryWindows.delete(sessionId);
+  rememberedHistoryWindows.set(sessionId, Math.min(visibleRows, MAX_HISTORY_WINDOW));
+  while (rememberedHistoryWindows.size > MAX_REMEMBERED_HISTORY_WINDOWS) {
+    const oldest = rememberedHistoryWindows.keys().next().value;
+    if (oldest === undefined) break;
+    rememberedHistoryWindows.delete(oldest);
+  }
+}
+
+/** Test isolation for the module-level remount cache. */
+export function clearRememberedHistoryWindows(): void {
+  rememberedHistoryWindows.clear();
+}
+
+export interface HistoryWindowState {
+  /** The bounded slice of `activity` to render. */
+  windowedActivity: ActivityRow[];
+  /** True when older rows remain that "Load earlier" would reveal. */
+  canLoadEarlier: boolean;
+  /** True when newer rows remain below the current range. */
+  canLoadNewer: boolean;
+  /** Reveal an additional chunk of older history. */
+  loadEarlier: () => void;
+  /** Move the bounded range toward the live tail. */
+  loadNewer: () => void;
+  /** Re-anchor the bounded range at the live tail in one step. */
+  jumpToLatest: () => void;
+}
+
+/** An explicitly expanded transcript stays useful without mounting an
+ * unbounded number of rich message cards. Each navigator move overlaps the
+ * preceding range by one normal history step. */
+export const MAX_HISTORY_WINDOW = DEFAULT_HISTORY_WINDOW * 2;
+
+/**
+ * Window the structured-view transcript to its most recent rows so a
+ * long session does not block first paint, growing on demand via
+ * `loadEarlier`. Expanded windows are remembered per session so switching
+ * away and back does not repeatedly hide rows the user already revealed.
+ * Only explicit reveals are remembered: temporary growth that keeps the
+ * current top stable while live rows arrive must not make every future open
+ * render an increasingly large transcript.
+ * The view remounts under `key={sessionId}`, so this cache must live at module
+ * scope rather than in hook state. See #2144 and #2236.
+ *
+ * The window grows by however many rows are added after first paint when
+ * `preserveStartOnGrowth` is true (live turns appended at the tail, or an
+ * older page prepended at the head), so rows already on screen stay put.
+ * Initial warm-cache replay passes false: missed rows then re-anchor the
+ * remembered depth at the fresh tail instead of making the whole catch-up
+ * visible. See #2236.
+ */
 export function useHistoryWindow(
   sessionId: string,
   activity: ActivityRow[],
   showClearedTurns: boolean,
+  preserveStartOnGrowth = true,
 ): HistoryWindowState {
-  const [visibleRows, setVisibleRows] = useState(DEFAULT_HISTORY_WINDOW);
+  const [visibleRows, setVisibleRows] = useState(() => rememberedHistoryWindow(sessionId));
+  const [windowEnd, setWindowEnd] = useState(() => activity.length);
   const [windowSessionId, setWindowSessionId] = useState(sessionId);
-  // null until first populate, so the initial page lands as the default window, not as growth.
-  const [anchorLen, setAnchorLen] = useState<number | null>(null);
-  const [anchorRowId, setAnchorRowId] = useState<string | null>(null);
+  const [previousRows, setPreviousRows] = useState(() => ({
+    length: activity.length,
+    firstId: activity[0]?.id ?? null,
+    lastId: activity.at(-1)?.id ?? null,
+  }));
   if (windowSessionId !== sessionId) {
     setWindowSessionId(sessionId);
-    setVisibleRows(initialHistoryWindow(activity));
-    setAnchorLen(activity.length > 0 ? activity.length : null);
-    setAnchorRowId(null);
-  } else if (anchorLen === null) {
-    if (activity.length > 0) {
-      setAnchorLen(activity.length);
-      setVisibleRows(initialHistoryWindow(activity));
+    setVisibleRows(rememberedHistoryWindow(sessionId));
+    setWindowEnd(activity.length);
+    setPreviousRows({ length: activity.length, firstId: activity[0]?.id ?? null, lastId: activity.at(-1)?.id ?? null });
+  } else if (
+    previousRows.length !== activity.length ||
+    previousRows.firstId !== (activity[0]?.id ?? null) ||
+    previousRows.lastId !== (activity.at(-1)?.id ?? null)
+  ) {
+    const growth = activity.length - previousRows.length;
+    const initialPopulation = previousRows.length === 0 && activity.length > 0;
+    const prepended = growth > 0 && previousRows.lastId === (activity.at(-1)?.id ?? null);
+    const appended = growth > 0 && previousRows.firstId === (activity[0]?.id ?? null);
+    if (initialPopulation) {
+      // A production WebSocket replay can batch its whole first page into one
+      // React render. There is no prior row identity to classify that change
+      // as an append, but the new transcript is still tail-anchored.
+      setWindowEnd(activity.length);
+    } else if (prepended) {
+      // Keep the reader on the same rows when an older server page is added.
+      setWindowEnd((end) => Math.min(activity.length, end + growth));
+    } else if (appended && windowEnd === previousRows.length) {
+      // Follow a live tail only while this range already includes it. Keep the
+      // reader's current top stable until the bounded range is full; after
+      // that, the bottom navigator makes newer rows explicit instead of
+      // silently mounting an unbounded transcript.
+      setWindowEnd(activity.length);
+      if (preserveStartOnGrowth) setVisibleRows((rows) => Math.min(MAX_HISTORY_WINDOW, rows + growth));
+    } else if (growth < 0) {
+      setWindowEnd((end) => Math.min(end, activity.length));
     }
-  } else if (activity.length !== anchorLen) {
-    if (activity.length > anchorLen) {
-      setVisibleRows((v) => v + (activity.length - anchorLen));
-    }
-    setAnchorLen(activity.length);
+    setPreviousRows({ length: activity.length, firstId: activity[0]?.id ?? null, lastId: activity.at(-1)?.id ?? null });
   }
-  const computed = useMemo(
-    () => historyWindow(activity, visibleRows, showClearedTurns),
-    [activity, visibleRows, showClearedTurns],
+  const boundedEnd = Math.min(windowEnd, activity.length);
+  const { start, canLoadEarlier } = useMemo(
+    () => historyWindow(activity, visibleRows, showClearedTurns, boundedEnd),
+    [activity, boundedEnd, visibleRows, showClearedTurns],
   );
-  // The start may only move earlier; moving it later shrinks a rendered message (#3707).
-  const start = pinnedWindowStart(activity, computed.start, anchorRowId);
-  const startRowId = start < activity.length ? (activity[start]?.id ?? null) : null;
-  if (startRowId !== anchorRowId && windowSessionId === sessionId) {
-    setAnchorRowId(startRowId);
-  }
-  const canLoadEarlier = canLoadEarlierFrom(activity, start, showClearedTurns);
-  const windowedActivity = useMemo(() => (start === 0 ? activity : activity.slice(start)), [activity, start]);
-  const loadEarlier = useCallback(() => setVisibleRows((v) => v + HISTORY_WINDOW_STEP), []);
-  return { windowedActivity, canLoadEarlier, loadEarlier };
-}
-
-export function pinnedWindowStart(rows: readonly ActivityRow[], computed: number, anchorRowId: string | null): number {
-  if (anchorRowId === null) return computed;
-  const pinned = rows.findIndex((r) => r.id === anchorRowId);
-  if (pinned < 0) return computed;
-  return Math.min(computed, pinned);
+  const windowedActivity = useMemo(() => activity.slice(start, boundedEnd), [activity, boundedEnd, start]);
+  const loadEarlier = useCallback(() => {
+    if (visibleRows < MAX_HISTORY_WINDOW) {
+      const next = nextHistoryWindowSize(activity, visibleRows, boundedEnd);
+      if (next <= MAX_HISTORY_WINDOW) {
+        setVisibleRows(() => {
+          rememberHistoryWindow(sessionId, next);
+          return next;
+        });
+        return;
+      }
+    }
+    const currentStart = historyWindowStart(activity, visibleRows, boundedEnd);
+    let previousTurnStart = -1;
+    for (let index = Math.max(0, currentStart - DEFAULT_HISTORY_WINDOW); index >= 0; index -= 1) {
+      const kind = activity[index]?.kind;
+      if (kind === "user_prompt" || kind === "user_diff_comments") {
+        previousTurnStart = index;
+        break;
+      }
+    }
+    setVisibleRows(MAX_HISTORY_WINDOW);
+    setWindowEnd(() =>
+      previousTurnStart >= 0
+        ? Math.min(activity.length, previousTurnStart + MAX_HISTORY_WINDOW)
+        : Math.max(0, boundedEnd - DEFAULT_HISTORY_WINDOW),
+    );
+  }, [activity, boundedEnd, sessionId, visibleRows]);
+  const loadNewer = useCallback(() => {
+    setVisibleRows(MAX_HISTORY_WINDOW);
+    setWindowEnd((end) => Math.min(activity.length, end + DEFAULT_HISTORY_WINDOW));
+  }, [activity.length]);
+  const jumpToLatest = useCallback(() => {
+    setVisibleRows(MAX_HISTORY_WINDOW);
+    setWindowEnd(activity.length);
+  }, [activity.length]);
+  return {
+    windowedActivity,
+    canLoadEarlier,
+    canLoadNewer: boundedEnd < activity.length,
+    loadEarlier,
+    loadNewer,
+    jumpToLatest,
+  };
 }
