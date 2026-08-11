@@ -207,6 +207,12 @@ function AcpChrome({
           state.lagged ||
           state.rateLimit ||
           state.rateLimitRetriesExhausted ||
+          state.startupError !== null ||
+          state.workerStopped ||
+          state.workerRestarting ||
+          state.agentUnresponsive ||
+          state.agentOrphaned ||
+          acpWorkerState === "resuming" ||
           ctx.reconnecting ? (
             <SystemNotices
               status={status}
@@ -214,6 +220,11 @@ function AcpChrome({
               rateLimit={state.rateLimit}
               rateLimitAutoResume={view.rateLimitAutoResume}
               rateLimitRetriesExhausted={state.rateLimitRetriesExhausted}
+              startupError={state.startupError !== null}
+              workerStopped={state.workerStopped}
+              workerRestarting={state.workerRestarting || acpWorkerState === "resuming"}
+              agentUnresponsive={state.agentUnresponsive}
+              agentOrphaned={state.agentOrphaned}
               hasEverOpened={ctx.hasEverOpened}
               reconnecting={ctx.reconnecting}
               retryCount={ctx.retryCount}
