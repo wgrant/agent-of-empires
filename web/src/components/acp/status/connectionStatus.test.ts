@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  connectionStatusCompactLabel,
+  connectionStatusPresentation,
   deriveConnectionDiagnostics,
   deriveConnectionIncident,
   deriveDashboardConnectionDiagnostics,
@@ -31,93 +33,92 @@ const base = {
   liveUpdatesStale: false,
 };
 
-describe("deriveConnectionIncident", () => {
-  it("only creates an incident for a current connection problem", () => {
-    expect(deriveConnectionIncident(base)).toBeNull();
-    expect(deriveConnectionIncident({ ...base, lagged: true })?.notices).toEqual([
-      { kind: "warn", text: "Some updates were missed while reconnecting." },
-    ]);
+describe("connection status model", () => {
+  it("derives primary status from route, session, and continuity in priority order", () => {
+    const cases = [
+      [{}, "connected", "connected", "ready", "current"],
+      [{ workerStopped: true }, "agent_stopped", "connected", "stopped", "current"],
+      [{ startupError: true }, "agent_failed", "connected", "failed", "current"],
+      [{ agentUnresponsive: true }, "agent_unresponsive", "connected", "unresponsive", "current"],
+      [
+        { rateLimit: { kind: "provider", status: "later", resets_at: null } },
+        "rate_limited",
+        "connected",
+        "rate_limited",
+        "current",
+      ],
+      [{ workerRestarting: true }, "agent_restarting", "connected", "restarting", "current"],
+      [{ lagged: true }, "updates_missed", "connected", "ready", "missed"],
+      [{ liveUpdatesStale: true }, "updates_delayed", "connected", "ready", "delayed"],
+      [{ serverReachability: "unreachable" as const }, "updates_unavailable", "connected", "ready", "unavailable"],
+      [
+        { status: "closed" as const, reconnecting: true, workerStopped: true },
+        "reconnecting",
+        "reconnecting",
+        "stopped",
+        "unavailable",
+      ],
+      [
+        { status: "closed" as const, retryCount: 7, workerStopped: true },
+        "disconnected",
+        "disconnected",
+        "stopped",
+        "unavailable",
+      ],
+    ] as const;
+
+    for (const [changes, primary, route, session, continuity] of cases) {
+      const diagnostics = deriveConnectionDiagnostics({ ...base, ...changes });
+      expect(diagnostics).toMatchObject({ primary, route, session, continuity });
+    }
   });
 
-  it("keeps the existing reconnect and exhausted-retry wording in one model", () => {
-    const retrying = deriveConnectionIncident({
-      ...base,
-      status: "closed",
-      reconnecting: true,
-      retryCount: 3,
-      retryCountdown: 4,
-    });
-    expect(retrying).toMatchObject({
-      device: "ready",
-      deviceToServer: "working",
-      server: "unknown",
-      serverToAgent: "inactive",
-      agent: "unknown",
-      retriesExhausted: false,
-      notices: [{ kind: "warn", text: "Reconnecting, attempt 3 of 7 in 4s." }],
-    });
-
-    const exhausted = deriveConnectionIncident({ ...base, status: "closed", retryCount: 7 });
-    expect(exhausted).toMatchObject({
-      device: "ready",
-      deviceToServer: "failed",
-      serverToAgent: "inactive",
-      retriesExhausted: true,
-      notices: [],
-    });
-  });
-
-  it("classifies an explicit rate limit as an agent block without inferring server health", () => {
-    const incident = deriveConnectionIncident({
-      ...base,
-      rateLimit: { kind: "provider", status: "later", resets_at: null },
-    });
-    expect(incident).toMatchObject({ agent: "blocked", server: "unknown" });
-    expect(incident?.notices[0]?.text).toContain("Rate-limited");
-  });
-
-  it("classifies lifecycle failures without requiring a separate status model", () => {
-    expect(deriveConnectionIncident({ ...base, workerRestarting: true })?.agent).toBe("working");
-    expect(deriveConnectionIncident({ ...base, startupError: true })?.agent).toBe("failed");
-  });
-
-  it("shows a healthy agent endpoint until an existing lifecycle signal says otherwise", () => {
-    expect(deriveConnectionDiagnostics(base).agent).toBe("ready");
-    expect(deriveConnectionDiagnostics({ ...base, agentUnresponsive: true }).agent).toBe("working");
-    expect(deriveConnectionDiagnostics({ ...base, workerStopped: true }).agent).toBe("failed");
-  });
-
-  it("uses authenticated replay evidence for the AoE hop", () => {
-    expect(deriveConnectionIncident({ ...base, lagged: true, serverReachability: "reachable" })?.server).toBe("ready");
-    expect(deriveConnectionIncident({ ...base, lagged: true, serverReachability: "unreachable" })?.server).toBe(
-      "failed",
-    );
-  });
-
-  it("does not show stale downstream health while reconnecting", () => {
-    const incident = deriveConnectionIncident({
+  it("gates downstream status while the AoE route is not current", () => {
+    const diagnostics = deriveConnectionDiagnostics({
       ...base,
       status: "closed",
       reconnecting: true,
       retryCount: 1,
       serverReachability: "reachable",
-      workerRestarting: true,
+      workerStopped: true,
     });
-    expect(incident).toMatchObject({
-      device: "ready",
+    expect(diagnostics).toMatchObject({
+      primary: "reconnecting",
       deviceToServer: "working",
       server: "unknown",
       serverToAgent: "inactive",
       agent: "unknown",
     });
+    expect(diagnostics.sections.find((section) => section.id === "agent")?.observations[0]?.value).toBe(
+      "Last known: Worker stopped",
+    );
+  });
+
+  it("uses one presentation mapping for headline, tone, and compact text", () => {
+    const stopped = deriveConnectionDiagnostics({ ...base, workerStopped: true });
+    expect(connectionStatusPresentation(stopped.primary)).toMatchObject({ headline: "Agent stopped", tone: "error" });
+    expect(connectionStatusCompactLabel(stopped)).toBe("Agent stopped");
+
+    const retrying = deriveConnectionDiagnostics({ ...base, status: "closed", reconnecting: true, retryCount: 3 });
+    expect(connectionStatusPresentation(retrying.primary)).toMatchObject({
+      headline: "Reconnecting",
+      tone: "warning",
+      working: true,
+    });
+    expect(connectionStatusCompactLabel(retrying)).toBe("Reconnecting · 3/7");
+  });
+
+  it("only creates an incident for a non-connected primary state", () => {
+    expect(deriveConnectionIncident(base)).toBeNull();
+    expect(deriveConnectionIncident({ ...base, lagged: true })?.primary).toBe("updates_missed");
   });
 
   it("keeps dashboard and terminal diagnostics in the same route contract", () => {
     expect(deriveDashboardConnectionDiagnostics(false)).toMatchObject({
       targetLabel: null,
+      primary: "connected",
+      route: "connected",
       hasIncident: false,
-      deviceToServer: "ready",
-      serverToAgent: "inactive",
     });
     expect(
       deriveTerminalConnectionDiagnostics({
@@ -129,15 +130,14 @@ describe("deriveConnectionIncident", () => {
       }),
     ).toMatchObject({
       targetLabel: "Terminal",
+      primary: "reconnecting",
+      route: "reconnecting",
       hasIncident: true,
-      severity: "working",
-      deviceToServer: "working",
-      serverToAgent: "inactive",
     });
   });
 
   it("keeps transport failures and success timestamps in expanded observations", () => {
-    const diagnostics = deriveConnectionIncident({
+    const diagnostics = deriveConnectionDiagnostics({
       ...base,
       status: "closed",
       reconnecting: true,
@@ -151,7 +151,7 @@ describe("deriveConnectionIncident", () => {
       },
       reconnectingSince: new Date("2026-08-11T14:09:50Z").getTime(),
     });
-    const observations = diagnostics?.sections.flatMap((section) => section.observations) ?? [];
+    const observations = diagnostics.sections.flatMap((section) => section.observations);
     expect(observations).toContainEqual({
       label: "Last connection event",
       state: "failed",
@@ -160,37 +160,5 @@ describe("deriveConnectionIncident", () => {
     expect(observations.map((observation) => observation.label)).toEqual(
       expect.arrayContaining(["Structured view", "Live updates"]),
     );
-  });
-
-  it("uses human-oriented socket and live-update wording", () => {
-    const timestamp = new Date("2026-08-11T14:09:48Z").getTime();
-    const observation = (input: Parameters<typeof deriveConnectionDiagnostics>[0]) => {
-      const diagnostics = deriveConnectionIncident(input) ?? deriveConnectionDiagnostics(input);
-      return Object.fromEntries(
-        diagnostics.sections.flatMap((section) => section.observations.map(({ label, value }) => [label, value])),
-      );
-    };
-
-    const connected = observation({ ...base, lastWebSocketOpenAt: timestamp, lastServerMessageAt: timestamp });
-    expect(connected["Structured view"]).toMatch(/^Connected since /);
-    expect(connected["Live updates"]).toBe("Current");
-
-    const stale = observation({
-      ...base,
-      lastWebSocketOpenAt: timestamp,
-      lastServerMessageAt: timestamp,
-      liveUpdatesStale: true,
-    });
-    expect(stale["Live updates"]).toMatch(/^Behind, last update /);
-
-    const reconnecting = observation({
-      ...base,
-      status: "closed",
-      reconnecting: true,
-      retryCount: 2,
-      reconnectingSince: timestamp,
-    });
-    expect(reconnecting["Structured view"]).toMatch(/^Reconnecting since .*attempt 2 of 7$/);
-    expect(reconnecting["Live updates"]).toBe("Unavailable while reconnecting");
   });
 });
