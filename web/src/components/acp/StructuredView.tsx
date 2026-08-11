@@ -40,6 +40,7 @@ import {
   connectionStatusPresentation,
   type ConnectionDiagnostics,
 } from "./status/connectionStatus";
+import { deriveConversationSyncStatus, type ConversationSyncStatus } from "./status/conversationSyncStatus";
 import { deriveConversationNextStep } from "./status/conversationStatus";
 import { AssistantMessage, UserMessage } from "./ThreadMessages";
 import { ToolDensityToggle, ToolDisplayModeProvider, useToolDensityPref } from "./ToolDisplayMode";
@@ -203,6 +204,12 @@ function AcpChrome({
     reconnectingSince: ctx.reconnectingSince,
     liveUpdatesStale: ctx.liveUpdatesStale,
   });
+  const conversationSync = deriveConversationSyncStatus({
+    replaySyncing: ctx.replaySyncing,
+    hasEverOpened: ctx.hasEverOpened,
+    loadingEarlier: ctx.loadingEarlierHistory,
+    connectionStarting: status === "connecting",
+  });
   const connectionInset = connectionDiagnostics.hasIncident ? 44 : 0;
   const previousConnectionInsetRef = useRef(0);
   // Phone-width only: fold the composer away for reading.
@@ -259,6 +266,7 @@ function AcpChrome({
           lastTransportDiagnostic={ctx.lastTransportDiagnostic}
           reconnectingSince={ctx.reconnectingSince}
           liveUpdatesStale={ctx.liveUpdatesStale}
+          conversationSync={conversationSync}
           hasEverOpened={ctx.hasEverOpened}
           reconnecting={ctx.reconnecting}
           retryCount={ctx.retryCount}
@@ -421,6 +429,7 @@ function AcpChrome({
               collapsed={composerCollapsed}
               onToggleCollapsed={() => setComposerCollapsed((v) => !v)}
               connectionDiagnostics={connectionDiagnostics}
+              conversationSync={conversationSync}
             />
           )}
         </div>
@@ -440,6 +449,7 @@ function ComposerDock({
   collapsed,
   onToggleCollapsed,
   connectionDiagnostics,
+  conversationSync,
 }: {
   view: Props;
   ctx: AcpContext;
@@ -449,6 +459,7 @@ function ComposerDock({
   collapsed: boolean;
   onToggleCollapsed: () => void;
   connectionDiagnostics: ConnectionDiagnostics;
+  conversationSync: ConversationSyncStatus;
 }) {
   const { sessionId, acpWorkerState, acpAgent } = view;
   const { state, status } = ctx;
@@ -456,6 +467,7 @@ function ComposerDock({
   return (
     <>
       <ComposerActionRail>
+        {conversationSync === "reconnect" && <ConversationRefreshNotice />}
         {!composerConnected && <ComposerConnectionNotice diagnostics={connectionDiagnostics} />}
         <RejectedPromptsStrip
           rejected={state.rejectedPrompts}
@@ -553,6 +565,18 @@ function ComposerConnectionNotice({ diagnostics }: { diagnostics: ConnectionDiag
     >
       {icon}
       <span>{connectionComposerNotice(diagnostics.primary)}</span>
+    </div>
+  );
+}
+
+function ConversationRefreshNotice() {
+  return (
+    <div
+      className="flex items-center gap-1.5 border-b border-surface-800/70 px-3 py-1.5 text-[11px] text-text-secondary"
+      role="status"
+    >
+      <RotateCcw className="size-3 shrink-0 animate-spin text-text-muted" aria-hidden="true" />
+      Updating conversation…
     </div>
   );
 }
