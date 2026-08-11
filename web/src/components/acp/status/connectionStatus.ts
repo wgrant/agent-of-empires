@@ -178,6 +178,11 @@ export function connectionStatusCompactLabel(diagnostics: ConnectionDiagnostics)
     : presentation.headline;
 }
 
+/** Composer-side explanation for a session that cannot accept a prompt yet. */
+export function connectionComposerNotice(primary: PrimaryConnectionStatus): string {
+  return `${connectionStatusPresentation(primary).headline}. New messages will wait until this session resumes.`;
+}
+
 function primaryStatus({
   route,
   session,
