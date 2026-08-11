@@ -35,6 +35,21 @@ fn yolo_environment(agent: &str, enabled: bool) -> Option<(String, String)> {
     Some(((*key).to_string(), (*value).to_string()))
 }
 
+/// Seed codex-acp's initial mode before `session/load` resumes the native
+/// Codex thread. Applying the ACP mode after load is too late for its sandbox
+/// and approval overrides.
+fn codex_acp_initial_mode_environment(
+    agent: &str,
+    mode_id: Option<&str>,
+) -> Option<(String, String)> {
+    if agent != "codex" {
+        return None;
+    }
+    let mode_id = mode_id?;
+    matches!(mode_id, "read-only" | "agent" | "agent-full-access")
+        .then(|| ("INITIAL_AGENT_MODE".to_string(), mode_id.to_string()))
+}
+
 impl<S: BroadcastSink> Supervisor<S> {
     /// Spawn a structured view worker for the given session.
     pub async fn spawn(&self, req: SpawnRequest) -> Result<(), SupervisorError> {
@@ -167,10 +182,7 @@ impl<S: BroadcastSink> Supervisor<S> {
         if req.acp_mode_id.is_some()
             || (req.yolo_mode && yolo_environment(&req.agent, true).is_none())
         {
-            let mode_id = req
-                .acp_mode_id
-                .as_deref()
-                .or_else(|| crate::acp::agent_profiles::resolve(&req.agent).yolo_mode_id);
+            let mode_id = effective_acp_mode(&req);
             apply_mode(&client, session_id, mode_id, "spawn").await;
         }
         Ok(())
@@ -263,7 +275,15 @@ impl<S: BroadcastSink> Supervisor<S> {
         }
 
         let mut provider_env = req.provider_env.clone();
+        let initial_mode = codex_acp_initial_mode_environment(&req.agent, effective_acp_mode(req));
         if let Some(entry) = yolo_environment(&req.agent, req.yolo_mode) {
+            if req.sandbox_info.is_some() {
+                overlay_env(&mut provider_env, vec![entry]);
+            } else {
+                overlay_env(&mut host_environment, vec![entry]);
+            }
+        }
+        if let Some(entry) = initial_mode {
             if req.sandbox_info.is_some() {
                 overlay_env(&mut provider_env, vec![entry]);
             } else {
@@ -569,6 +589,14 @@ impl<S: BroadcastSink> Supervisor<S> {
     }
 }
 
+fn effective_acp_mode(req: &SpawnRequest) -> Option<&str> {
+    req.acp_mode_id.as_deref().or_else(|| {
+        crate::acp::agent_profiles::resolve(&req.agent)
+            .yolo_mode_id
+            .filter(|_| req.yolo_mode)
+    })
+}
+
 pub(super) async fn apply_mode(
     client: &AcpClient,
     session_id: &str,
@@ -747,6 +775,28 @@ mod tests {
         );
         for (agent, enabled) in [("opencode", false), ("codex", true), ("unknown", true)] {
             assert_eq!(yolo_environment(agent, enabled), None, "{agent} {enabled}");
+        }
+    }
+
+    #[test]
+    fn codex_acp_initial_mode_environment_only_seeds_known_codex_modes() {
+        assert_eq!(
+            codex_acp_initial_mode_environment("codex", Some("agent-full-access")),
+            Some((
+                "INITIAL_AGENT_MODE".to_string(),
+                "agent-full-access".to_string(),
+            ))
+        );
+        for (agent, mode_id) in [
+            ("codex", None),
+            ("codex", Some("bypassPermissions")),
+            ("claude", Some("agent-full-access")),
+        ] {
+            assert_eq!(
+                codex_acp_initial_mode_environment(agent, mode_id),
+                None,
+                "{agent} {mode_id:?}"
+            );
         }
     }
 
