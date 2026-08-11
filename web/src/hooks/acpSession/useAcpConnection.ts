@@ -88,6 +88,8 @@ export function useAcpConnection(
   const [lastServerMessageAt, setLastServerMessageAt] = useState<number | null>(null);
   const [lastSuccessfulReplayAt, setLastSuccessfulReplayAt] = useState<number | null>(null);
   const [lastTransportDiagnostic, setLastTransportDiagnostic] = useState<TransportDiagnostic | null>(null);
+  const [reconnectingSince, setReconnectingSince] = useState<number | null>(null);
+  const [liveUpdatesStale, setLiveUpdatesStale] = useState(false);
 
   const lastSeqRef = useLatestRef(state.lastSeq);
   const oldestSeqRef = useLatestRef(state.oldestSeq);
@@ -133,7 +135,10 @@ export function useAcpConnection(
     const ready = wsRef.current?.readyState;
     if (ready === WebSocket.CONNECTING) return;
     // An OPEN socket only counts as alive while it keeps hearing from the server.
-    if (ready === WebSocket.OPEN && Date.now() - lastServerMsgRef.current < ACP_WS_STALE_MS) return;
+    if (ready === WebSocket.OPEN && Date.now() - lastServerMsgRef.current < ACP_WS_STALE_MS) {
+      setLiveUpdatesStale(Date.now() - lastServerMsgRef.current > 35_000);
+      return;
+    }
     if (ready === WebSocket.OPEN) {
       setLastTransportDiagnostic({
         kind: "stale_heartbeat",
@@ -218,6 +223,8 @@ export function useAcpConnection(
     setLastServerMessageAt(null);
     setLastSuccessfulReplayAt(null);
     setLastTransportDiagnostic(null);
+    setReconnectingSince(null);
+    setLiveUpdatesStale(false);
   }
 
   useEffect(() => {
@@ -239,6 +246,7 @@ export function useAcpConnection(
         setRetryCountdown(0);
         return;
       }
+      if (retryCountRef.current === 0) setReconnectingSince(Date.now());
       const attempt = ++retryCountRef.current;
       const delayMs = acpRetryDelayMs(attempt);
       let countdown = Math.ceil(delayMs / 1000);
@@ -359,6 +367,8 @@ export function useAcpConnection(
           setLastWebSocketOpenAt(openedAt);
           setLastServerMessageAt(openedAt);
           setLastTransportDiagnostic(null);
+          setReconnectingSince(null);
+          setLiveUpdatesStale(false);
           retryCountRef.current = 0;
           setReconnecting(false);
           setRetryCount(0);
@@ -392,6 +402,7 @@ export function useAcpConnection(
           if (!isCurrentDial()) return;
           const receivedAt = Date.now();
           lastServerMsgRef.current = receivedAt;
+          setLiveUpdatesStale(false);
           if (receivedAt - lastPublishedServerMsgRef.current >= 1000) {
             lastPublishedServerMsgRef.current = receivedAt;
             setLastServerMessageAt(receivedAt);
@@ -431,6 +442,8 @@ export function useAcpConnection(
     lastServerMessageAt,
     lastSuccessfulReplayAt,
     lastTransportDiagnostic,
+    reconnectingSince,
+    liveUpdatesStale,
     reconnecting,
     retryCount,
     retryCountdown,

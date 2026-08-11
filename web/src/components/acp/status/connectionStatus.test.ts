@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  deriveConnectionDiagnostics,
   deriveConnectionIncident,
   deriveDashboardConnectionDiagnostics,
   deriveTerminalConnectionDiagnostics,
@@ -27,6 +28,8 @@ const base = {
   lastServerMessageAt: null,
   lastSuccessfulReplayAt: null,
   lastTransportDiagnostic: null,
+  reconnectingSince: null,
+  liveUpdatesStale: false,
 };
 
 describe("deriveConnectionIncident", () => {
@@ -142,15 +145,48 @@ describe("deriveConnectionIncident", () => {
         text: "Replay request rejected: HTTP 403 Forbidden.",
         at: new Date("2026-08-11T14:09:49Z").getTime(),
       },
+      reconnectingSince: new Date("2026-08-11T14:09:50Z").getTime(),
     });
     const observations = diagnostics?.sections.flatMap((section) => section.observations) ?? [];
     expect(observations).toContainEqual({
-      label: "Last transport result",
+      label: "Last transport",
       state: "failed",
-      value: "Replay request rejected: HTTP 403 Forbidden.",
+      value: expect.stringContaining("Replay request rejected: HTTP 403 Forbidden."),
     });
     expect(observations.map((observation) => observation.label)).toEqual(
-      expect.arrayContaining(["Last connected", "Last successful replay", "Last server message"]),
+      expect.arrayContaining(["Structured-view WebSocket", "Event replay", "Live updates"]),
     );
+  });
+
+  it("uses human-oriented socket and live-update wording", () => {
+    const timestamp = new Date("2026-08-11T14:09:48Z").getTime();
+    const observation = (input: Parameters<typeof deriveConnectionDiagnostics>[0]) => {
+      const diagnostics = deriveConnectionIncident(input) ?? deriveConnectionDiagnostics(input);
+      return Object.fromEntries(
+        diagnostics.sections.flatMap((section) => section.observations.map(({ label, value }) => [label, value])),
+      );
+    };
+
+    const connected = observation({ ...base, lastWebSocketOpenAt: timestamp, lastServerMessageAt: timestamp });
+    expect(connected["Structured-view WebSocket"]).toMatch(/^Connected since /);
+    expect(connected["Live updates"]).toBe("Connected");
+
+    const stale = observation({
+      ...base,
+      lastWebSocketOpenAt: timestamp,
+      lastServerMessageAt: timestamp,
+      liveUpdatesStale: true,
+    });
+    expect(stale["Live updates"]).toMatch(/^Out of date, last received /);
+
+    const reconnecting = observation({
+      ...base,
+      status: "closed",
+      reconnecting: true,
+      retryCount: 2,
+      reconnectingSince: timestamp,
+    });
+    expect(reconnecting["Structured-view WebSocket"]).toMatch(/^Reconnecting since .*retry 2 of 7$/);
+    expect(reconnecting["Live updates"]).toBe("Unavailable while reconnecting");
   });
 });
