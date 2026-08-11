@@ -24,6 +24,10 @@ test.describe("Structured-view transcript tap does not open the keyboard", () =>
     await setup(page);
     await openStructuredSession(page);
 
+    // Mobile starts with the compact composer status bar. Expand it only to
+    // obtain the textarea, then blur so the transcript tap remains the sole
+    // focus-changing interaction under test.
+    await page.getByTestId("composer-mobile-status").click();
     const composer = page.getByPlaceholder(/Send a message/);
     await expect(composer).toBeVisible();
     // Establish a known-unfocused state so the transcript tap is the only thing
