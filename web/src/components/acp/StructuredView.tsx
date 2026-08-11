@@ -40,8 +40,8 @@ import {
   connectionStatusPresentation,
   type ConnectionDiagnostics,
 } from "./status/connectionStatus";
-import { deriveConversationSyncStatus, type ConversationSyncStatus } from "./status/conversationSyncStatus";
-import { deriveConversationNextStep } from "./status/conversationStatus";
+import { deriveConversationSyncStatus } from "./status/conversationSyncStatus";
+import { deriveConversationStatus } from "./status/conversationStatus";
 import { AssistantMessage, UserMessage } from "./ThreadMessages";
 import { ToolDensityToggle, ToolDisplayModeProvider, useToolDensityPref } from "./ToolDisplayMode";
 import { useTranscriptScroll } from "./useTranscriptScroll";
@@ -176,12 +176,6 @@ function AcpChrome({
     sessionId,
     state.rateLimit ? (state.rateLimit.resets_at ?? "unknown") : null,
   );
-  const conversationNextStep = deriveConversationNextStep({
-    initialCatchup: false,
-    turnActive: state.turnActive,
-    nextWakeupAt: state.nextWakeupAt,
-    monitorArmed: state.monitorArmed,
-  });
   const connectionDiagnostics = deriveStructuredConnectionDiagnostics({
     status,
     serverReachability: ctx.serverReachability,
@@ -209,6 +203,13 @@ function AcpChrome({
     hasEverOpened: ctx.hasEverOpened,
     loadingEarlier: ctx.loadingEarlierHistory,
     connectionStarting: status === "connecting",
+  });
+  const conversationStatus = deriveConversationStatus({
+    agentSession: connectionDiagnostics.session,
+    sync: conversationSync,
+    turnActive: state.turnActive,
+    nextWakeupAt: state.nextWakeupAt,
+    monitorArmed: state.monitorArmed,
   });
   const connectionInset = connectionDiagnostics.hasIncident ? 44 : 0;
   const previousConnectionInsetRef = useRef(0);
@@ -357,7 +358,8 @@ function AcpChrome({
 
               <ThreadPrimitive.Messages components={{ UserMessage, AssistantMessage }} />
 
-              <ThreadPrimitive.If running>
+              {conversationStatus.kind === "active" && conversationStatus.cause === "working" && (
+                <>
                 {/* A turn parked on an approval or question is waiting on the user, not stalled. */}
                 {state.pendingElicitations.length === 0 && state.pendingApprovals.length === 0 ? (
                   <div className="mt-3 ml-1">
@@ -372,14 +374,17 @@ function AcpChrome({
                     />
                   </div>
                 ) : null}
-              </ThreadPrimitive.If>
-
-              {conversationNextStep?.kind === "scheduled_wakeup" && state.nextWakeupAt && (
-                <div className="mt-3">
-                  <ScheduledWakeupBanner wakeAt={state.nextWakeupAt} reason={state.nextWakeupReason} />
-                </div>
+                </>
               )}
-              {conversationNextStep?.kind === "monitoring" && (
+
+              {conversationStatus.kind === "waiting" &&
+                conversationStatus.cause === "scheduled_wakeup" &&
+                state.nextWakeupAt && (
+                  <div className="mt-3">
+                    <ScheduledWakeupBanner wakeAt={state.nextWakeupAt} reason={state.nextWakeupReason} />
+                  </div>
+                )}
+              {conversationStatus.kind === "waiting" && conversationStatus.cause === "monitoring" && (
                 <div className="mt-3">
                   <MonitoringBanner description={state.monitorDescription} />
                 </div>
@@ -429,7 +434,7 @@ function AcpChrome({
               collapsed={composerCollapsed}
               onToggleCollapsed={() => setComposerCollapsed((v) => !v)}
               connectionDiagnostics={connectionDiagnostics}
-              conversationSync={conversationSync}
+              conversationStatus={conversationStatus}
             />
           )}
         </div>
@@ -449,7 +454,7 @@ function ComposerDock({
   collapsed,
   onToggleCollapsed,
   connectionDiagnostics,
-  conversationSync,
+  conversationStatus,
 }: {
   view: Props;
   ctx: AcpContext;
@@ -459,7 +464,7 @@ function ComposerDock({
   collapsed: boolean;
   onToggleCollapsed: () => void;
   connectionDiagnostics: ConnectionDiagnostics;
-  conversationSync: ConversationSyncStatus;
+  conversationStatus: ReturnType<typeof deriveConversationStatus>;
 }) {
   const { sessionId, acpWorkerState, acpAgent } = view;
   const { state, status } = ctx;
@@ -467,7 +472,9 @@ function ComposerDock({
   return (
     <>
       <ComposerActionRail>
-        {conversationSync === "reconnect" && <ConversationRefreshNotice />}
+        {conversationStatus.kind === "updating" && conversationStatus.cause === "reconnect" && (
+          <ConversationRefreshNotice />
+        )}
         {!composerConnected && <ComposerConnectionNotice diagnostics={connectionDiagnostics} />}
         <RejectedPromptsStrip
           rejected={state.rejectedPrompts}
