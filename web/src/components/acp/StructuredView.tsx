@@ -30,6 +30,7 @@ import { MonitoringBanner, ScheduledWakeupBanner, SessionBanners } from "./Sessi
 import { ConfigOptionSwitchFailedNotice } from "./SessionConfigControls";
 import { StartupErrorScreen } from "./StartupErrorScreen";
 import { RateLimitRecoverySection, SystemNotices } from "./SystemNotices";
+import { ComposerActionRail } from "./status/ComposerActionRail";
 import { deriveConversationNextStep } from "./status/conversationStatus";
 import { AssistantMessage, UserMessage } from "./ThreadMessages";
 import { ToolDensityToggle, ToolDisplayModeProvider, useToolDensityPref } from "./ToolDisplayMode";
@@ -403,48 +404,45 @@ function ComposerDock({
   const { state, status } = ctx;
   return (
     <>
-      <QueuedPromptsStrip
-        queued={state.queuedPrompts}
-        onRemove={ctx.removeQueuedPrompt}
-        onEdit={ctx.editQueuedPrompt}
-        onClear={ctx.clearQueue}
-        onSendNow={ctx.sendQueuedNow}
-        canSendNow={ctx.canSendQueuedNow}
-        sendNowInterrupts={ctx.sendNowInterruptsTurn}
-        pendingResume={
-          status !== "open" || acpWorkerState !== "running" || state.workerStopped || state.workerRestarting
-        }
-      />
-
-      <RejectedPromptsStrip
-        rejected={state.rejectedPrompts}
-        onRetry={ctx.sendPrompt}
-        onDismiss={ctx.dismissRejectedPrompt}
-        disabled={state.workerRestarting || state.workerStopped || Boolean(state.startupError)}
-      />
-
-      <ModeSwitchFailedNotice failure={state.modeSwitchFailed} onDismiss={ctx.dismissModeSwitchFailed} />
-
-      <ConfigOptionSwitchFailedNotice
-        failure={state.configOptionSwitchFailed}
-        configOptions={state.configOptions}
-        onDismiss={ctx.dismissConfigOptionSwitchFailed}
-      />
-
-      <ContextPrimerBanner
-        sessionId={sessionId}
-        available={state.contextPrimerAvailable}
-        onInsertPrimer={(text) =>
-          setPrimerPrefill({ id: `primer-${state.contextPrimerAvailable?.resetSeq ?? 0}-${Date.now()}`, text })
-        }
-        onDismiss={ctx.dismissPrimer}
-      />
-
-      <CompactionReminderBanner
-        state={state}
-        onCompact={() => ctx.sendPrompt("/compact")}
-        onDismiss={ctx.dismissCompactionReminder}
-      />
+      <ComposerActionRail>
+        <RejectedPromptsStrip
+          rejected={state.rejectedPrompts}
+          onRetry={ctx.sendPrompt}
+          onDismiss={ctx.dismissRejectedPrompt}
+          disabled={state.workerRestarting || state.workerStopped || Boolean(state.startupError)}
+        />
+        <ModeSwitchFailedNotice failure={state.modeSwitchFailed} onDismiss={ctx.dismissModeSwitchFailed} />
+        <ConfigOptionSwitchFailedNotice
+          failure={state.configOptionSwitchFailed}
+          configOptions={state.configOptions}
+          onDismiss={ctx.dismissConfigOptionSwitchFailed}
+        />
+        <QueuedPromptsStrip
+          queued={state.queuedPrompts}
+          onRemove={ctx.removeQueuedPrompt}
+          onEdit={ctx.editQueuedPrompt}
+          onClear={ctx.clearQueue}
+          onSendNow={ctx.sendQueuedNow}
+          canSendNow={ctx.canSendQueuedNow}
+          sendNowInterrupts={ctx.sendNowInterruptsTurn}
+          pendingResume={
+            status !== "open" || acpWorkerState !== "running" || state.workerStopped || state.workerRestarting
+          }
+        />
+        <ContextPrimerBanner
+          sessionId={sessionId}
+          available={state.contextPrimerAvailable}
+          onInsertPrimer={(text) =>
+            setPrimerPrefill({ id: `primer-${state.contextPrimerAvailable?.resetSeq ?? 0}-${Date.now()}`, text })
+          }
+          onDismiss={ctx.dismissPrimer}
+        />
+        <CompactionReminderBanner
+          state={state}
+          onCompact={() => ctx.sendPrompt("/compact")}
+          onDismiss={ctx.dismissCompactionReminder}
+        />
+      </ComposerActionRail>
 
       {collapsible && (
         <ChromeCollapseHandle
