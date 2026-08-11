@@ -23,6 +23,10 @@ const base = {
   workerRestarting: false,
   agentUnresponsive: false,
   agentOrphaned: false,
+  lastWebSocketOpenAt: null,
+  lastServerMessageAt: null,
+  lastSuccessfulReplayAt: null,
+  lastTransportDiagnostic: null,
 };
 
 describe("deriveConnectionIncident", () => {
@@ -122,5 +126,31 @@ describe("deriveConnectionIncident", () => {
       deviceToServer: "working",
       serverToAgent: "inactive",
     });
+  });
+
+  it("keeps transport failures and success timestamps in expanded observations", () => {
+    const diagnostics = deriveConnectionIncident({
+      ...base,
+      status: "closed",
+      reconnecting: true,
+      retryCount: 2,
+      lastWebSocketOpenAt: new Date("2026-08-11T14:07:32Z").getTime(),
+      lastSuccessfulReplayAt: new Date("2026-08-11T14:09:47Z").getTime(),
+      lastServerMessageAt: new Date("2026-08-11T14:09:48Z").getTime(),
+      lastTransportDiagnostic: {
+        kind: "replay_http",
+        text: "Replay request rejected: HTTP 403 Forbidden.",
+        at: new Date("2026-08-11T14:09:49Z").getTime(),
+      },
+    });
+    const observations = diagnostics?.sections.flatMap((section) => section.observations) ?? [];
+    expect(observations).toContainEqual({
+      label: "Last transport result",
+      state: "failed",
+      value: "Replay request rejected: HTTP 403 Forbidden.",
+    });
+    expect(observations.map((observation) => observation.label)).toEqual(
+      expect.arrayContaining(["Last connected", "Last successful replay", "Last server message"]),
+    );
   });
 });
