@@ -28,7 +28,7 @@ import { cacheGet, cacheSet, sweepExpiredStorage } from "./acpSession/stateCache
 import { useLatestRef } from "./useLatestRef";
 
 export { reducer, transcriptDeltaAction, type Action } from "./acpSession/reducer";
-export { clearAcpCache, useBackgroundAgents } from "./acpSession/stateCache";
+export { clearAcpCache, inspectAcpStateCache, useBackgroundAgents } from "./acpSession/stateCache";
 
 type PromptSendResult =
   | { kind: "dispatched" }
