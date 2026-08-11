@@ -8,6 +8,7 @@ import { STORAGE_KEY_PREFIX } from "../../lib/acpStateStorage";
 import {
   cacheSet,
   clearAcpCache,
+  MAX_PERSISTED_STATE_BYTES,
   inspectAcpStateCache,
   evictOldestPersistedAcpState,
   loadPersistedState,
@@ -130,6 +131,29 @@ describe("persistState (#1833)", () => {
     persistState("overlay", { ...emptyAcpState(), optimisticRows: [row], inflightPromptIds: ["o1"] });
     const { state } = JSON.parse(localStorage.getItem(key("overlay"))!) as { state: AcpState };
     expect([state.optimisticRows, state.inflightPromptIds]).toEqual([[], []]);
+  });
+
+  it("falls back to bounded cold recovery when a transcript snapshot is too large", () => {
+    persistState("large-snapshot", {
+      ...emptyAcpState(),
+      lastSeq: 4242,
+      oldestSeq: 17,
+      activity: [
+        {
+          id: "large-message",
+          kind: "message",
+          text: "x".repeat(MAX_PERSISTED_STATE_BYTES),
+          at: "2026-08-11T00:00:00Z",
+        },
+      ],
+      queuedPrompts: [{ id: "text-only", text: "keep this" }],
+    });
+
+    const persisted = JSON.parse(localStorage.getItem(key("large-snapshot"))!) as { state: AcpState };
+    expect(persisted.state.activity).toEqual([]);
+    expect(persisted.state.lastSeq).toBe(0);
+    expect(persisted.state.oldestSeq).toBe(0);
+    expect(persisted.state.queuedPrompts).toEqual([{ id: "text-only", text: "keep this" }]);
   });
 });
 
