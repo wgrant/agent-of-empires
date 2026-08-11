@@ -76,6 +76,10 @@ export function deriveConnectionIncident(input: ConnectionStatusInput): Connecti
   }
   if (input.lagged) notices.push({ kind: "warn", text: "Some events were missed during reconnect." });
   if (input.rateLimit) notices.push({ kind: "warn", text: input.rateLimitText(input.rateLimit) });
+  if (input.startupError) notices.push({ kind: "warn", text: "Agent could not start." });
+  else if (input.workerRestarting || input.agentUnresponsive || input.agentOrphaned) {
+    notices.push({ kind: "info", text: "Restarting agent session; transcript preserved." });
+  }
   const agent =
     input.startupError || input.workerStopped
       ? "failed"
