@@ -85,6 +85,7 @@ export function useAcpConnection(
   const [lastTransportDiagnostic, setLastTransportDiagnostic] = useState<TransportDiagnostic | null>(null);
   const [reconnectingSince, setReconnectingSince] = useState<number | null>(null);
   const [liveUpdatesStale, setLiveUpdatesStale] = useState(false);
+  const [replaySyncing, setReplaySyncing] = useState(false);
 
   const lastSeqRef = useLatestRef(state.lastSeq);
   const oldestSeqRef = useLatestRef(state.oldestSeq);
@@ -99,6 +100,7 @@ export function useAcpConnection(
   const dialGenRef = useRef(0);
   const lastServerMsgRef = useRef(0);
   const lastPublishedServerMsgRef = useRef(0);
+  const replaySyncCountRef = useRef(0);
   // Last applied frame or submit, polled by the force-end-turn affordance without re-rendering.
   const lastActivityRef = useRef(0);
   // Setters behind a ref: the socket handlers below are not an external-store subscription.
@@ -258,6 +260,24 @@ export function useAcpConnection(
       }, delayMs);
     };
 
+    const syncReplay = async () => {
+      replaySyncCountRef.current += 1;
+      setReplaySyncing(true);
+      try {
+        await fetchReplay(
+          sessionId,
+          lastSeqRef,
+          dispatch,
+          setHasMoreOlder,
+          setServerReachability,
+          setLastTransportDiagnostic,
+        );
+      } finally {
+        replaySyncCountRef.current -= 1;
+        if (replaySyncCountRef.current === 0) setReplaySyncing(false);
+      }
+    };
+
     const handleMessage = (data: ServerMessage) => {
       const kind = typeof data === "object" && data !== null && "kind" in data ? data.kind : undefined;
       switch (kind) {
@@ -265,14 +285,7 @@ export function useAcpConnection(
           return;
         case "lagged":
           dispatch({ kind: "lagged", skipped: (data as { skipped?: number }).skipped ?? 0 });
-          void fetchReplay(
-            sessionId,
-            lastSeqRef,
-            dispatch,
-            setHasMoreOlder,
-            setServerReachability,
-            setLastTransportDiagnostic,
-          );
+          void syncReplay();
           return;
         case "reduced_state": {
           const { state: reduced, unchanged } = data as { state?: ReducedState; unchanged?: string[] };
@@ -313,14 +326,7 @@ export function useAcpConnection(
       const myGen = dialGenRef.current;
       const isCurrentDial = () => !cancelled && dialGenRef.current === myGen;
       void (async () => {
-        await fetchReplay(
-          sessionId,
-          lastSeqRef,
-          dispatch,
-          setHasMoreOlder,
-          setServerReachability,
-          setLastTransportDiagnostic,
-        );
+        await syncReplay();
         if (!isCurrentDial()) return;
         const protocol = window.location.protocol === "https:" ? "wss" : "ws";
         const url = `${protocol}://${window.location.host}/sessions/${encodeURIComponent(sessionId)}/acp/ws?since=${lastSeqRef.current}`;
@@ -412,6 +418,7 @@ export function useAcpConnection(
     lastTransportDiagnostic,
     reconnectingSince,
     liveUpdatesStale,
+    replaySyncing,
     reconnecting,
     retryCount,
     retryCountdown,
