@@ -94,7 +94,7 @@ export function SystemNotices({
   rateLimitResumeState?: RespawnState;
   rateLimitResumeError?: string | null;
 }) {
-  const publish = useConnectionDiagnosticsPublisher();
+  const { publish, clear } = useConnectionDiagnosticsPublisher();
   const diagnostics = deriveConnectionDiagnostics({
     status,
     serverReachability,
@@ -121,7 +121,7 @@ export function SystemNotices({
   useEffect(() => {
     publish({ sessionId, kind: "structured", diagnostics, onReconnect: manualReconnect });
   }, [diagnostics, manualReconnect, publish, sessionId]);
-  useEffect(() => () => publish(null), [publish]);
+  useEffect(() => () => clear(sessionId), [clear, sessionId]);
   if (!diagnostics.hasIncident) return null;
   const resumePending = rateLimitResumeState === "retrying" || rateLimitResumeState === "ok";
   const actions =
@@ -175,5 +175,10 @@ export function SystemNotices({
         )}
       </>
     ) : undefined;
-  return <ConnectionIncidentBubble diagnostics={diagnostics} onReconnect={manualReconnect} actions={actions} />;
+  return (
+    <>
+      <div className="h-11 shrink-0" aria-hidden="true" />
+      <ConnectionIncidentBubble diagnostics={diagnostics} onReconnect={manualReconnect} actions={actions} />
+    </>
+  );
 }
