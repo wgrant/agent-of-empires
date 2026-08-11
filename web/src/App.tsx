@@ -173,7 +173,6 @@ import { TipsModal } from "./components/TipsModal";
 import { useTips, shouldAutoPopTips } from "./hooks/useTips";
 import { CommandPalette } from "./components/command-palette/CommandPalette";
 import { useConversationSearch } from "./hooks/useConversationSearch";
-import { DisconnectBanner } from "./components/DisconnectBanner";
 import { ElevationPrompt } from "./components/ElevationPrompt";
 import { UpdateBanner } from "./components/UpdateBanner";
 import { DashboardUpdateBanner } from "./components/DashboardUpdateBanner";
@@ -2383,10 +2382,9 @@ function AppContent({
           />
         </CollapsibleRegion>
 
-        <DisconnectBanner />
-        <UpdateBanner />
-        <DashboardUpdateBanner />
-        <PushHealthBanner />
+          <UpdateBanner />
+          <DashboardUpdateBanner />
+          <PushHealthBanner />
 
         {/* Below the banners, not directly under the bar: the handle is
             absolutely positioned at the top-right, and hanging it off the bar
