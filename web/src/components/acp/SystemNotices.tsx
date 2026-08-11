@@ -4,6 +4,7 @@ import type { RespawnState } from "../../hooks/useRespawnSession";
 import type { AcpState } from "../../lib/acpTypes";
 import type { AcpContext } from "./AcpRuntime";
 import { SwitchAgentModal } from "./SwitchAgentModal";
+import { deriveConnectionIncident } from "./status/connectionStatus";
 
 /** Owns the rate-limit recovery modal toggle and hands its opener to `children`. */
 export function RateLimitRecoverySection({
@@ -80,39 +81,24 @@ export function SystemNotices({
   rateLimitResumeState?: RespawnState;
   rateLimitResumeError?: string | null;
 }) {
-  const messages: { kind: "warn" | "info" | "muted"; text: string }[] = [];
-  const warn = (text: string) => messages.push({ kind: "warn", text });
-  const reconnectRetriesExhausted = status !== "open" && hasEverOpened && !reconnecting && retryCount >= maxRetries;
-  if (reconnecting && status !== "open") {
-    const countdownPart = retryCountdown > 0 ? ` in ${retryCountdown}s` : "";
-    warn(`Structured view disconnected. Reconnecting (${retryCount}/${maxRetries})${countdownPart}…`);
-  } else if (status === "connecting") {
-    messages.push({
-      kind: "info",
-      text: hasEverOpened ? "Reconnecting to structured view…" : "Starting structured view…",
-    });
-  } else if (status === "error") {
-    warn(
-      hasEverOpened
-        ? "Structured view reconnecting… showing cached transcript; new messages disabled."
-        : "Starting structured view worker… this can take a few seconds for new sessions.",
-    );
-  } else if (status === "closed" && !reconnectRetriesExhausted) {
-    warn(
-      hasEverOpened
-        ? "Structured view disconnected. Showing cached transcript; new messages disabled."
-        : "Structured view not ready yet. Retrying…",
-    );
-  }
-  if (lagged) warn("Some events were missed during reconnect.");
+  const incident = deriveConnectionIncident({
+    status,
+    lagged,
+    rateLimit,
+    hasEverOpened,
+    reconnecting,
+    retryCount,
+    retryCountdown,
+    maxRetries,
+    rateLimitText: (limit) => {
+      const reset = limit.resets_at === null ? null : new Date(limit.resets_at);
+      return reset && !Number.isNaN(reset.getTime())
+        ? `Rate-limited (${limit.kind}); resets at ${reset.toLocaleTimeString()}.`
+        : `Rate-limited (${limit.kind}); ${rateLimitWording(limit.status)}`;
+    },
+  });
+  const messages: { kind: "warn" | "info" | "muted"; text: string }[] = incident ? [...incident.notices] : [];
   if (rateLimit) {
-    // Without a parseable reset, show the agent's own wording rather than a made-up time.
-    const reset = rateLimit.resets_at === null ? null : new Date(rateLimit.resets_at);
-    warn(
-      reset && !Number.isNaN(reset.getTime())
-        ? `Rate-limited (${rateLimit.kind}); resets at ${reset.toLocaleTimeString()}.`
-        : `Rate-limited (${rateLimit.kind}); ${rateLimitWording(rateLimit.status)}`,
-    );
     if (rateLimitAutoResume === true && !rateLimitRetriesExhausted) {
       messages.push({ kind: "muted", text: "Auto-resume is armed; the session resumes when the window clears." });
     } else if (rateLimitAutoResume === false) {
@@ -123,12 +109,13 @@ export function SystemNotices({
     }
   }
   if (rateLimitRetriesExhausted) {
-    warn(
-      "Auto-resume stopped: the same prompt was re-sent too many times without getting through. Resume manually or send a new prompt.",
-    );
+    messages.push({
+      kind: "warn",
+      text: "Auto-resume stopped: the same prompt was re-sent too many times without getting through. Resume manually or send a new prompt.",
+    });
   }
   const resumePending = rateLimitResumeState === "retrying" || rateLimitResumeState === "ok";
-  if (messages.length === 0 && !reconnectRetriesExhausted) return null;
+  if (!incident && messages.length === 0) return null;
   return (
     <div className="border-b border-surface-800 px-4 py-2 space-y-1">
       {messages.map((m, i) => (
@@ -165,7 +152,7 @@ export function SystemNotices({
       {rateLimit && rateLimitResumeState === "failed" && rateLimitResumeError && (
         <div className="pt-1 text-xs text-brand-400">Resume failed: {rateLimitResumeError}</div>
       )}
-      {reconnectRetriesExhausted && (
+      {incident?.retriesExhausted && (
         <div className="flex items-center justify-between gap-3 text-xs text-brand-400">
           <span>Connection lost. Auto-retry stopped.</span>
           <button type="button" onClick={manualReconnect} className={ACTION_BUTTON}>
