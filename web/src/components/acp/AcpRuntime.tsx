@@ -75,6 +75,7 @@ export interface AcpContext {
   /** Reveal loaded older rows first, then fetch the next page. */
   loadEarlierHistory: () => void;
   loadingEarlierHistory: boolean;
+  replaySyncing: boolean;
 }
 
 /** Owns the external store so a new `key` builds a fresh runtime. A `/clear`
@@ -232,6 +233,7 @@ export function AcpRuntime({
         canLoadEarlierHistory: canOfferEarlier(canLoadEarlier, hasMoreOlder),
         loadEarlierHistory,
         loadingEarlierHistory: loadingOlder,
+        replaySyncing: acp.replaySyncing,
       })}
     </RuntimeHost>
   );
