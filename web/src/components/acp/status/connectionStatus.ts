@@ -54,7 +54,7 @@ export interface ConnectionDiagnosticObservation {
 }
 
 export interface ConnectionDiagnosticSection {
-  id: "device" | "transport" | "server" | "agent" | "provider";
+  id: "device" | "conversation" | "server" | "agent" | "provider";
   label: string;
   observations: ConnectionDiagnosticObservation[];
 }
@@ -324,26 +324,10 @@ export function deriveConnectionDiagnostics(input: ConnectionStatusInput): Conne
     sections: [
       { id: "device", label: "Device", observations: [{ label: "Dashboard", state: "ready", value: "Active" }] },
       {
-        id: "transport",
-        label: "Device to AoE",
+        id: "conversation",
+        label: "Conversation",
         observations: [
-          { label: "Structured view", state: deviceToServer, value: socketDescription },
-          ...(input.lastTransportDiagnostic
-            ? [
-                {
-                  label: "Last connection event",
-                  state:
-                    input.lastTransportDiagnostic.kind === "replay_http" ? ("failed" as const) : ("working" as const),
-                  value: `${transportAt ? `${transportAt} · ` : ""}${input.lastTransportDiagnostic.text}`,
-                },
-              ]
-            : []),
-        ],
-      },
-      {
-        id: "server",
-        label: "AoE",
-        observations: [
+          { label: "Conversation stream", state: deviceToServer, value: socketDescription },
           ...(input.lagged
             ? [
                 {
@@ -354,7 +338,7 @@ export function deriveConnectionDiagnostics(input: ConnectionStatusInput): Conne
               ]
             : []),
           {
-            label: "Live updates",
+            label: "Conversation updates",
             state:
               continuity === "current"
                 ? "ready"
@@ -365,6 +349,16 @@ export function deriveConnectionDiagnostics(input: ConnectionStatusInput): Conne
                     : "blocked",
             value: liveUpdatesDescription,
           },
+          ...(input.lastTransportDiagnostic
+            ? [
+                {
+                  label: "Last connection event",
+                  state:
+                    input.lastTransportDiagnostic.kind === "replay_http" ? ("failed" as const) : ("working" as const),
+                  value: `${transportAt ? `${transportAt} · ` : ""}${input.lastTransportDiagnostic.text}`,
+                },
+              ]
+            : []),
         ],
       },
       {
@@ -460,8 +454,8 @@ export function deriveTerminalConnectionDiagnostics(input: {
     sections: [
       { id: "device", label: "Device", observations: [{ label: "Dashboard", state: "ready", value: "Active" }] },
       {
-        id: "transport",
-        label: "Device to AoE",
+        id: "conversation",
+        label: "Terminal connection",
         observations: [
           {
             label: "Terminal connection",

@@ -158,7 +158,7 @@ describe("connection status model", () => {
       value: expect.stringContaining("Replay request rejected: HTTP 403 Forbidden."),
     });
     expect(observations.map((observation) => observation.label)).toEqual(
-      expect.arrayContaining(["Structured view", "Live updates"]),
+      expect.arrayContaining(["Conversation stream", "Conversation updates"]),
     );
   });
 });
