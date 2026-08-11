@@ -10,6 +10,7 @@ import {
   isPinnedToBottom,
   PINNED_BOTTOM_SLOP_PX,
   scrollRestoreDelta,
+  topInsetScrollAdjustment,
 } from "./historyScroll";
 
 const base = {
@@ -88,6 +89,18 @@ describe("scrollRestoreDelta", () => {
   it("returns 0 when nothing grew", () => {
     expect(scrollRestoreDelta(1300, 1300, false)).toBe(0);
     expect(scrollRestoreDelta(1300, 1000, false)).toBe(0);
+  });
+});
+
+describe("topInsetScrollAdjustment", () => {
+  it("leaves readers at the top room for a transient overlay", () => {
+    expect(topInsetScrollAdjustment(0, 44, 0)).toBe(0);
+    expect(topInsetScrollAdjustment(44, 0, 43)).toBe(0);
+  });
+
+  it("keeps a scrolled reader's visible row fixed as an inset changes", () => {
+    expect(topInsetScrollAdjustment(0, 44, 120)).toBe(44);
+    expect(topInsetScrollAdjustment(44, 0, 120)).toBe(-44);
   });
 });
 

@@ -2,7 +2,7 @@
 // Structured view conversation surface. assistant-ui renders the thread shell;
 // state lives in AcpRuntime and is only fed to assistant-ui, never owned by it.
 
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { ThreadPrimitive } from "@assistant-ui/react";
 import { ChevronDown } from "lucide-react";
 
@@ -14,6 +14,7 @@ import { lastClearIndex } from "../../lib/acpHistoryWindow";
 import { AgentProfileProvider } from "../../lib/agentProfileContext";
 import { conversationFontSizeRem } from "../../lib/conversationFontSize";
 import type { FileRef, FileRefSession } from "../../lib/fileRef";
+import { topInsetScrollAdjustment } from "../../lib/historyScroll";
 import { ChromeCollapseHandle, CollapsibleRegion } from "../CollapsibleChrome";
 import { AcpFileRefContext } from "./AcpFileRefContext";
 import { AcpRuntime, type AcpContext } from "./AcpRuntime";
@@ -29,7 +30,11 @@ import { ModeSwitchFailedNotice, QueuedPromptsStrip, RejectedPromptsStrip } from
 import { MonitoringBanner, ScheduledWakeupBanner, SessionBanners } from "./SessionBanners";
 import { ConfigOptionSwitchFailedNotice } from "./SessionConfigControls";
 import { StartupErrorScreen } from "./StartupErrorScreen";
-import { RateLimitRecoverySection, SystemNotices } from "./SystemNotices";
+import {
+  deriveStructuredConnectionDiagnostics,
+  RateLimitRecoverySection,
+  SystemNotices,
+} from "./SystemNotices";
 import { ComposerActionRail } from "./status/ComposerActionRail";
 import { deriveConversationNextStep } from "./status/conversationStatus";
 import { AssistantMessage, UserMessage } from "./ThreadMessages";
@@ -170,6 +175,25 @@ function AcpChrome({
     nextWakeupAt: state.nextWakeupAt,
     monitorArmed: state.monitorArmed,
   });
+  const connectionDiagnostics = deriveStructuredConnectionDiagnostics({
+    status,
+    serverReachability: ctx.serverReachability,
+    lagged: state.lagged,
+    rateLimit: state.rateLimit,
+    rateLimitRetriesExhausted: state.rateLimitRetriesExhausted,
+    hasEverOpened: ctx.hasEverOpened,
+    reconnecting: ctx.reconnecting,
+    retryCount: ctx.retryCount,
+    retryCountdown: ctx.retryCountdown,
+    maxRetries: ctx.maxRetries,
+    startupError: state.startupError !== null,
+    workerStopped: state.workerStopped,
+    workerRestarting: state.workerRestarting || acpWorkerState === "resuming",
+    agentUnresponsive: state.agentUnresponsive,
+    agentOrphaned: state.agentOrphaned,
+  });
+  const connectionInset = connectionDiagnostics.hasIncident ? 44 : 0;
+  const previousConnectionInsetRef = useRef(0);
   // Phone-width only: fold the composer away for reading.
   const composerCollapsible = !useIsWideViewport();
   const [composerCollapsed, setComposerCollapsed] = useState(false);
@@ -191,6 +215,49 @@ function AcpChrome({
     hasEverOpened: ctx.hasEverOpened,
     localInflight: state.inflightPromptIds.length > 0,
   });
+  useLayoutEffect(() => {
+    const viewport = viewportRef.current;
+    const previousInset = previousConnectionInsetRef.current;
+    if (!viewport || previousInset === connectionInset) return;
+    viewport.scrollTop += topInsetScrollAdjustment(previousInset, connectionInset, viewport.scrollTop);
+    previousConnectionInsetRef.current = connectionInset;
+  }, [connectionInset, viewportRef]);
+
+  const connectionNotice = (
+    <RateLimitRecoverySection
+      sessionId={sessionId}
+      currentAgent={state.agent ?? acpAgent}
+      onPrefill={(text) => setPrimerPrefill({ id: `rate-limit-recovery-${Date.now()}`, text })}
+    >
+      {({ onSwitchAgent }) => (
+        <SystemNotices
+          sessionId={sessionId}
+          status={status}
+          serverReachability={ctx.serverReachability}
+          lagged={state.lagged}
+          rateLimit={state.rateLimit}
+          rateLimitAutoResume={view.rateLimitAutoResume}
+          rateLimitRetriesExhausted={state.rateLimitRetriesExhausted}
+          startupError={state.startupError !== null}
+          workerStopped={state.workerStopped}
+          workerRestarting={state.workerRestarting || acpWorkerState === "resuming"}
+          agentUnresponsive={state.agentUnresponsive}
+          agentOrphaned={state.agentOrphaned}
+          hasEverOpened={ctx.hasEverOpened}
+          reconnecting={ctx.reconnecting}
+          retryCount={ctx.retryCount}
+          retryCountdown={ctx.retryCountdown}
+          maxRetries={ctx.maxRetries}
+          manualReconnect={ctx.manualReconnect}
+          diagnostics={connectionDiagnostics}
+          onSwitchAgent={onSwitchAgent}
+          onResumeRateLimit={() => void rateLimitResume.respawn()}
+          rateLimitResumeState={rateLimitResume.state}
+          rateLimitResumeError={rateLimitResume.error}
+        />
+      )}
+    </RateLimitRecoverySection>
+  );
 
   // An adapter that failed the compatibility check never runs, so no chat surface.
   if (state.incompatibleAgent) {
@@ -205,39 +272,6 @@ function AcpChrome({
       <AttentionChime approvals={state.pendingApprovals.length} elicitations={state.pendingElicitations.length} />
       <PlanStrip plan={state.plan} />
 
-      <RateLimitRecoverySection
-        sessionId={sessionId}
-        currentAgent={state.agent ?? acpAgent}
-        onPrefill={(text) => setPrimerPrefill({ id: `rate-limit-recovery-${Date.now()}`, text })}
-      >
-        {({ onSwitchAgent }) => (
-          <SystemNotices
-            sessionId={sessionId}
-            status={status}
-            serverReachability={ctx.serverReachability}
-            lagged={state.lagged}
-            rateLimit={state.rateLimit}
-            rateLimitAutoResume={view.rateLimitAutoResume}
-            rateLimitRetriesExhausted={state.rateLimitRetriesExhausted}
-            startupError={state.startupError !== null}
-            workerStopped={state.workerStopped}
-            workerRestarting={state.workerRestarting || acpWorkerState === "resuming"}
-            agentUnresponsive={state.agentUnresponsive}
-            agentOrphaned={state.agentOrphaned}
-            hasEverOpened={ctx.hasEverOpened}
-            reconnecting={ctx.reconnecting}
-            retryCount={ctx.retryCount}
-            retryCountdown={ctx.retryCountdown}
-            maxRetries={ctx.maxRetries}
-            manualReconnect={ctx.manualReconnect}
-            onSwitchAgent={onSwitchAgent}
-            onResumeRateLimit={() => void rateLimitResume.respawn()}
-            rateLimitResumeState={rateLimitResume.state}
-            rateLimitResumeError={rateLimitResume.error}
-          />
-        )}
-      </RateLimitRecoverySection>
-
       <SessionBanners
         sessionId={sessionId}
         state={state}
@@ -249,7 +283,8 @@ function AcpChrome({
         dismissError={ctx.dismissError}
       />
 
-      <ThreadPrimitive.Root className="flex flex-1 flex-col min-h-0">
+      <ThreadPrimitive.Root className="relative flex flex-1 flex-col min-h-0">
+        {connectionNotice}
         <div className="relative flex min-h-0 flex-1 flex-col">
           <ThreadPrimitive.Viewport
             autoScroll={false}
@@ -257,7 +292,11 @@ function AcpChrome({
             data-testid="acp-viewport"
             className="flex-1 overflow-x-hidden overflow-y-auto [overflow-anchor:none]"
           >
-            <div ref={messagesContentRef} className="mx-auto max-w-3xl xl:max-w-4xl 2xl:max-w-5xl px-4 py-6">
+            <div
+              ref={messagesContentRef}
+              className="mx-auto max-w-3xl px-4 pb-6 xl:max-w-4xl 2xl:max-w-5xl"
+              style={{ paddingTop: `${24 + connectionInset}px` }}
+            >
               <ThreadPrimitive.Empty>
                 <EmptyState onPick={ctx.sendPrompt} />
               </ThreadPrimitive.Empty>
