@@ -50,6 +50,22 @@ describe("SystemNotices", () => {
     expect(mount().container.firstChild).toBeNull();
   });
 
+  it("renders reconnect progress on the route and keeps its summary in the same row", () => {
+    const { getByLabelText, getByTestId } = mount({
+      status: "closed",
+      serverReachability: "reachable",
+      reconnecting: true,
+      retryCount: 1,
+    });
+    expect(getByLabelText("Device to AoE: working")).toBeDefined();
+    expect(getByLabelText("AoE to agent: inactive")).toBeDefined();
+    expect(getByTestId("connection-route").parentElement).toBe(
+      getByTestId("connection-incident-summary").parentElement,
+    );
+    expect(getByTestId("connection-incident-summary").className).toContain("text-status-warning");
+    expect(getByTestId("connection-incident-summary").className).not.toContain("text-brand");
+  });
+
   it.each([
     [true, /Auto-resume is armed/],
     [false, /Auto-resume is off for this profile/],
