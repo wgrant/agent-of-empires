@@ -51,7 +51,6 @@ export async function fetchReplay(
   setHasMoreOlder: (value: boolean) => void,
   signal: AbortSignal,
   setServerReachability?: (value: "reachable" | "unreachable") => void,
-  setLastSuccessfulReplayAt?: (value: number) => void,
   setLastTransportDiagnostic?: (value: TransportDiagnostic) => void,
 ): Promise<void> {
   try {
@@ -63,7 +62,6 @@ export async function fetchReplay(
         setHasMoreOlder,
         signal,
         setServerReachability,
-        setLastSuccessfulReplayAt,
         setLastTransportDiagnostic,
       );
     } else {
@@ -73,7 +71,6 @@ export async function fetchReplay(
         dispatch,
         signal,
         setServerReachability,
-        setLastSuccessfulReplayAt,
         setLastTransportDiagnostic,
       );
     }
@@ -95,7 +92,6 @@ async function fetchTail(
   setHasMoreOlder: (value: boolean) => void,
   signal: AbortSignal,
   setServerReachability?: (value: "reachable" | "unreachable") => void,
-  setLastSuccessfulReplayAt?: (value: number) => void,
   setLastTransportDiagnostic?: (value: TransportDiagnostic) => void,
 ): Promise<void> {
   const [tailRes, tailRowsRes] = await getReplayPair(sid, `before=${TAIL_BEFORE}&limit=${REPLAY_PAGE_SIZE}`, signal);
@@ -131,7 +127,6 @@ async function fetchTail(
     }
   }
   dispatch({ kind: "lagged_resolved" });
-  setLastSuccessfulReplayAt?.(Date.now());
 }
 
 async function fetchForward(
@@ -140,7 +135,6 @@ async function fetchForward(
   dispatch: Dispatch,
   signal: AbortSignal,
   setServerReachability?: (value: "reachable" | "unreachable") => void,
-  setLastSuccessfulReplayAt?: (value: number) => void,
   setLastTransportDiagnostic?: (value: TransportDiagnostic) => void,
 ): Promise<void> {
   const firstSince = Math.max(0, lastSeq - REPLAY_OVERLAP);
@@ -180,7 +174,6 @@ async function fetchForward(
     cursor = next;
   }
   dispatch({ kind: "lagged_resolved" });
-  setLastSuccessfulReplayAt?.(Date.now());
 }
 
 /** Fetch the page below `before`. Returns whether more older history remains, or null on failure. */

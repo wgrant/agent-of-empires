@@ -35,7 +35,6 @@ function noticeProps(overrides?: Partial<NoticeProps>): NoticeProps {
     agentOrphaned: false,
     lastWebSocketOpenAt: null,
     lastServerMessageAt: null,
-    lastSuccessfulReplayAt: null,
     lastTransportDiagnostic: null,
     reconnectingSince: null,
     liveUpdatesStale: false,

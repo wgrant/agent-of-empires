@@ -26,7 +26,6 @@ const base = {
   agentOrphaned: false,
   lastWebSocketOpenAt: null,
   lastServerMessageAt: null,
-  lastSuccessfulReplayAt: null,
   lastTransportDiagnostic: null,
   reconnectingSince: null,
   liveUpdatesStale: false,
@@ -144,7 +143,6 @@ describe("deriveConnectionIncident", () => {
       reconnecting: true,
       retryCount: 2,
       lastWebSocketOpenAt: new Date("2026-08-11T14:07:32Z").getTime(),
-      lastSuccessfulReplayAt: new Date("2026-08-11T14:09:47Z").getTime(),
       lastServerMessageAt: new Date("2026-08-11T14:09:48Z").getTime(),
       lastTransportDiagnostic: {
         kind: "replay_http",
@@ -160,7 +158,7 @@ describe("deriveConnectionIncident", () => {
       value: expect.stringContaining("Replay request rejected: HTTP 403 Forbidden."),
     });
     expect(observations.map((observation) => observation.label)).toEqual(
-      expect.arrayContaining(["Structured view", "Transcript sync", "Live updates"]),
+      expect.arrayContaining(["Structured view", "Live updates"]),
     );
   });
 

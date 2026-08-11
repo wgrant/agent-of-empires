@@ -86,7 +86,6 @@ export function useAcpConnection(
   const [serverReachability, setServerReachability] = useState<"reachable" | "unreachable" | "unknown">("unknown");
   const [lastWebSocketOpenAt, setLastWebSocketOpenAt] = useState<number | null>(null);
   const [lastServerMessageAt, setLastServerMessageAt] = useState<number | null>(null);
-  const [lastSuccessfulReplayAt, setLastSuccessfulReplayAt] = useState<number | null>(null);
   const [lastTransportDiagnostic, setLastTransportDiagnostic] = useState<TransportDiagnostic | null>(null);
   const [reconnectingSince, setReconnectingSince] = useState<number | null>(null);
   const [liveUpdatesStale, setLiveUpdatesStale] = useState(false);
@@ -221,7 +220,6 @@ export function useAcpConnection(
     setServerReachability("unknown");
     setLastWebSocketOpenAt(null);
     setLastServerMessageAt(null);
-    setLastSuccessfulReplayAt(null);
     setLastTransportDiagnostic(null);
     setReconnectingSince(null);
     setLiveUpdatesStale(false);
@@ -272,7 +270,7 @@ export function useAcpConnection(
       const controller = new AbortController();
       replayAbortRef.current = controller;
       return {
-        done: fetchReplay(sessionId, lastSeqRef, dispatch, setHasMoreOlder, controller.signal, setServerReachability, setLastSuccessfulReplayAt, setLastTransportDiagnostic),
+        done: fetchReplay(sessionId, lastSeqRef, dispatch, setHasMoreOlder, controller.signal, setServerReachability, setLastTransportDiagnostic),
         abort: () => controller.abort(),
       };
     };
@@ -440,7 +438,6 @@ export function useAcpConnection(
     serverReachability,
     lastWebSocketOpenAt,
     lastServerMessageAt,
-    lastSuccessfulReplayAt,
     lastTransportDiagnostic,
     reconnectingSince,
     liveUpdatesStale,
