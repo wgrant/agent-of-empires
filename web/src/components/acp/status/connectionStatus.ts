@@ -141,6 +141,13 @@ export function deriveConnectionDiagnostics(input: ConnectionStatusInput): Conne
           : observedAgent === "failed"
             ? "failed"
             : "ready";
+  // An agent without a reported lifecycle problem is the healthy default.
+  // The adapter does not provide a separate affirmative heartbeat, but a
+  // hollow endpoint reads as disconnected despite a ready AoE-to-agent path.
+  // Explicit stopped, restart, rate-limit, orphaned, and unresponsive states
+  // above continue to override this optimistic presentation.
+  const displayedAgent: ConnectionHopState =
+    serverToAgent === "inactive" ? "unknown" : observedAgent === "unknown" ? "ready" : observedAgent;
 
   const observedServer: ConnectionHopState =
     input.serverReachability === "reachable"
@@ -221,7 +228,7 @@ export function deriveConnectionDiagnostics(input: ConnectionStatusInput): Conne
     // the transport is down. Downstream state resumes once this edge is live.
     server: deviceToServer === "ready" ? observedServer : "unknown",
     serverToAgent,
-    agent: serverToAgent === "inactive" ? "unknown" : observedAgent,
+    agent: displayedAgent,
     notices,
     retriesExhausted,
   };
@@ -292,7 +299,7 @@ export function deriveConnectionDiagnostics(input: ConnectionStatusInput): Conne
         observations: [
           {
             label: "Agent session",
-            state: serverToAgent === "inactive" ? "inactive" : observedAgent,
+            state: serverToAgent === "inactive" ? "inactive" : displayedAgent,
             value:
               serverToAgent === "inactive"
                 ? "Waiting for the AoE connection"
