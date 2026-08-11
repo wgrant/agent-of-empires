@@ -59,6 +59,16 @@ describe("SystemNotices", () => {
     expect(mount().container.firstChild).toBeNull();
   });
 
+  it("shows a neutral loading state instead of an initial connection incident", () => {
+    const { getByRole, queryByTestId } = mount({
+      status: "connecting",
+      hasEverOpened: false,
+      conversationSync: "initial",
+    });
+    expect(getByRole("status").textContent).toContain("Loading conversation…");
+    expect(queryByTestId("connection-incident-summary")).toBeNull();
+  });
+
   it("renders reconnect progress on the route and keeps its summary in the same row", () => {
     const { getByLabelText, getByTestId } = mount({
       status: "closed",

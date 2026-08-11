@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { RotateCcw } from "lucide-react";
 
 import type { RespawnState } from "../../hooks/useRespawnSession";
 import type { AcpState } from "../../lib/acpTypes";
@@ -11,6 +12,7 @@ import {
   type ConnectionDiagnostics,
   type ConnectionStatusInput,
 } from "./status/connectionStatus";
+import type { ConversationSyncStatus } from "./status/conversationSyncStatus";
 
 /** Owns the rate-limit recovery modal toggle and hands its opener to `children`. */
 export function RateLimitRecoverySection({
@@ -80,6 +82,7 @@ export function SystemNotices({
   lastTransportDiagnostic,
   reconnectingSince,
   liveUpdatesStale,
+  conversationSync = "idle",
   hasEverOpened,
   reconnecting,
   retryCount,
@@ -110,6 +113,7 @@ export function SystemNotices({
   lastTransportDiagnostic: AcpContext["lastTransportDiagnostic"];
   reconnectingSince: AcpContext["reconnectingSince"];
   liveUpdatesStale: AcpContext["liveUpdatesStale"];
+  conversationSync?: ConversationSyncStatus;
   hasEverOpened: boolean;
   reconnecting: boolean;
   retryCount: number;
@@ -147,10 +151,16 @@ export function SystemNotices({
       reconnectingSince,
       liveUpdatesStale,
     });
+  const initialSessionLoad = conversationSync === "initial";
   useEffect(() => {
+    if (initialSessionLoad) {
+      clear(sessionId);
+      return;
+    }
     publish({ sessionId, kind: "structured", diagnostics, onReconnect: manualReconnect });
-  }, [diagnostics, manualReconnect, publish, sessionId]);
+  }, [clear, diagnostics, initialSessionLoad, manualReconnect, publish, sessionId]);
   useEffect(() => () => clear(sessionId), [clear, sessionId]);
+  if (initialSessionLoad) return <ConversationLoadingBubble />;
   if (!diagnostics.hasIncident) return null;
   const resumePending = rateLimitResumeState === "retrying" || rateLimitResumeState === "ok";
   const actions =
@@ -205,4 +215,15 @@ export function SystemNotices({
       </>
     ) : undefined;
   return <ConnectionIncidentBubble diagnostics={diagnostics} onReconnect={manualReconnect} actions={actions} />;
+}
+
+function ConversationLoadingBubble() {
+  return (
+    <div className="pointer-events-none absolute inset-x-0 top-2 z-30 flex justify-center px-3" role="status">
+      <div className="flex items-center gap-2 rounded-full border border-surface-700 bg-surface-850/95 px-3 py-1.5 text-xs text-text-secondary shadow-lg backdrop-blur-sm">
+        <RotateCcw className="size-3 animate-spin text-text-muted" aria-hidden="true" />
+        Loading conversation…
+      </div>
+    </div>
+  );
 }
