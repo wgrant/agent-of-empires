@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   connectionStatusCompactLabel,
+  connectionComposerNotice,
   connectionStatusPresentation,
   deriveConnectionDiagnostics,
   deriveConnectionIncident,
@@ -106,6 +107,9 @@ describe("connection status model", () => {
       working: true,
     });
     expect(connectionStatusCompactLabel(retrying)).toBe("Reconnecting · 3/7");
+    expect(connectionComposerNotice(retrying.primary)).toBe(
+      "Reconnecting. New messages will wait until this session resumes.",
+    );
   });
 
   it("only creates an incident for a non-connected primary state", () => {

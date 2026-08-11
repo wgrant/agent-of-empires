@@ -4,7 +4,7 @@
 
 import { useLayoutEffect, useRef, useState } from "react";
 import { ThreadPrimitive } from "@assistant-ui/react";
-import { ChevronDown } from "lucide-react";
+import { AlertTriangle, ChevronDown, RotateCcw } from "lucide-react";
 
 import { useIsWideViewport } from "../../hooks/useIsWideViewport";
 import { useMobileKeyboard } from "../../hooks/useMobileKeyboard";
@@ -36,6 +36,11 @@ import {
   SystemNotices,
 } from "./SystemNotices";
 import { ComposerActionRail } from "./status/ComposerActionRail";
+import {
+  connectionComposerNotice,
+  connectionStatusPresentation,
+  type ConnectionDiagnostics,
+} from "./status/connectionStatus";
 import { deriveConversationNextStep } from "./status/conversationStatus";
 import { AssistantMessage, UserMessage } from "./ThreadMessages";
 import { ToolDensityToggle, ToolDisplayModeProvider, useToolDensityPref } from "./ToolDisplayMode";
@@ -412,6 +417,7 @@ function AcpChrome({
               collapsible={composerCollapsible}
               collapsed={composerCollapsed}
               onToggleCollapsed={() => setComposerCollapsed((v) => !v)}
+              connectionDiagnostics={connectionDiagnostics}
             />
           )}
         </div>
@@ -430,6 +436,7 @@ function ComposerDock({
   collapsible,
   collapsed,
   onToggleCollapsed,
+  connectionDiagnostics,
 }: {
   view: Props;
   ctx: AcpContext;
@@ -438,12 +445,15 @@ function ComposerDock({
   collapsible: boolean;
   collapsed: boolean;
   onToggleCollapsed: () => void;
+  connectionDiagnostics: ConnectionDiagnostics;
 }) {
   const { sessionId, acpWorkerState, acpAgent } = view;
   const { state, status } = ctx;
+  const composerConnected = status === "open" && !state.workerStopped && !state.workerRestarting;
   return (
     <>
       <ComposerActionRail>
+        {!composerConnected && <ComposerConnectionNotice diagnostics={connectionDiagnostics} />}
         <RejectedPromptsStrip
           rejected={state.rejectedPrompts}
           onRetry={ctx.sendPrompt}
@@ -509,7 +519,7 @@ function ComposerDock({
           setConfigOption={ctx.setConfigOption}
           sessionUsage={state.sessionUsage}
           availableCommands={state.availableCommands}
-          connected={status === "open" && !state.workerStopped && !state.workerRestarting}
+          connected={composerConnected}
           turnActive={state.turnActive}
           enqueuePrompt={ctx.sendPrompt}
           promptCapabilities={state.promptCapabilities}
@@ -521,6 +531,26 @@ function ComposerDock({
         />
       </CollapsibleRegion>
     </>
+  );
+}
+
+function ComposerConnectionNotice({ diagnostics }: { diagnostics: ConnectionDiagnostics }) {
+  const presentation = connectionStatusPresentation(diagnostics.primary);
+  const icon = presentation.working ? (
+    <RotateCcw className="size-3 shrink-0 animate-spin" aria-hidden="true" />
+  ) : (
+    <AlertTriangle className="size-3 shrink-0" aria-hidden="true" />
+  );
+  const tone = presentation.tone === "error" ? "text-status-error" : "text-status-warning";
+  return (
+    <div
+      className={`flex items-center gap-1.5 border-b border-surface-800/70 px-3 py-1.5 text-[11px] md:hidden ${tone}`}
+      data-testid="composer-connection-notice"
+      role="status"
+    >
+      {icon}
+      <span>{connectionComposerNotice(diagnostics.primary)}</span>
+    </div>
   );
 }
 
