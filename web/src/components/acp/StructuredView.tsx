@@ -459,6 +459,7 @@ function ComposerDock({
 
       <CollapsibleRegion id="conversation-composer" collapsed={collapsible && collapsed}>
         <Composer
+          key={sessionId}
           sessionId={sessionId}
           currentAgent={state.agent ?? acpAgent}
           yoloMode={view.yoloMode}
