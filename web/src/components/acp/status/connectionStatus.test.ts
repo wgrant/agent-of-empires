@@ -4,6 +4,7 @@ import { deriveConnectionIncident } from "./connectionStatus";
 
 const base = {
   status: "open" as const,
+  serverReachability: "unknown" as const,
   lagged: false,
   rateLimit: null,
   hasEverOpened: true,
@@ -58,5 +59,12 @@ describe("deriveConnectionIncident", () => {
   it("classifies lifecycle failures without requiring a separate status model", () => {
     expect(deriveConnectionIncident({ ...base, workerRestarting: true })?.agent).toBe("working");
     expect(deriveConnectionIncident({ ...base, startupError: true })?.agent).toBe("failed");
+  });
+
+  it("uses authenticated replay evidence for the AoE hop", () => {
+    expect(deriveConnectionIncident({ ...base, lagged: true, serverReachability: "reachable" })?.server).toBe("ready");
+    expect(deriveConnectionIncident({ ...base, lagged: true, serverReachability: "unreachable" })?.server).toBe(
+      "failed",
+    );
   });
 });

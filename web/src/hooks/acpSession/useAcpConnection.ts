@@ -82,6 +82,7 @@ export function useAcpConnection(
   const [hasMoreOlder, setHasMoreOlder] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [hasEverOpened, setHasEverOpened] = useState(false);
+  const [serverReachability, setServerReachability] = useState<"reachable" | "unreachable" | "unknown">("unknown");
 
   const lastSeqRef = useLatestRef(state.lastSeq);
   const oldestSeqRef = useLatestRef(state.oldestSeq);
@@ -199,6 +200,7 @@ export function useAcpConnection(
     setHasMoreOlder(false);
     setLoadingOlder(false);
     setHasEverOpened(false);
+    setServerReachability("unknown");
   }
 
   useEffect(() => {
@@ -245,7 +247,7 @@ export function useAcpConnection(
       const controller = new AbortController();
       replayAbortRef.current = controller;
       return {
-        done: fetchReplay(sessionId, lastSeqRef, dispatch, setHasMoreOlder, controller.signal),
+        done: fetchReplay(sessionId, lastSeqRef, dispatch, setHasMoreOlder, controller.signal, setServerReachability),
         abort: () => controller.abort(),
       };
     };
@@ -383,6 +385,7 @@ export function useAcpConnection(
 
   return {
     status,
+    serverReachability,
     reconnecting,
     retryCount,
     retryCountdown,

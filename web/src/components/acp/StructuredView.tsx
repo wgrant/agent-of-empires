@@ -230,6 +230,7 @@ function AcpChrome({
           ctx.reconnecting ? (
             <SystemNotices
               status={status}
+              serverReachability={ctx.serverReachability}
               lagged={state.lagged}
               rateLimit={state.rateLimit}
               rateLimitAutoResume={view.rateLimitAutoResume}

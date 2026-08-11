@@ -49,6 +49,7 @@ const ACTION_BUTTON =
 
 export function SystemNotices({
   status,
+  serverReachability,
   lagged,
   rateLimit,
   rateLimitAutoResume,
@@ -70,6 +71,7 @@ export function SystemNotices({
   rateLimitResumeError = null,
 }: {
   status: AcpContext["status"];
+  serverReachability: AcpContext["serverReachability"];
   lagged: boolean;
   rateLimit: AcpState["rateLimit"];
   /** Omitted when unknown, in which case nothing is claimed about auto-resume. */
@@ -93,6 +95,7 @@ export function SystemNotices({
 }) {
   const incident = deriveConnectionIncident({
     status,
+    serverReachability,
     lagged,
     rateLimit,
     hasEverOpened,
