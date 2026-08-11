@@ -75,6 +75,9 @@ export interface AcpContext {
   canLoadEarlierHistory: boolean;
   /** Reveal loaded older rows first, then fetch the next page. */
   loadEarlierHistory: () => void;
+  canLoadNewerHistory: boolean;
+  loadNewerHistory: () => void;
+  jumpToLatestHistory: () => void;
   loadingEarlierHistory: boolean;
   replaySyncing: boolean;
 }
@@ -128,10 +131,11 @@ export function AcpRuntime({
     acp.forceEndTurn,
   );
   // Only the recent slice renders, so a long session does not block first paint.
-  const { windowedActivity, canLoadEarlier, loadEarlier } = useHistoryWindow(
+  const { windowedActivity, canLoadEarlier, canLoadNewer, loadEarlier, loadNewer, jumpToLatest } = useHistoryWindow(
     sessionId,
     acp.state.activity,
     showClearedTurns,
+    acp.hasEverOpened,
   );
   const { loadOlder, hasMoreOlder, loadingOlder } = acp;
   const loadEarlierHistory = useCallback(() => {
@@ -234,6 +238,9 @@ export function AcpRuntime({
         dismissConfigOptionSwitchFailed: acp.dismissConfigOptionSwitchFailed,
         canLoadEarlierHistory: canOfferEarlier(canLoadEarlier, hasMoreOlder),
         loadEarlierHistory,
+        canLoadNewerHistory: canLoadNewer,
+        loadNewerHistory: loadNewer,
+        jumpToLatestHistory: jumpToLatest,
         loadingEarlierHistory: loadingOlder,
         replaySyncing: acp.replaySyncing,
       })}
