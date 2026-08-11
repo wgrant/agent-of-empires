@@ -210,43 +210,32 @@ function AcpChrome({
         currentAgent={state.agent ?? acpAgent}
         onPrefill={(text) => setPrimerPrefill({ id: `rate-limit-recovery-${Date.now()}`, text })}
       >
-        {({ onSwitchAgent }) =>
-          status !== "open" ||
-          state.lagged ||
-          state.rateLimit ||
-          state.rateLimitRetriesExhausted ||
-          state.startupError !== null ||
-          state.workerStopped ||
-          state.workerRestarting ||
-          state.agentUnresponsive ||
-          state.agentOrphaned ||
-          acpWorkerState === "resuming" ||
-          ctx.reconnecting ? (
-            <SystemNotices
-              status={status}
-              serverReachability={ctx.serverReachability}
-              lagged={state.lagged}
-              rateLimit={state.rateLimit}
-              rateLimitAutoResume={view.rateLimitAutoResume}
-              rateLimitRetriesExhausted={state.rateLimitRetriesExhausted}
-              startupError={state.startupError !== null}
-              workerStopped={state.workerStopped}
-              workerRestarting={state.workerRestarting || acpWorkerState === "resuming"}
-              agentUnresponsive={state.agentUnresponsive}
-              agentOrphaned={state.agentOrphaned}
-              hasEverOpened={ctx.hasEverOpened}
-              reconnecting={ctx.reconnecting}
-              retryCount={ctx.retryCount}
-              retryCountdown={ctx.retryCountdown}
-              maxRetries={ctx.maxRetries}
-              manualReconnect={ctx.manualReconnect}
-              onSwitchAgent={onSwitchAgent}
-              onResumeRateLimit={() => void rateLimitResume.respawn()}
-              rateLimitResumeState={rateLimitResume.state}
-              rateLimitResumeError={rateLimitResume.error}
-            />
-          ) : null
-        }
+        {({ onSwitchAgent }) => (
+          <SystemNotices
+            sessionId={sessionId}
+            status={status}
+            serverReachability={ctx.serverReachability}
+            lagged={state.lagged}
+            rateLimit={state.rateLimit}
+            rateLimitAutoResume={view.rateLimitAutoResume}
+            rateLimitRetriesExhausted={state.rateLimitRetriesExhausted}
+            startupError={state.startupError !== null}
+            workerStopped={state.workerStopped}
+            workerRestarting={state.workerRestarting || acpWorkerState === "resuming"}
+            agentUnresponsive={state.agentUnresponsive}
+            agentOrphaned={state.agentOrphaned}
+            hasEverOpened={ctx.hasEverOpened}
+            reconnecting={ctx.reconnecting}
+            retryCount={ctx.retryCount}
+            retryCountdown={ctx.retryCountdown}
+            maxRetries={ctx.maxRetries}
+            manualReconnect={ctx.manualReconnect}
+            onSwitchAgent={onSwitchAgent}
+            onResumeRateLimit={() => void rateLimitResume.respawn()}
+            rateLimitResumeState={rateLimitResume.state}
+            rateLimitResumeError={rateLimitResume.error}
+          />
+        )}
       </RateLimitRecoverySection>
 
       <SessionBanners

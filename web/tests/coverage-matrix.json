@@ -75,7 +75,7 @@
         "web/src/components/Dashboard.tsx",
         "web/src/components/TerminalView.tsx",
         "web/src/components/ContentSplit.tsx",
-        "web/src/components/TerminalConnectionBanners.tsx"
+        "web/src/components/connection/ConnectionStatusView.tsx"
       ]
     },
     {
@@ -1998,13 +1998,6 @@
       "risk": "medium",
       "specs": ["tests/live/auth.spec.ts"],
       "components": ["web/src/components/ConnectedDevices.tsx"]
-    },
-    {
-      "id": "connectivity.disconnect-banner",
-      "kind": "live-playwright",
-      "risk": "medium",
-      "specs": ["tests/live/session-lifecycle.spec.ts"],
-      "components": ["web/src/components/DisconnectBanner.tsx"]
     },
     {
       "id": "connectivity.lifecycle-fetch-toasts",

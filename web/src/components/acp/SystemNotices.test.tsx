@@ -43,7 +43,11 @@ function noticeProps(overrides?: Partial<NoticeProps>): NoticeProps {
   };
 }
 
-const mount = (overrides?: Partial<NoticeProps>) => render(<SystemNotices {...noticeProps(overrides)} />);
+const mount = (overrides?: Partial<NoticeProps>) => {
+  const result = render(<SystemNotices {...noticeProps(overrides)} />);
+  const expand = () => fireEvent.click(result.getByRole("button", { name: "Show connection details" }));
+  return { expand, ...result };
+};
 
 describe("SystemNotices", () => {
   it("renders nothing for a healthy session", () => {
@@ -72,8 +76,11 @@ describe("SystemNotices", () => {
     // Unknown: claim nothing.
     [undefined, null],
   ])("auto-resume %s", (rateLimitAutoResume, expected) => {
-    const { queryByText } = mount({ rateLimit: LIMITED, rateLimitAutoResume });
-    if (expected) expect(queryByText(expected)).not.toBeNull();
+    const { queryByText, expand } = mount({ rateLimit: LIMITED, rateLimitAutoResume });
+    if (expected) {
+      expand();
+      expect(queryByText(expected)).not.toBeNull();
+    }
     else expect(queryByText(/Auto-resume/)).toBeNull();
   });
 
@@ -118,7 +125,12 @@ describe("SystemNotices", () => {
   it("shows both recovery actions only with a rate limit and their handlers", () => {
     const onSwitchAgent = vi.fn();
     const onResumeRateLimit = vi.fn();
-    const { getByRole, queryByRole, rerender } = mount({ rateLimit: LIMITED, onSwitchAgent, onResumeRateLimit });
+    const { getByRole, queryByRole, rerender, expand } = mount({
+      rateLimit: LIMITED,
+      onSwitchAgent,
+      onResumeRateLimit,
+    });
+    expand();
     fireEvent.click(getByRole("button", { name: /continue in another agent/i }));
     fireEvent.click(getByRole("button", { name: /resume now/i }));
     expect(onSwitchAgent).toHaveBeenCalledTimes(1);
@@ -147,19 +159,25 @@ describe("SystemNotices", () => {
     ["retrying", /resuming/i, null],
     ["ok", /resume requested/i, /Resume requested\. New events should start streaming shortly/i],
   ] as const)("disables Resume while %s", (rateLimitResumeState, name, note) => {
-    const { getByRole, queryByText } = mount({ rateLimit: LIMITED, onResumeRateLimit: vi.fn(), rateLimitResumeState });
+    const { getByRole, queryByText, expand } = mount({
+      rateLimit: LIMITED,
+      onResumeRateLimit: vi.fn(),
+      rateLimitResumeState,
+    });
+    expand();
     expect((getByRole("button", { name }) as HTMLButtonElement).disabled).toBe(true);
     if (note) expect(queryByText(note)).not.toBeNull();
   });
 
   it("shows failed resume feedback while retaining both actions", () => {
-    const { getByRole, getByText } = mount({
+    const { getByRole, getByText, expand } = mount({
       rateLimit: LIMITED,
       onResumeRateLimit: vi.fn(),
       onSwitchAgent: vi.fn(),
       rateLimitResumeState: "failed",
       rateLimitResumeError: "Server returned 500. spawn failed",
     });
+    expand();
     expect(getByText(/Resume failed: Server returned 500\. spawn failed/i)).toBeDefined();
     expect(getByRole("button", { name: /resume now/i })).toBeDefined();
     expect(getByRole("button", { name: /continue in another agent/i })).toBeDefined();
@@ -170,13 +188,14 @@ describe("SystemNotices", () => {
     [{ status: "limited", resets_at: "2099-01-01T00:00:00Z", kind: "usage" }, true],
     [null, false],
   ])("shows the auto-resume stopped note (snapshot %o)", (rateLimit, buttons) => {
-    const { getByText, queryByRole } = mount({
+    const { getByText, queryByRole, expand } = mount({
       rateLimitRetriesExhausted: true,
       rateLimit,
       onSwitchAgent: vi.fn(),
       onResumeRateLimit: vi.fn(),
     });
-    expect(getByText(/Auto-resume stopped: the same prompt was re-sent too many times/i)).toBeDefined();
+    expand();
+    expect(getByText(/Auto-resume stopped after repeated attempts/i)).toBeDefined();
     expect(queryByRole("button", { name: /resume now/i }) !== null).toBe(buttons);
     expect(queryByRole("button", { name: /continue in another agent/i }) !== null).toBe(buttons);
   });

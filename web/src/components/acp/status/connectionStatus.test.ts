@@ -7,6 +7,7 @@ const base = {
   serverReachability: "unknown" as const,
   lagged: false,
   rateLimit: null,
+  rateLimitRetriesExhausted: false,
   hasEverOpened: true,
   reconnecting: false,
   retryCount: 0,

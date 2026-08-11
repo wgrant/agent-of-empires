@@ -86,11 +86,11 @@ describe("TopBar", () => {
   });
 
   it("renders the offline badge independent of the DEV badge", () => {
-    const { getByText, getByLabelText } = renderTopBar({
+    const { getByLabelText } = renderTopBar({
       isDevBuild: true,
       isOffline: true,
     });
-    expect(getByText("offline")).toBeTruthy();
+    expect(getByLabelText("Show connection status")).toBeTruthy();
     expect(getByLabelText("Debug build")).toBeTruthy();
   });
 

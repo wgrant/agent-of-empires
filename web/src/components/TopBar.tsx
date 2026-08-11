@@ -8,6 +8,9 @@ import { ActivityBar } from "./ActivityBar";
 import type { PaneDisplay } from "./Dock";
 import { useWebSettings } from "../hooks/useWebSettings";
 import { StrokeIcon } from "./icons";
+import { usePublishedConnectionDiagnostics } from "../lib/connectionDiagnosticsContext";
+import { deriveDashboardConnectionDiagnostics } from "./acp/status/connectionStatus";
+import { GlobalConnectionStatusButton } from "./connection/ConnectionStatusView";
 
 interface Props {
   activeWorkspace: Workspace | undefined;
@@ -89,6 +92,10 @@ export function TopBar({
   const hideWordmark = sidebarColumnVisible && webSettings.sidebarCompact;
   const hasSessionIdentity = activeProjectName !== null && activeSession !== null;
   const sessionIdentityLabel = hasSessionIdentity ? `${activeProjectName} / ${activeSession.title}` : undefined;
+  const publishedDiagnostics = usePublishedConnectionDiagnostics(activeSession?.id ?? null);
+  const connectionDiagnostics = isOffline
+    ? deriveDashboardConnectionDiagnostics(true)
+    : (publishedDiagnostics?.diagnostics ?? deriveDashboardConnectionDiagnostics(false));
 
   return (
     <header {...tourAnchor(TOUR_ANCHORS.topbar)} className="h-12 bg-surface-850 flex items-stretch shrink-0">
@@ -180,15 +187,10 @@ export function TopBar({
             DEV
           </span>
         )}
-        {isOffline && (
-          <span
-            className="font-mono text-[11px] px-1.5 py-0.5 rounded-full bg-status-error/10 text-status-error flex items-center gap-1.5"
-            title="Disconnected from backend"
-          >
-            <span className="w-1.5 h-1.5 rounded-full bg-status-error animate-pulse" />
-            offline
-          </span>
-        )}
+        <GlobalConnectionStatusButton
+          diagnostics={connectionDiagnostics}
+          onReconnect={publishedDiagnostics?.onReconnect}
+        />
 
         {hasSessionIdentity && <PaletteTriggerPill onClick={onOpenPalette} showDesktop={false} />}
 
