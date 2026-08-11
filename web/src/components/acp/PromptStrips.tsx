@@ -1,11 +1,12 @@
 import { Fragment, useState } from "react";
-import { AlertTriangle, Check, Clock, Info, Paperclip, RotateCcw, SendHorizontal, X } from "lucide-react";
+import { AlertTriangle, Check, Clock, Paperclip, RotateCcw, SendHorizontal, X } from "lucide-react";
 
 import { useIsCoarsePointer } from "../../hooks/useIsCoarsePointer";
 import type { QueuedPrompt, RejectedPrompt } from "../../lib/acpTypes";
 import { useClearAliases } from "../../lib/agentProfileContext";
 import { isClearAlias } from "../../lib/agentProfiles";
 import { isQueuedPromptLong, queuedStripLayout } from "./queuedPromptsLayout";
+import { ActionFeedbackNotice } from "./status/ActionFeedbackNotice";
 
 const AMBER_STRIP = "border-amber-900/40 bg-amber-950/20";
 const AMBER_ROW = "flex items-start gap-2 rounded-lg border border-amber-700/30 bg-amber-950/15 px-2.5 py-1.5";
@@ -97,18 +98,12 @@ export function ModeSwitchFailedNotice({
       ? "YOLO mode (bypassPermissions) is not available on this adapter; the session is running in default permission mode. claude-agent-acp gates bypass on the ALLOW_BYPASS env var. Pick a different mode from the composer or restart the daemon with ALLOW_BYPASS=1."
       : `Could not switch to mode "${failure.modeId}"; the session is staying on its previous mode. Pick a different mode from the composer.`;
   return (
-    <Strip tone={AMBER_STRIP}>
-      <div className={AMBER_ROW}>
-        <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
-        <div className="min-w-0 flex-1">
-          <p className="text-xs leading-5 text-amber-100">{friendly}</p>
-          <p className="mt-0.5 font-mono text-[10px] text-amber-400/70">{failure.reason}</p>
-        </div>
-        <button type="button" onClick={onDismiss} className={AMBER_DISMISS} aria-label="Dismiss mode-switch notice">
-          <X className="h-3 w-3" />
-        </button>
-      </div>
-    </Strip>
+    <ActionFeedbackNotice
+      title={friendly}
+      detail={failure.reason}
+      onDismiss={onDismiss}
+      dismissLabel="Dismiss mode-switch notice"
+    />
   );
 }
 
