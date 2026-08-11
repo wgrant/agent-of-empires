@@ -39,7 +39,6 @@ export interface AcpContext {
   serverReachability: Session["serverReachability"];
   lastWebSocketOpenAt: Session["lastWebSocketOpenAt"];
   lastServerMessageAt: Session["lastServerMessageAt"];
-  lastSuccessfulReplayAt: Session["lastSuccessfulReplayAt"];
   lastTransportDiagnostic: Session["lastTransportDiagnostic"];
   reconnectingSince: Session["reconnectingSince"];
   liveUpdatesStale: Session["liveUpdatesStale"];
@@ -201,7 +200,6 @@ export function AcpRuntime({
         serverReachability: acp.serverReachability,
         lastWebSocketOpenAt: acp.lastWebSocketOpenAt,
         lastServerMessageAt: acp.lastServerMessageAt,
-        lastSuccessfulReplayAt: acp.lastSuccessfulReplayAt,
         lastTransportDiagnostic: acp.lastTransportDiagnostic,
         reconnectingSince: acp.reconnectingSince,
         liveUpdatesStale: acp.liveUpdatesStale,

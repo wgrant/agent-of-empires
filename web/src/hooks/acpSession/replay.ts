@@ -46,7 +46,6 @@ export async function fetchReplay(
   dispatch: Dispatch,
   setHasMoreOlder: (value: boolean) => void,
   setServerReachability?: (value: "reachable" | "unreachable") => void,
-  setLastSuccessfulReplayAt?: (value: number) => void,
   setLastTransportDiagnostic?: (value: TransportDiagnostic) => void,
 ): Promise<void> {
   try {
@@ -57,7 +56,6 @@ export async function fetchReplay(
         dispatch,
         setHasMoreOlder,
         setServerReachability,
-        setLastSuccessfulReplayAt,
         setLastTransportDiagnostic,
       );
     } else {
@@ -66,7 +64,6 @@ export async function fetchReplay(
         lastSeq.current,
         dispatch,
         setServerReachability,
-        setLastSuccessfulReplayAt,
         setLastTransportDiagnostic,
       );
     }
@@ -86,7 +83,6 @@ async function fetchTail(
   dispatch: Dispatch,
   setHasMoreOlder: (value: boolean) => void,
   setServerReachability?: (value: "reachable" | "unreachable") => void,
-  setLastSuccessfulReplayAt?: (value: number) => void,
   setLastTransportDiagnostic?: (value: TransportDiagnostic) => void,
 ): Promise<void> {
   const [tailRes, tailRowsRes] = await getReplayPair(sid, `before=${TAIL_BEFORE}&limit=${REPLAY_PAGE_SIZE}`);
@@ -118,7 +114,6 @@ async function fetchTail(
     }
   }
   dispatch({ kind: "lagged_resolved" });
-  setLastSuccessfulReplayAt?.(Date.now());
 }
 
 async function fetchForward(
@@ -126,7 +121,6 @@ async function fetchForward(
   lastSeq: number,
   dispatch: Dispatch,
   setServerReachability?: (value: "reachable" | "unreachable") => void,
-  setLastSuccessfulReplayAt?: (value: number) => void,
   setLastTransportDiagnostic?: (value: TransportDiagnostic) => void,
 ): Promise<void> {
   const firstSince = Math.max(0, lastSeq - REPLAY_OVERLAP);
@@ -164,7 +158,6 @@ async function fetchForward(
     cursor = next;
   }
   dispatch({ kind: "lagged_resolved" });
-  setLastSuccessfulReplayAt?.(Date.now());
 }
 
 /** Fetch the page below `before`. Returns whether more older history remains, or null on failure. */
