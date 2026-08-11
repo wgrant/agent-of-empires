@@ -19,7 +19,7 @@ function stateTextClass(state: ConnectionHopState | ConnectionEdgeState) {
 function ConnectionNode({ label, state }: { label: string; state: ConnectionHopState }) {
   const marker =
     state === "working" ? (
-      <LoaderCircle className="size-2.5 animate-spin text-status-warning" aria-hidden="true" />
+      <span className="size-2 rounded-full bg-status-warning" aria-hidden="true" />
     ) : state === "blocked" || state === "failed" ? (
       <span className="flex size-2.5 items-center justify-center text-[9px] font-bold leading-none text-status-error">
         !
