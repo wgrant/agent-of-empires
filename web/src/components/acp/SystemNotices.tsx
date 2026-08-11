@@ -13,6 +13,7 @@ import {
   type ConnectionStatusInput,
 } from "./status/connectionStatus";
 import type { ConversationSyncStatus } from "./status/conversationSyncStatus";
+import type { ConversationStatus } from "./status/conversationStatus";
 
 /** Owns the rate-limit recovery modal toggle and hands its opener to `children`. */
 export function RateLimitRecoverySection({
@@ -83,6 +84,7 @@ export function SystemNotices({
   reconnectingSince,
   liveUpdatesStale,
   conversationSync = "idle",
+  conversationStatus,
   hasEverOpened,
   reconnecting,
   retryCount,
@@ -114,6 +116,7 @@ export function SystemNotices({
   reconnectingSince: AcpContext["reconnectingSince"];
   liveUpdatesStale: AcpContext["liveUpdatesStale"];
   conversationSync?: ConversationSyncStatus;
+  conversationStatus?: ConversationStatus;
   hasEverOpened: boolean;
   reconnecting: boolean;
   retryCount: number;
@@ -162,9 +165,13 @@ export function SystemNotices({
   useEffect(() => () => clear(sessionId), [clear, sessionId]);
   if (initialSessionLoad) return <ConversationLoadingBubble />;
   if (!diagnostics.hasIncident) return null;
+  const rateLimitIncident =
+    conversationStatus?.kind === "blocked" && conversationStatus.cause === "rate_limited"
+      ? true
+      : rateLimit !== null && diagnostics.session === "rate_limited";
   const resumePending = rateLimitResumeState === "retrying" || rateLimitResumeState === "ok";
   const actions =
-    rateLimit || rateLimitRetriesExhausted ? (
+    rateLimitIncident || rateLimitRetriesExhausted ? (
       <>
           {rateLimit && onResumeRateLimit && (
             <button
