@@ -5,6 +5,7 @@ import type { ConnectionStatus } from "../../../hooks/useAcpSession";
  * existing notices; later presentation work renders these as the compact
  * This device → AoE → Agent route. */
 export type ConnectionHopState = "ready" | "working" | "blocked" | "failed" | "unknown";
+export type ConnectionEdgeState = "ready" | "working" | "blocked" | "failed" | "inactive";
 
 export interface ConnectionNotice {
   kind: "info" | "warn";
@@ -13,7 +14,9 @@ export interface ConnectionNotice {
 
 export interface ConnectionIncident {
   device: ConnectionHopState;
+  deviceToServer: ConnectionEdgeState;
   server: ConnectionHopState;
+  serverToAgent: ConnectionEdgeState;
   agent: ConnectionHopState;
   notices: ConnectionNotice[];
   retriesExhausted: boolean;
@@ -81,7 +84,7 @@ export function deriveConnectionIncident(input: ConnectionStatusInput): Connecti
   else if (input.workerRestarting || input.agentUnresponsive || input.agentOrphaned) {
     notices.push({ kind: "info", text: "Restarting agent session; transcript preserved." });
   }
-  const agent =
+  const observedAgent =
     input.startupError || input.workerStopped
       ? "failed"
       : input.rateLimit
@@ -89,18 +92,42 @@ export function deriveConnectionIncident(input: ConnectionStatusInput): Connecti
         : input.workerRestarting || input.agentUnresponsive || input.agentOrphaned
           ? "working"
           : "unknown";
-  if (notices.length === 0 && !retriesExhausted && agent === "unknown") return null;
+  if (notices.length === 0 && !retriesExhausted && observedAgent === "unknown") return null;
+
+  const deviceToServer: ConnectionEdgeState =
+    input.status === "open"
+      ? "ready"
+      : input.reconnecting || input.status === "connecting" || input.status === "error"
+        ? "working"
+        : "failed";
+  const serverToAgent: ConnectionEdgeState =
+    deviceToServer !== "ready"
+      ? "inactive"
+      : observedAgent === "working"
+        ? "working"
+        : observedAgent === "blocked"
+          ? "blocked"
+          : observedAgent === "failed"
+            ? "failed"
+            : "ready";
+
+  const observedServer: ConnectionHopState =
+    input.serverReachability === "reachable"
+      ? "ready"
+      : input.serverReachability === "unreachable"
+        ? "failed"
+        : "unknown";
 
   return {
-    device:
-      input.status === "open" ? "ready" : input.reconnecting || input.status === "connecting" ? "working" : "failed",
-    server:
-      input.serverReachability === "reachable"
-        ? "ready"
-        : input.serverReachability === "unreachable"
-          ? "failed"
-          : "unknown",
-    agent,
+    // The browser rendering this header is necessarily alive. Connection
+    // progress belongs on the route edge, not on the device itself.
+    device: "ready",
+    deviceToServer,
+    // Do not present a stale successful replay as current reachability while
+    // the transport is down. Downstream state resumes once this edge is live.
+    server: deviceToServer === "ready" ? observedServer : "unknown",
+    serverToAgent,
+    agent: serverToAgent === "inactive" ? "unknown" : observedAgent,
     notices,
     retriesExhausted,
   };

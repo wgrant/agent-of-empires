@@ -37,14 +37,23 @@ describe("deriveConnectionIncident", () => {
       retryCountdown: 4,
     });
     expect(retrying).toMatchObject({
-      device: "working",
+      device: "ready",
+      deviceToServer: "working",
       server: "unknown",
+      serverToAgent: "inactive",
+      agent: "unknown",
       retriesExhausted: false,
       notices: [{ kind: "warn", text: "Structured view disconnected. Reconnecting (3/7) in 4s…" }],
     });
 
     const exhausted = deriveConnectionIncident({ ...base, status: "closed", retryCount: 7 });
-    expect(exhausted).toMatchObject({ device: "failed", retriesExhausted: true, notices: [] });
+    expect(exhausted).toMatchObject({
+      device: "ready",
+      deviceToServer: "failed",
+      serverToAgent: "inactive",
+      retriesExhausted: true,
+      notices: [],
+    });
   });
 
   it("classifies an explicit rate limit as an agent block without inferring server health", () => {
@@ -66,5 +75,23 @@ describe("deriveConnectionIncident", () => {
     expect(deriveConnectionIncident({ ...base, lagged: true, serverReachability: "unreachable" })?.server).toBe(
       "failed",
     );
+  });
+
+  it("does not show stale downstream health while reconnecting", () => {
+    const incident = deriveConnectionIncident({
+      ...base,
+      status: "closed",
+      reconnecting: true,
+      retryCount: 1,
+      serverReachability: "reachable",
+      workerRestarting: true,
+    });
+    expect(incident).toMatchObject({
+      device: "ready",
+      deviceToServer: "working",
+      server: "unknown",
+      serverToAgent: "inactive",
+      agent: "unknown",
+    });
   });
 });
