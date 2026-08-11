@@ -104,7 +104,12 @@ import { toastBus, reportError } from "./lib/toastBus";
 import { startPendingCreates } from "./lib/pendingCreates";
 import { isAbsolutePath, resolveToRepoRelative, type FileRef } from "./lib/fileRef";
 import { NAVIGATE_EVENT, OPEN_SESSION_EVENT } from "./lib/sessionRoute";
-import { dispatchFocusTerminal, requestSessionInputFocus, setPendingTerminalFocus } from "./lib/terminalFocus";
+import {
+  clearPendingTerminalFocus,
+  dispatchFocusTerminal,
+  requestSessionInputFocus,
+  setPendingTerminalFocus,
+} from "./lib/terminalFocus";
 import {
   bindHiddenInput,
   clearMobileKeyboardProxyInput,
@@ -972,12 +977,11 @@ function AppContent({
         const picked = ws.sessions.find((s) => s.id === sessionId);
         transitionKeyboardProxy(sessionId, sessionId === activeSessionId && singlePane ? rightPanelView : "agent");
         navigate(path ?? `/session/${encodeURIComponent(sessionId)}`);
-        // iOS does not permit a session's asynchronously mounted terminal
-        // input to inherit this sidebar tap's keyboard authorization. The
-        // persistent keyboard input keeps the gesture-authorized focus while
-        // a terminal is starting; the terminal consumes its input directly
-        // rather than attempting a second, unreliable focus transfer.
-        if (isCoarse) {
+        const keepComposerCollapsed = picked?.view === "structured";
+        if (keepComposerCollapsed) {
+          closeKeyboardProxy();
+          clearPendingTerminalFocus();
+        } else if (isCoarse) {
           // Claude's alternate-screen startup still loses the first keyboard
           // input on iOS (#3285). Start it as a monitoring view until that
           // separate transport race is fixed; other terminal agents remain
@@ -986,9 +990,8 @@ function AppContent({
             closeKeyboardProxy();
           } else if (webSettings.autoOpenKeyboard) {
             focusKeyboardProxy();
-            if (picked?.view === "structured") setPendingTerminalFocus("composer");
           }
-        } else {
+        } else if (!keepComposerCollapsed) {
           focusKeyboardProxy();
           focusAgentInput(picked);
         }
@@ -1021,16 +1024,17 @@ function AppContent({
       if (picked) {
         transitionKeyboardProxy(picked.id, picked.id === activeSessionId && singlePane ? rightPanelView : "agent");
         navigate(`/session/${encodeURIComponent(picked.id)}`);
-        // See handleSelectSession: keep focus on the persistent keyboard input
-        // until the selected surface can receive it.
-        if (isCoarse) {
+        const keepComposerCollapsed = picked.view === "structured";
+        if (keepComposerCollapsed) {
+          closeKeyboardProxy();
+          clearPendingTerminalFocus();
+        } else if (isCoarse) {
           if (picked.tool === "claude" && picked.view !== "structured") {
             closeKeyboardProxy();
           } else if (webSettings.autoOpenKeyboard) {
             focusKeyboardProxy();
-            if (picked.view === "structured") setPendingTerminalFocus("composer");
           }
-        } else {
+        } else if (!keepComposerCollapsed) {
           focusKeyboardProxy();
           focusAgentInput(picked);
         }
