@@ -3,11 +3,14 @@ import { useEffect, useState } from "react";
 import { useRespawnSession } from "../../hooks/useRespawnSession";
 import type { AcpState } from "../../lib/acpTypes";
 import { pickWorkerStoppedVariant, showWorkerStoppingBanner } from "./workerStoppedBanner";
+import type { ConversationStatus } from "./status/conversationStatus";
+import { StartupErrorBanner } from "./StartupErrorBanner";
 
 /** Worker lifecycle and triage banners stacked above the transcript. */
 export function SessionBanners({
   sessionId,
   state,
+  conversationStatus,
   acpWorkerState,
   trashedAt,
   archivedAt,
@@ -17,6 +20,7 @@ export function SessionBanners({
 }: {
   sessionId: string;
   state: AcpState;
+  conversationStatus: ConversationStatus;
   acpWorkerState: "absent" | "resuming" | "running" | "stopping";
   trashedAt: string | null;
   archivedAt: string | null;
@@ -24,26 +28,65 @@ export function SessionBanners({
   onRestore?: () => Promise<boolean> | void;
   dismissError: () => void;
 }) {
-  const variant = pickWorkerStoppedVariant({
-    workerStopped: state.workerStopped,
-    startupError: state.startupError,
-    trashedAt,
-    archivedAt,
-    snoozedUntil,
-    workerStopping: acpWorkerState === "stopping",
-  });
   return (
     <>
-      {variant === "trashed" && <TrashedWorkerStoppedBanner sessionId={sessionId} onRestore={onRestore} />}
-      {variant === "archived" && <ArchivedWorkerStoppedBanner sessionId={sessionId} />}
-      {variant === "snoozed" && snoozedUntil && (
-        <SnoozedWorkerStoppedBanner sessionId={sessionId} snoozedUntil={snoozedUntil} />
-      )}
-      {variant === "generic" && <WorkerStoppedBanner sessionId={sessionId} />}
+      <ConversationLifecycleNotice
+        status={conversationStatus}
+        sessionId={sessionId}
+        startupError={state.startupError}
+        workerStopped={state.workerStopped}
+        agentUnresponsive={state.agentUnresponsive}
+        agentOrphaned={state.agentOrphaned}
+        trashedAt={trashedAt}
+        archivedAt={archivedAt}
+        snoozedUntil={snoozedUntil}
+        onRestore={onRestore}
+      />
       {showWorkerStoppingBanner({ acpWorkerState, startupError: state.startupError }) && <WorkerStoppingBanner />}
       {state.lastError && <InteractionErrorBanner message={state.lastError} onDismiss={dismissError} />}
     </>
   );
+}
+
+export function ConversationLifecycleNotice({
+  status,
+  sessionId,
+  startupError,
+  workerStopped,
+  agentUnresponsive,
+  agentOrphaned,
+  trashedAt,
+  archivedAt,
+  snoozedUntil,
+  onRestore,
+}: {
+  status: ConversationStatus;
+  sessionId: string;
+  startupError: string | null;
+  workerStopped: boolean;
+  agentUnresponsive: boolean;
+  agentOrphaned: boolean;
+  trashedAt: string | null;
+  archivedAt: string | null;
+  snoozedUntil: string | null;
+  onRestore?: () => Promise<boolean> | void;
+}) {
+  if (status.kind === "blocked" && status.cause === "agent_failed" && startupError) {
+    return <StartupErrorBanner sessionId={sessionId} message={startupError} />;
+  }
+  if (status.kind === "updating" && status.cause === "agent_restarting") {
+    return <WorkerRestartingBanner agentUnresponsive={agentUnresponsive} agentOrphaned={agentOrphaned} />;
+  }
+  if (status.kind !== "blocked" || status.cause !== "agent_stopped") return null;
+
+  const variant = pickWorkerStoppedVariant({ workerStopped, startupError, trashedAt, archivedAt, snoozedUntil });
+  if (variant === "trashed") return <TrashedWorkerStoppedBanner sessionId={sessionId} onRestore={onRestore} />;
+  if (variant === "archived") return <ArchivedWorkerStoppedBanner sessionId={sessionId} />;
+  if (variant === "snoozed" && snoozedUntil) {
+    return <SnoozedWorkerStoppedBanner sessionId={sessionId} snoozedUntil={snoozedUntil} />;
+  }
+  if (variant === "generic") return <WorkerStoppedBanner sessionId={sessionId} />;
+  return null;
 }
 
 export function MonitoringBanner({ description }: { description: string | null }) {
