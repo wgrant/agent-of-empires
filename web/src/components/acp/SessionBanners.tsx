@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 
 import { useRespawnSession } from "../../hooks/useRespawnSession";
 import type { AcpState } from "../../lib/acpTypes";
-import { StartupErrorBanner } from "./StartupErrorBanner";
 import { pickWorkerStoppedVariant, showWorkerStoppingBanner } from "./workerStoppedBanner";
 
 /** Worker lifecycle and triage banners stacked above the transcript. */
@@ -37,26 +36,12 @@ export function SessionBanners({
   const idle = healthy && !state.turnActive;
   return (
     <>
-      {state.startupError && <StartupErrorBanner sessionId={sessionId} message={state.startupError} />}
       {variant === "trashed" && <TrashedWorkerStoppedBanner sessionId={sessionId} onRestore={onRestore} />}
       {variant === "archived" && <ArchivedWorkerStoppedBanner sessionId={sessionId} />}
       {variant === "snoozed" && snoozedUntil && (
         <SnoozedWorkerStoppedBanner sessionId={sessionId} snoozedUntil={snoozedUntil} />
       )}
       {variant === "generic" && <WorkerStoppedBanner sessionId={sessionId} />}
-      {state.workerRestarting && !state.startupError && !state.workerStopped && (
-        <WorkerRestartingBanner agentUnresponsive={state.agentUnresponsive} agentOrphaned={state.agentOrphaned} />
-      )}
-      {acpWorkerState === "resuming" &&
-        healthy &&
-        (state.lastSeq === 0 ? (
-          <PulseBanner>Starting structured view worker for new session… this can take a few seconds.</PulseBanner>
-        ) : (
-          <PulseBanner>
-            Resuming structured view worker… cached transcript still available. Queued prompts will send once the agent
-            is back online.
-          </PulseBanner>
-        ))}
       {showWorkerStoppingBanner({ acpWorkerState, startupError: state.startupError }) && <WorkerStoppingBanner />}
       {state.nextWakeupAt && idle && (
         <ScheduledWakeupBanner wakeAt={state.nextWakeupAt} reason={state.nextWakeupReason} />
