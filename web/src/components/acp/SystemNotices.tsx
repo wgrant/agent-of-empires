@@ -1,15 +1,12 @@
-import { useState } from "react";
-import { LoaderCircle } from "lucide-react";
+import { useEffect, useState } from "react";
 
 import type { RespawnState } from "../../hooks/useRespawnSession";
 import type { AcpState } from "../../lib/acpTypes";
 import type { AcpContext } from "./AcpRuntime";
 import { SwitchAgentModal } from "./SwitchAgentModal";
-import {
-  deriveConnectionIncident,
-  type ConnectionEdgeState,
-  type ConnectionHopState,
-} from "./status/connectionStatus";
+import { useConnectionDiagnosticsPublisher } from "../../lib/connectionDiagnosticsContext";
+import { ConnectionIncidentBubble } from "../connection/ConnectionStatusView";
+import { deriveConnectionDiagnostics } from "./status/connectionStatus";
 
 /** Owns the rate-limit recovery modal toggle and hands its opener to `children`. */
 export function RateLimitRecoverySection({
@@ -49,78 +46,8 @@ function rateLimitWording(status: string): string {
   return text || "the agent did not report a reset time.";
 }
 
-const ACTION_BUTTON =
-  "shrink-0 rounded-md border border-brand-700 bg-brand-900/40 px-2 py-1 text-[10px] font-mono uppercase tracking-wide text-brand-100 hover:bg-brand-900/60";
-
-function ConnectionNode({ label, state }: { label: string; state: ConnectionHopState }) {
-  const marker =
-    state === "working" ? (
-      <LoaderCircle className="size-2.5 animate-spin text-status-warning" aria-hidden="true" />
-    ) : state === "blocked" || state === "failed" ? (
-      <span className="flex size-2.5 items-center justify-center text-[9px] font-bold leading-none text-status-error">
-        !
-      </span>
-    ) : (
-      <span
-        className={`size-2 rounded-full ${state === "ready" ? "bg-text-muted" : "border border-surface-500"}`}
-        aria-hidden="true"
-      />
-    );
-  return (
-    <span className="flex shrink-0 items-center gap-1">
-      {marker}
-      {label}
-    </span>
-  );
-}
-
-function ConnectionEdge({ state, label }: { state: ConnectionEdgeState; label: string }) {
-  const lineClass =
-    state === "ready"
-      ? "border-text-muted/50"
-      : state === "working"
-        ? "border-status-warning/70"
-        : state === "blocked" || state === "failed"
-          ? "border-status-error/70"
-          : "border-surface-600 border-dashed";
-  return (
-    <span className="relative flex w-6 shrink-0 items-center justify-center" aria-label={`${label}: ${state}`}>
-      <span className={`w-full border-t ${lineClass}`} aria-hidden="true" />
-      {state === "working" && (
-        <LoaderCircle className="absolute size-3 animate-spin bg-surface-900 text-status-warning" aria-hidden="true" />
-      )}
-    </span>
-  );
-}
-
-function ConnectionRoute({
-  device,
-  deviceToServer,
-  server,
-  serverToAgent,
-  agent,
-}: {
-  device: ConnectionHopState;
-  deviceToServer: ConnectionEdgeState;
-  server: ConnectionHopState;
-  serverToAgent: ConnectionEdgeState;
-  agent: ConnectionHopState;
-}) {
-  return (
-    <div
-      className="flex shrink-0 items-center text-[10px] font-mono uppercase tracking-wide text-text-muted"
-      data-testid="connection-route"
-    >
-      <ConnectionNode label="Device" state={device} />
-      <ConnectionEdge state={deviceToServer} label="Device to AoE" />
-      <ConnectionNode label="AoE" state={server} />
-      <ConnectionEdge state={serverToAgent} label="AoE to agent" />
-      <ConnectionNode label="Agent" state={agent} />
-    </div>
-  );
-}
-
 export function SystemNotices({
+  sessionId = "",
   status,
   serverReachability,
   lagged,
@@ -143,6 +70,7 @@ export function SystemNotices({
   rateLimitResumeState = "idle",
   rateLimitResumeError = null,
 }: {
+  sessionId?: string;
   status: AcpContext["status"];
   serverReachability: AcpContext["serverReachability"];
   lagged: boolean;
@@ -166,11 +94,13 @@ export function SystemNotices({
   rateLimitResumeState?: RespawnState;
   rateLimitResumeError?: string | null;
 }) {
-  const incident = deriveConnectionIncident({
+  const publish = useConnectionDiagnosticsPublisher();
+  const diagnostics = deriveConnectionDiagnostics({
     status,
     serverReachability,
     lagged,
     rateLimit,
+    rateLimitRetriesExhausted,
     hasEverOpened,
     reconnecting,
     retryCount,
@@ -188,59 +118,21 @@ export function SystemNotices({
     agentUnresponsive,
     agentOrphaned,
   });
-  const messages: { kind: "warn" | "info" | "muted"; text: string }[] = incident ? [...incident.notices] : [];
-  if (rateLimit) {
-    if (rateLimitAutoResume === true && !rateLimitRetriesExhausted) {
-      messages.push({ kind: "muted", text: "Auto-resume is armed; the session resumes when the window clears." });
-    } else if (rateLimitAutoResume === false) {
-      messages.push({
-        kind: "muted",
-        text: "Auto-resume is off for this profile; use Resume now, or enable acp.rate_limit_auto_resume.",
-      });
-    }
-  }
-  if (rateLimitRetriesExhausted) {
-    messages.push({
-      kind: "warn",
-      text: "Auto-resume stopped: the same prompt was re-sent too many times without getting through. Resume manually or send a new prompt.",
-    });
-  }
+  useEffect(() => {
+    publish({ sessionId, kind: "structured", diagnostics, onReconnect: manualReconnect });
+  }, [diagnostics, manualReconnect, publish, sessionId]);
+  useEffect(() => () => publish(null), [publish]);
+  if (!diagnostics.hasIncident) return null;
   const resumePending = rateLimitResumeState === "retrying" || rateLimitResumeState === "ok";
-  if (!incident && messages.length === 0) return null;
-  const noticeText = messages.map((message) => message.text).join(" · ");
-  const noticeTone = messages.some((message) => message.kind === "warn")
-    ? "text-status-warning"
-    : "text-text-muted";
-  return (
-    <div className="space-y-1 border-b border-surface-800 bg-surface-900/80 px-4 py-2" role="status">
-      <div className="flex min-w-0 items-center gap-2">
-        {incident && (
-          <ConnectionRoute
-            device={incident.device}
-            deviceToServer={incident.deviceToServer}
-            server={incident.server}
-            serverToAgent={incident.serverToAgent}
-            agent={incident.agent}
-          />
-        )}
-        {noticeText && (
-          <span
-            className={`min-w-0 flex-1 truncate text-xs ${noticeTone}`}
-            data-testid="connection-incident-summary"
-            title={noticeText}
-          >
-            {noticeText}
-          </span>
-        )}
-      </div>
-      {rateLimit && (onResumeRateLimit || onSwitchAgent) && (
-        <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
-          {onResumeRateLimit && (
+  const actions =
+    rateLimit || rateLimitRetriesExhausted ? (
+      <>
+          {rateLimit && onResumeRateLimit && (
             <button
               type="button"
               onClick={onResumeRateLimit}
               disabled={resumePending}
-              className={`${ACTION_BUTTON} disabled:cursor-not-allowed disabled:opacity-60`}
+              className="rounded-md border border-brand-700 bg-brand-900/40 px-2 py-1 text-[10px] font-mono uppercase tracking-wide text-brand-100 hover:bg-brand-900/60 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {rateLimitResumeState === "retrying"
                 ? "Resuming…"
@@ -249,27 +141,39 @@ export function SystemNotices({
                   : "Resume now"}
             </button>
           )}
-          {onSwitchAgent && (
-            <button type="button" onClick={onSwitchAgent} className={ACTION_BUTTON}>
+          {rateLimit && onSwitchAgent && (
+            <button
+              type="button"
+              onClick={onSwitchAgent}
+              className="rounded-md border border-brand-700 bg-brand-900/40 px-2 py-1 text-[10px] font-mono uppercase tracking-wide text-brand-100 hover:bg-brand-900/60"
+            >
               Continue in another agent
             </button>
           )}
-        </div>
-      )}
-      {rateLimit && rateLimitResumeState === "ok" && (
-        <div className="pt-1 text-xs text-text-muted">Resume requested. New events should start streaming shortly.</div>
-      )}
-      {rateLimit && rateLimitResumeState === "failed" && rateLimitResumeError && (
-        <div className="pt-1 text-xs text-status-error">Resume failed: {rateLimitResumeError}</div>
-      )}
-      {incident?.retriesExhausted && (
-        <div className="flex items-center justify-between gap-3 text-xs text-status-error">
-          <span>Connection lost. Auto-retry stopped.</span>
-          <button type="button" onClick={manualReconnect} className={ACTION_BUTTON}>
-            Reconnect
-          </button>
-        </div>
-      )}
-    </div>
-  );
+        {rateLimitAutoResume === true && !rateLimitRetriesExhausted && (
+          <span className="basis-full text-xs text-text-muted">
+            Auto-resume is armed; the session resumes when the window clears.
+          </span>
+        )}
+        {rateLimitAutoResume === false && (
+          <span className="basis-full text-xs text-text-muted">
+            Auto-resume is off for this profile; use Resume now, or enable acp.rate_limit_auto_resume.
+          </span>
+        )}
+        {rateLimitRetriesExhausted && (
+          <span className="basis-full text-xs text-status-warning">
+            Auto-resume stopped after repeated attempts. Resume manually or send a new prompt.
+          </span>
+        )}
+        {rateLimitResumeState === "ok" && (
+          <span className="basis-full text-xs text-text-muted">
+            Resume requested. New events should start streaming shortly.
+          </span>
+        )}
+        {rateLimitResumeState === "failed" && rateLimitResumeError && (
+          <span className="basis-full text-xs text-status-error">Resume failed: {rateLimitResumeError}</span>
+        )}
+      </>
+    ) : undefined;
+  return <ConnectionIncidentBubble diagnostics={diagnostics} onReconnect={manualReconnect} actions={actions} />;
 }
