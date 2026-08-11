@@ -77,7 +77,6 @@ export function SystemNotices({
   agentOrphaned,
   lastWebSocketOpenAt,
   lastServerMessageAt,
-  lastSuccessfulReplayAt,
   lastTransportDiagnostic,
   reconnectingSince,
   liveUpdatesStale,
@@ -108,7 +107,6 @@ export function SystemNotices({
   agentOrphaned: boolean;
   lastWebSocketOpenAt: AcpContext["lastWebSocketOpenAt"];
   lastServerMessageAt: AcpContext["lastServerMessageAt"];
-  lastSuccessfulReplayAt: AcpContext["lastSuccessfulReplayAt"];
   lastTransportDiagnostic: AcpContext["lastTransportDiagnostic"];
   reconnectingSince: AcpContext["reconnectingSince"];
   liveUpdatesStale: AcpContext["liveUpdatesStale"];
@@ -145,7 +143,6 @@ export function SystemNotices({
       agentOrphaned,
       lastWebSocketOpenAt,
       lastServerMessageAt,
-      lastSuccessfulReplayAt,
       lastTransportDiagnostic,
       reconnectingSince,
       liveUpdatesStale,

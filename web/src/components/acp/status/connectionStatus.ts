@@ -67,7 +67,6 @@ export interface ConnectionStatusInput {
   agentOrphaned: boolean;
   lastWebSocketOpenAt: number | null;
   lastServerMessageAt: number | null;
-  lastSuccessfulReplayAt: number | null;
   lastTransportDiagnostic: TransportDiagnostic | null;
   reconnectingSince: number | null;
   liveUpdatesStale: boolean;
@@ -157,7 +156,6 @@ export function deriveConnectionDiagnostics(input: ConnectionStatusInput): Conne
         : "unknown";
   const reconnectingAt = displayTime(input.reconnectingSince);
   const lastReceivedAt = displayTime(input.lastServerMessageAt);
-  const replayAt = displayTime(input.lastSuccessfulReplayAt);
   const transportAt = displayTime(input.lastTransportDiagnostic?.at ?? null);
   const socketDescription =
     input.status === "open"
@@ -175,20 +173,6 @@ export function deriveConnectionDiagnostics(input: ConnectionStatusInput): Conne
       : input.liveUpdatesStale
         ? `Behind${lastReceivedAt ? `, last update ${lastReceivedAt}` : ""}`
         : "Current";
-  const replayDescription =
-    input.lastTransportDiagnostic?.kind === "replay_http"
-      ? `Rejected${transportAt ? ` at ${transportAt}` : ""}`
-      : input.lastTransportDiagnostic?.kind === "replay_network"
-        ? `Unavailable${transportAt ? ` since ${transportAt}` : ""}`
-        : replayAt
-          ? `Up to date at ${replayAt}`
-          : deviceToServer !== "ready"
-            ? "Not observed while the structured view is disconnected"
-            : input.serverReachability === "reachable"
-              ? "Reachable"
-              : input.serverReachability === "unreachable"
-                ? "Unreachable"
-                : "Not observed";
 
   const hasIncident =
     notices.length > 0 || retriesExhausted || input.rateLimitRetriesExhausted || observedAgent !== "unknown";
@@ -271,20 +255,14 @@ export function deriveConnectionDiagnostics(input: ConnectionStatusInput): Conne
         id: "server",
         label: "AoE",
         observations: [
-          {
-            label: "Transcript sync",
-            state:
-              input.lastTransportDiagnostic?.kind === "replay_http"
-                ? "failed"
-                : input.lastTransportDiagnostic?.kind === "replay_network"
-                  ? "working"
-                  : deviceToServer === "ready"
-                    ? observedServer
-                    : "unknown",
-            value: replayDescription,
-          },
           ...(input.lagged
-            ? [{ label: "Replay", state: "blocked" as const, value: "Some events were missed during reconnect." }]
+            ? [
+                {
+                  label: "Transcript recovery",
+                  state: "blocked" as const,
+                  value: "Some updates were missed while reconnecting.",
+                },
+              ]
             : []),
           {
             label: "Live updates",

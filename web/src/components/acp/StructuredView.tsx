@@ -194,7 +194,6 @@ function AcpChrome({
     agentOrphaned: state.agentOrphaned,
     lastWebSocketOpenAt: ctx.lastWebSocketOpenAt,
     lastServerMessageAt: ctx.lastServerMessageAt,
-    lastSuccessfulReplayAt: ctx.lastSuccessfulReplayAt,
     lastTransportDiagnostic: ctx.lastTransportDiagnostic,
     reconnectingSince: ctx.reconnectingSince,
     liveUpdatesStale: ctx.liveUpdatesStale,
@@ -252,7 +251,6 @@ function AcpChrome({
           agentOrphaned={state.agentOrphaned}
           lastWebSocketOpenAt={ctx.lastWebSocketOpenAt}
           lastServerMessageAt={ctx.lastServerMessageAt}
-          lastSuccessfulReplayAt={ctx.lastSuccessfulReplayAt}
           lastTransportDiagnostic={ctx.lastTransportDiagnostic}
           reconnectingSince={ctx.reconnectingSince}
           liveUpdatesStale={ctx.liveUpdatesStale}
