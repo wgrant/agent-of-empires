@@ -270,6 +270,7 @@ function AcpChrome({
           reconnectingSince={ctx.reconnectingSince}
           liveUpdatesStale={ctx.liveUpdatesStale}
           conversationSync={conversationSync}
+          conversationStatus={conversationStatus}
           hasEverOpened={ctx.hasEverOpened}
           reconnecting={ctx.reconnecting}
           retryCount={ctx.retryCount}
@@ -302,6 +303,7 @@ function AcpChrome({
       <SessionBanners
         sessionId={sessionId}
         state={state}
+        conversationStatus={conversationStatus}
         acpWorkerState={acpWorkerState}
         trashedAt={view.trashedAt}
         archivedAt={view.archivedAt}
