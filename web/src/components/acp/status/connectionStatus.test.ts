@@ -82,6 +82,12 @@ describe("deriveConnectionIncident", () => {
     expect(deriveConnectionIncident({ ...base, startupError: true })?.agent).toBe("failed");
   });
 
+  it("shows a healthy agent endpoint until an existing lifecycle signal says otherwise", () => {
+    expect(deriveConnectionDiagnostics(base).agent).toBe("ready");
+    expect(deriveConnectionDiagnostics({ ...base, agentUnresponsive: true }).agent).toBe("working");
+    expect(deriveConnectionDiagnostics({ ...base, workerStopped: true }).agent).toBe("failed");
+  });
+
   it("uses authenticated replay evidence for the AoE hop", () => {
     expect(deriveConnectionIncident({ ...base, lagged: true, serverReachability: "reachable" })?.server).toBe("ready");
     expect(deriveConnectionIncident({ ...base, lagged: true, serverReachability: "unreachable" })?.server).toBe(
