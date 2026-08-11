@@ -171,7 +171,7 @@ export function ConnectionIncidentBubble({
         >
           <ConnectionRoute diagnostics={diagnostics} />
           <span
-            className={`hidden max-w-40 truncate text-xs sm:inline ${tone}`}
+            className={`max-w-32 truncate text-xs sm:max-w-40 ${tone}`}
             data-testid="connection-incident-summary"
             title={presentation.description}
           >
