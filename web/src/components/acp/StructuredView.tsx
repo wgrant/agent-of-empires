@@ -212,6 +212,7 @@ function AcpChrome({
   });
   const connectionInset = connectionDiagnostics.hasIncident ? 44 : 0;
   const previousConnectionInsetRef = useRef(0);
+  const pendingJumpToLatestRef = useRef(false);
   // Phone-width only: fold the composer away for reading.
   const composerCollapsible = !useIsWideViewport();
   const [composerCollapsed, setComposerCollapsed] = useState(false);
@@ -220,7 +221,6 @@ function AcpChrome({
     belowViewportRef,
     messagesContentRef,
     atBottom,
-    isCoarse,
     scrollToBottom,
     requestEarlierHistory,
   } = useTranscriptScroll({
@@ -233,6 +233,19 @@ function AcpChrome({
     hasEverOpened: ctx.hasEverOpened,
     localInflight: state.inflightPromptIds.length > 0,
   });
+  const requestLatest = () => {
+    if (ctx.canLoadNewerHistory) {
+      pendingJumpToLatestRef.current = true;
+      ctx.jumpToLatestHistory();
+      return;
+    }
+    scrollToBottom();
+  };
+  useLayoutEffect(() => {
+    if (!pendingJumpToLatestRef.current || ctx.canLoadNewerHistory) return;
+    pendingJumpToLatestRef.current = false;
+    requestAnimationFrame(scrollToBottom);
+  }, [ctx.canLoadNewerHistory, scrollToBottom]);
   useLayoutEffect(() => {
     const viewport = viewportRef.current;
     const previousInset = previousConnectionInsetRef.current;
@@ -357,6 +370,19 @@ function AcpChrome({
 
               <ThreadPrimitive.Messages components={{ UserMessage, AssistantMessage }} />
 
+              {ctx.canLoadNewerHistory && (
+                <div className="mt-3 flex justify-center">
+                  <button
+                    type="button"
+                    onClick={ctx.loadNewerHistory}
+                    data-testid="acp-load-newer"
+                    className="h-8 rounded-md border border-surface-700 bg-surface-800 px-3 text-xs text-text-secondary transition-colors hover:bg-surface-700 hover:text-text-primary"
+                  >
+                    Load newer messages
+                  </button>
+                </div>
+              )}
+
               {conversationStatus.kind === "active" && conversationStatus.cause === "working" && (
                 <>
                 {/* A turn parked on an approval or question is waiting on the user, not stalled. */}
@@ -406,13 +432,13 @@ function AcpChrome({
               ))}
             </div>
           </ThreadPrimitive.Viewport>
-          {isCoarse && !atBottom && (
+          {(!atBottom || ctx.canLoadNewerHistory) && (
             <button
               type="button"
-              onClick={scrollToBottom}
-              data-testid="acp-jump-to-bottom"
-              aria-label="Jump to latest"
-              title="Jump to latest"
+              onClick={requestLatest}
+              data-testid="acp-jump-to-latest"
+              aria-label="Scroll to latest messages"
+              title="Scroll to latest messages"
               // Centered: the composer collapse handle owns the bottom-right corner.
               className="absolute bottom-3 left-1/2 z-10 inline-flex h-9 w-9 -translate-x-1/2 items-center justify-center rounded-full border border-surface-700 bg-surface-800/95 text-text-secondary shadow-lg backdrop-blur transition-colors hover:text-text-primary active:scale-95"
             >
