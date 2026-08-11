@@ -131,8 +131,19 @@ export function SystemNotices({
   }
   const resumePending = rateLimitResumeState === "retrying" || rateLimitResumeState === "ok";
   if (!incident && messages.length === 0) return null;
+  const marker = (state: "ready" | "working" | "blocked" | "failed" | "unknown") =>
+    state === "ready" ? "●" : state === "working" ? "◌" : state === "blocked" || state === "failed" ? "!" : "○";
   return (
-    <div className="border-b border-surface-800 px-4 py-2 space-y-1">
+    <div className="border-b border-surface-800 bg-surface-900/80 px-4 py-2 space-y-1" role="status">
+      {incident && (
+        <div className="flex flex-wrap items-center gap-x-1.5 text-[10px] font-mono uppercase tracking-wide text-text-muted">
+          <span>{marker(incident.device)} Device</span>
+          <span>→</span>
+          <span>{marker(incident.server)} AoE</span>
+          <span>→</span>
+          <span>{marker(incident.agent)} Agent</span>
+        </div>
+      )}
       {messages.map((m, i) => (
         <div key={i} className={`text-xs ${m.kind === "warn" ? "text-brand-400" : "text-text-muted"}`}>
           {m.text}
