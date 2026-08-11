@@ -97,8 +97,8 @@ describe("TopBar", () => {
   it("opens the shared dashboard connection details from the global control", () => {
     const { getByLabelText, getByText } = renderTopBar();
     fireEvent.click(getByLabelText("Show connection status"));
-    expect(getByText("Session polling")).toBeTruthy();
-    expect(getByText("Reachable")).toBeTruthy();
+    expect(getByText("Server check")).toBeTruthy();
+    expect(getByText("Current")).toBeTruthy();
   });
 
   it("exposes a Tips entry in the overflow menu that fires onOpenTips", () => {

@@ -41,6 +41,8 @@ export interface ConnectionDiagnosticSection {
 export interface ConnectionDiagnostics extends ConnectionIncident {
   targetLabel: "Agent" | "Terminal" | null;
   severity: ConnectionSeverity;
+  headerLabel: string;
+  capsuleLabel: string;
   summary: string;
   hasIncident: boolean;
   sections: ConnectionDiagnosticSection[];
@@ -91,33 +93,29 @@ export function deriveConnectionDiagnostics(input: ConnectionStatusInput): Conne
     const countdownPart = input.retryCountdown > 0 ? ` in ${input.retryCountdown}s` : "";
     notices.push({
       kind: "warn",
-      text: `Structured view disconnected. Reconnecting (${input.retryCount}/${input.maxRetries})${countdownPart}…`,
+      text: `Reconnecting, attempt ${input.retryCount} of ${input.maxRetries}${countdownPart}.`,
     });
   } else if (input.status === "connecting") {
     notices.push({
       kind: "info",
-      text: input.hasEverOpened ? "Reconnecting to structured view…" : "Starting structured view…",
+      text: input.hasEverOpened ? "Reconnecting…" : "Starting structured view…",
     });
   } else if (input.status === "error") {
     notices.push({
       kind: "warn",
-      text: input.hasEverOpened
-        ? "Structured view reconnecting… showing cached transcript; new messages disabled."
-        : "Starting structured view worker… this can take a few seconds for new sessions.",
+      text: input.hasEverOpened ? "Reconnecting… transcript remains available." : "Starting structured view…",
     });
   } else if (input.status === "closed" && !retriesExhausted) {
     notices.push({
       kind: "warn",
-      text: input.hasEverOpened
-        ? "Structured view disconnected. Showing cached transcript; new messages disabled."
-        : "Structured view not ready yet. Retrying…",
+      text: input.hasEverOpened ? "Disconnected. Transcript remains available." : "Waiting for structured view…",
     });
   }
-  if (input.lagged) notices.push({ kind: "warn", text: "Some events were missed during reconnect." });
+  if (input.lagged) notices.push({ kind: "warn", text: "Some updates were missed while reconnecting." });
   if (input.rateLimit) notices.push({ kind: "warn", text: input.rateLimitText(input.rateLimit) });
-  if (input.startupError) notices.push({ kind: "warn", text: "Agent could not start." });
+  if (input.startupError) notices.push({ kind: "warn", text: "Couldn't start agent." });
   else if (input.workerRestarting || input.agentUnresponsive || input.agentOrphaned) {
-    notices.push({ kind: "info", text: "Restarting agent session; transcript preserved." });
+    notices.push({ kind: "info", text: "Restarting agent. Transcript remains available." });
   }
   const observedAgent =
     input.startupError || input.workerStopped
@@ -158,7 +156,7 @@ export function deriveConnectionDiagnostics(input: ConnectionStatusInput): Conne
     input.status === "open"
       ? `Connected${displayTime(input.lastWebSocketOpenAt) ? ` since ${displayTime(input.lastWebSocketOpenAt)}` : ""}`
       : input.reconnecting
-        ? `Reconnecting${reconnectingAt ? ` since ${reconnectingAt}` : ""}, retry ${input.retryCount} of ${input.maxRetries}`
+        ? `Reconnecting${reconnectingAt ? ` since ${reconnectingAt}` : ""} · attempt ${input.retryCount} of ${input.maxRetries}`
         : input.status === "connecting"
           ? "Connecting"
           : "Disconnected";
@@ -168,15 +166,15 @@ export function deriveConnectionDiagnostics(input: ConnectionStatusInput): Conne
         ? "Unavailable while reconnecting"
         : "Unavailable while disconnected"
       : input.liveUpdatesStale
-        ? `Out of date${lastReceivedAt ? `, last received ${lastReceivedAt}` : ""}`
-        : "Connected";
+        ? `Behind${lastReceivedAt ? `, last update ${lastReceivedAt}` : ""}`
+        : "Current";
   const replayDescription =
     input.lastTransportDiagnostic?.kind === "replay_http"
       ? `Rejected${transportAt ? ` at ${transportAt}` : ""}`
       : input.lastTransportDiagnostic?.kind === "replay_network"
         ? `Unavailable${transportAt ? ` since ${transportAt}` : ""}`
         : replayAt
-          ? `Last completed ${replayAt}`
+          ? `Up to date at ${replayAt}`
           : deviceToServer !== "ready"
             ? "Not observed while the structured view is disconnected"
             : input.serverReachability === "reachable"
@@ -198,10 +196,22 @@ export function deriveConnectionDiagnostics(input: ConnectionStatusInput): Conne
   const summary =
     notices.map((notice) => notice.text).join(" · ") ||
     (retriesExhausted
-      ? "Connection lost. Auto-retry stopped."
+      ? "Disconnected. Auto-retry stopped."
       : input.rateLimitRetriesExhausted
         ? "Provider auto-resume stopped."
-        : "Connection healthy.");
+        : "Connected.");
+  const headerLabel =
+    severity === "healthy"
+      ? "Connected"
+      : severity === "working"
+        ? "Reconnecting"
+        : severity === "warning"
+          ? "Attention"
+          : "Disconnected";
+  const capsuleLabel =
+    severity === "working" && input.reconnecting
+      ? `Reconnecting · ${input.retryCount}/${input.maxRetries}`
+      : headerLabel;
   const incident: ConnectionIncident = {
     // The browser rendering this header is necessarily alive. Connection
     // progress belongs on the route edge, not on the device itself.
@@ -219,27 +229,29 @@ export function deriveConnectionDiagnostics(input: ConnectionStatusInput): Conne
     ...incident,
     targetLabel: "Agent",
     severity,
+    headerLabel,
+    capsuleLabel,
     summary,
     hasIncident,
     sections: [
       {
         id: "device",
         label: "Device",
-        observations: [{ label: "Dashboard", state: "ready", value: "This dashboard is running." }],
+        observations: [{ label: "Dashboard", state: "ready", value: "Active" }],
       },
       {
         id: "transport",
         label: "Device to AoE",
         observations: [
           {
-            label: "Structured-view WebSocket",
+            label: "Structured view",
             state: deviceToServer,
             value: socketDescription,
           },
           ...(input.lastTransportDiagnostic
             ? [
                 {
-                  label: "Last transport",
+                  label: "Last connection event",
                   state:
                     input.lastTransportDiagnostic.kind === "replay_http" ? ("failed" as const) : ("working" as const),
                   value: `${transportAt ? `${transportAt} · ` : ""}${input.lastTransportDiagnostic.text}`,
@@ -253,7 +265,7 @@ export function deriveConnectionDiagnostics(input: ConnectionStatusInput): Conne
         label: "AoE",
         observations: [
           {
-            label: "Event replay",
+            label: "Transcript sync",
             state:
               input.lastTransportDiagnostic?.kind === "replay_http"
                 ? "failed"
@@ -279,18 +291,18 @@ export function deriveConnectionDiagnostics(input: ConnectionStatusInput): Conne
         label: "Agent",
         observations: [
           {
-            label: "ACP session",
+            label: "Agent session",
             state: serverToAgent === "inactive" ? "inactive" : observedAgent,
             value:
               serverToAgent === "inactive"
-                ? "Inactive until the AoE connection recovers"
+                ? "Waiting for the AoE connection"
                 : input.startupError
                   ? "Could not start"
                   : input.workerStopped
                     ? "Worker stopped"
                     : input.workerRestarting || input.agentUnresponsive || input.agentOrphaned
                       ? "Restarting"
-                      : "No agent problem observed",
+                      : "No issue reported",
           },
         ],
       },
@@ -323,22 +335,24 @@ export function deriveDashboardConnectionDiagnostics(serverDown: boolean): Conne
     notices: serverDown ? [{ kind: "warn", text: "Dashboard server unreachable." }] : [],
     retriesExhausted: false,
     severity: serverDown ? "failed" : "healthy",
-    summary: serverDown ? "Dashboard server unreachable." : "Dashboard connected.",
+    headerLabel: serverDown ? "Disconnected" : "Connected",
+    capsuleLabel: serverDown ? "Disconnected" : "Connected",
+    summary: serverDown ? "Dashboard unavailable." : "Connected.",
     hasIncident: serverDown,
     sections: [
       {
         id: "device",
         label: "Device",
-        observations: [{ label: "Dashboard", state: "ready", value: "This dashboard is running." }],
+        observations: [{ label: "Dashboard", state: "ready", value: "Active" }],
       },
       {
         id: "server",
         label: "AoE",
         observations: [
           {
-            label: "Session polling",
+            label: "Server check",
             state: serverDown ? "failed" : "ready",
-            value: serverDown ? "Unreachable" : "Reachable",
+            value: serverDown ? "Unavailable" : "Current",
           },
         ],
       },
@@ -356,12 +370,12 @@ export function deriveTerminalConnectionDiagnostics(input: {
   const retriesExhausted = !input.connected && !input.reconnecting && input.retryCount >= input.maxRetries;
   const deviceToServer: ConnectionEdgeState = input.connected ? "ready" : input.reconnecting ? "working" : "failed";
   const summary = input.connected
-    ? "Terminal connected."
+    ? "Connected."
     : input.reconnecting
-      ? `Terminal reconnecting (${input.retryCount}/${input.maxRetries})${input.retryCountdown > 0 ? ` in ${input.retryCountdown}s` : ""}.`
+      ? `Reconnecting, attempt ${input.retryCount} of ${input.maxRetries}${input.retryCountdown > 0 ? ` in ${input.retryCountdown}s` : ""}.`
       : retriesExhausted
-        ? "Terminal connection lost. Auto-retry stopped."
-        : "Terminal disconnected.";
+        ? "Disconnected. Auto-retry stopped."
+        : "Disconnected.";
   return {
     device: "ready",
     deviceToServer,
@@ -372,20 +386,22 @@ export function deriveTerminalConnectionDiagnostics(input: {
     notices: input.connected ? [] : [{ kind: retriesExhausted ? "warn" : "info", text: summary }],
     retriesExhausted,
     severity: input.connected ? "healthy" : retriesExhausted ? "failed" : "working",
+    headerLabel: input.connected ? "Connected" : retriesExhausted ? "Disconnected" : "Reconnecting",
+    capsuleLabel: input.connected ? "Connected" : retriesExhausted ? "Disconnected" : "Reconnecting",
     summary,
     hasIncident: !input.connected,
     sections: [
       {
         id: "device",
         label: "Device",
-        observations: [{ label: "Dashboard", state: "ready", value: "This dashboard is running." }],
+        observations: [{ label: "Dashboard", state: "ready", value: "Active" }],
       },
       {
         id: "transport",
         label: "Device to AoE",
         observations: [
           {
-            label: "Terminal WebSocket",
+            label: "Terminal connection",
             state: deviceToServer,
             value: input.connected
               ? "Connected"
@@ -402,7 +418,7 @@ export function deriveTerminalConnectionDiagnostics(input: {
           {
             label: "Terminal relay",
             state: input.connected ? "ready" : "unknown",
-            value: input.connected ? "Reachable" : "Not observed",
+            value: input.connected ? "Current" : "Not observed",
           },
         ],
       },
@@ -411,9 +427,9 @@ export function deriveTerminalConnectionDiagnostics(input: {
         label: "Terminal",
         observations: [
           {
-            label: "Terminal stream",
+            label: "Terminal",
             state: input.connected ? "ready" : "inactive",
-            value: input.connected ? "Connected" : "Inactive until the relay reconnects",
+            value: input.connected ? "Connected" : "Waiting for connection",
           },
         ],
       },

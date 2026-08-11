@@ -122,7 +122,8 @@ describe("SystemNotices", () => {
       "Rate-limited (rate_limit); the agent did not report a reset time.",
     ],
   ])("words the rate limit for %s", (_label, limit, expected) => {
-    const { getByText, container } = mount({ rateLimit: { ...limit, kind: "rate_limit" } });
+    const { getByText, container, expand } = mount({ rateLimit: { ...limit, kind: "rate_limit" } });
+    expand();
     expect(getByText(expected)).toBeDefined();
     expect(container.textContent).not.toMatch(/Invalid Date|errorKind|ACP connection failed/);
     if (!expected.includes("resets at")) expect(container.textContent).not.toMatch(/resets at \d/);
