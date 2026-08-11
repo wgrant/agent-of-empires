@@ -41,6 +41,8 @@ export interface AcpContext {
   lastServerMessageAt: Session["lastServerMessageAt"];
   lastSuccessfulReplayAt: Session["lastSuccessfulReplayAt"];
   lastTransportDiagnostic: Session["lastTransportDiagnostic"];
+  reconnectingSince: Session["reconnectingSince"];
+  liveUpdatesStale: Session["liveUpdatesStale"];
   hasEverOpened: boolean;
   /** The auto-reconnect backoff is armed between a close and the next dial. */
   reconnecting: boolean;
@@ -201,6 +203,8 @@ export function AcpRuntime({
         lastServerMessageAt: acp.lastServerMessageAt,
         lastSuccessfulReplayAt: acp.lastSuccessfulReplayAt,
         lastTransportDiagnostic: acp.lastTransportDiagnostic,
+        reconnectingSince: acp.reconnectingSince,
+        liveUpdatesStale: acp.liveUpdatesStale,
         hasEverOpened: acp.hasEverOpened,
         reconnecting: acp.reconnecting,
         retryCount: acp.retryCount,

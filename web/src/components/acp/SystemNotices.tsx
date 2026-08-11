@@ -79,6 +79,8 @@ export function SystemNotices({
   lastServerMessageAt,
   lastSuccessfulReplayAt,
   lastTransportDiagnostic,
+  reconnectingSince,
+  liveUpdatesStale,
   hasEverOpened,
   reconnecting,
   retryCount,
@@ -108,6 +110,8 @@ export function SystemNotices({
   lastServerMessageAt: AcpContext["lastServerMessageAt"];
   lastSuccessfulReplayAt: AcpContext["lastSuccessfulReplayAt"];
   lastTransportDiagnostic: AcpContext["lastTransportDiagnostic"];
+  reconnectingSince: AcpContext["reconnectingSince"];
+  liveUpdatesStale: AcpContext["liveUpdatesStale"];
   hasEverOpened: boolean;
   reconnecting: boolean;
   retryCount: number;
@@ -143,6 +147,8 @@ export function SystemNotices({
       lastServerMessageAt,
       lastSuccessfulReplayAt,
       lastTransportDiagnostic,
+      reconnectingSince,
+      liveUpdatesStale,
     });
   useEffect(() => {
     publish({ sessionId, kind: "structured", diagnostics, onReconnect: manualReconnect });

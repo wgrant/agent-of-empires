@@ -37,6 +37,8 @@ function noticeProps(overrides?: Partial<NoticeProps>): NoticeProps {
     lastServerMessageAt: null,
     lastSuccessfulReplayAt: null,
     lastTransportDiagnostic: null,
+    reconnectingSince: null,
+    liveUpdatesStale: false,
     hasEverOpened: true,
     reconnecting: false,
     retryCount: 0,

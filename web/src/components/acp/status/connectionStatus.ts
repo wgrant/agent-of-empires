@@ -67,6 +67,8 @@ export interface ConnectionStatusInput {
   lastServerMessageAt: number | null;
   lastSuccessfulReplayAt: number | null;
   lastTransportDiagnostic: TransportDiagnostic | null;
+  reconnectingSince: number | null;
+  liveUpdatesStale: boolean;
 }
 
 function displayTime(timestamp: number | null): string | null {
@@ -148,6 +150,40 @@ export function deriveConnectionDiagnostics(input: ConnectionStatusInput): Conne
       : input.serverReachability === "unreachable"
         ? "failed"
         : "unknown";
+  const reconnectingAt = displayTime(input.reconnectingSince);
+  const lastReceivedAt = displayTime(input.lastServerMessageAt);
+  const replayAt = displayTime(input.lastSuccessfulReplayAt);
+  const transportAt = displayTime(input.lastTransportDiagnostic?.at ?? null);
+  const socketDescription =
+    input.status === "open"
+      ? `Connected${displayTime(input.lastWebSocketOpenAt) ? ` since ${displayTime(input.lastWebSocketOpenAt)}` : ""}`
+      : input.reconnecting
+        ? `Reconnecting${reconnectingAt ? ` since ${reconnectingAt}` : ""}, retry ${input.retryCount} of ${input.maxRetries}`
+        : input.status === "connecting"
+          ? "Connecting"
+          : "Disconnected";
+  const liveUpdatesDescription =
+    input.status !== "open"
+      ? input.reconnecting
+        ? "Unavailable while reconnecting"
+        : "Unavailable while disconnected"
+      : input.liveUpdatesStale
+        ? `Out of date${lastReceivedAt ? `, last received ${lastReceivedAt}` : ""}`
+        : "Connected";
+  const replayDescription =
+    input.lastTransportDiagnostic?.kind === "replay_http"
+      ? `Rejected${transportAt ? ` at ${transportAt}` : ""}`
+      : input.lastTransportDiagnostic?.kind === "replay_network"
+        ? `Unavailable${transportAt ? ` since ${transportAt}` : ""}`
+        : replayAt
+          ? `Last completed ${replayAt}`
+          : deviceToServer !== "ready"
+            ? "Not observed while the structured view is disconnected"
+            : input.serverReachability === "reachable"
+              ? "Reachable"
+              : input.serverReachability === "unreachable"
+                ? "Unreachable"
+                : "Not observed";
 
   const hasIncident =
     notices.length > 0 || retriesExhausted || input.rateLimitRetriesExhausted || observedAgent !== "unknown";
@@ -198,27 +234,15 @@ export function deriveConnectionDiagnostics(input: ConnectionStatusInput): Conne
           {
             label: "Structured-view WebSocket",
             state: deviceToServer,
-            value:
-              input.status === "open"
-                ? "Connected"
-                : input.reconnecting
-                  ? `Reconnecting (${input.retryCount}/${input.maxRetries})${input.retryCountdown > 0 ? ` in ${input.retryCountdown}s` : ""}`
-                  : input.status === "connecting"
-                    ? "Connecting"
-                    : input.status === "error"
-                      ? "Connection error"
-                      : "Disconnected",
+            value: socketDescription,
           },
-          ...(displayTime(input.lastWebSocketOpenAt)
-            ? [{ label: "Last connected", state: "ready" as const, value: displayTime(input.lastWebSocketOpenAt)! }]
-            : []),
           ...(input.lastTransportDiagnostic
             ? [
                 {
-                  label: "Last transport result",
+                  label: "Last transport",
                   state:
                     input.lastTransportDiagnostic.kind === "replay_http" ? ("failed" as const) : ("working" as const),
-                  value: input.lastTransportDiagnostic.text,
+                  value: `${transportAt ? `${transportAt} · ` : ""}${input.lastTransportDiagnostic.text}`,
                 },
               ]
             : []),
@@ -230,37 +254,24 @@ export function deriveConnectionDiagnostics(input: ConnectionStatusInput): Conne
         observations: [
           {
             label: "Event replay",
-            state: deviceToServer === "ready" ? observedServer : "unknown",
-            value:
-              deviceToServer !== "ready"
-                ? "Not observed while the structured view is disconnected"
-                : input.serverReachability === "reachable"
-                  ? "Reachable"
-                  : input.serverReachability === "unreachable"
-                    ? "Unreachable"
-                    : "Not observed",
+            state:
+              input.lastTransportDiagnostic?.kind === "replay_http"
+                ? "failed"
+                : input.lastTransportDiagnostic?.kind === "replay_network"
+                  ? "working"
+                  : deviceToServer === "ready"
+                    ? observedServer
+                    : "unknown",
+            value: replayDescription,
           },
           ...(input.lagged
             ? [{ label: "Replay", state: "blocked" as const, value: "Some events were missed during reconnect." }]
             : []),
-          ...(displayTime(input.lastSuccessfulReplayAt)
-            ? [
-                {
-                  label: "Last successful replay",
-                  state: "ready" as const,
-                  value: displayTime(input.lastSuccessfulReplayAt)!,
-                },
-              ]
-            : []),
-          ...(displayTime(input.lastServerMessageAt)
-            ? [
-                {
-                  label: "Last server message",
-                  state: "ready" as const,
-                  value: displayTime(input.lastServerMessageAt)!,
-                },
-              ]
-            : []),
+          {
+            label: "Live updates",
+            state: input.status === "open" ? (input.liveUpdatesStale ? "working" : "ready") : "unknown",
+            value: liveUpdatesDescription,
+          },
         ],
       },
       {
