@@ -31,7 +31,7 @@ function ConnectionNode({ label, state }: { label: string; state: ConnectionHopS
       />
     );
   return (
-    <span className="flex shrink-0 items-center gap-1">
+    <span className="flex shrink-0 items-center gap-1" data-testid={`connection-node-${label.toLowerCase()}`}>
       {marker}
       {label}
     </span>
@@ -48,7 +48,11 @@ function ConnectionEdge({ state, label }: { state: ConnectionEdgeState; label: s
           ? "border-status-error/70"
           : "border-surface-600 border-dashed";
   return (
-    <span className="relative flex w-6 shrink-0 items-center justify-center" aria-label={`${label}: ${state}`}>
+    <span
+      className="relative flex w-6 shrink-0 items-center justify-center"
+      aria-label={`${label}: ${state}`}
+      data-testid={`connection-edge-${label.toLowerCase().replaceAll(" ", "-")}`}
+    >
       <span className={`w-full border-t ${lineClass}`} aria-hidden="true" />
       {state === "working" && (
         <LoaderCircle className="absolute size-3 animate-spin bg-surface-900 text-status-warning" aria-hidden="true" />
