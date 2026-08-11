@@ -6,7 +6,11 @@ import type { AcpContext } from "./AcpRuntime";
 import { SwitchAgentModal } from "./SwitchAgentModal";
 import { useConnectionDiagnosticsPublisher } from "../../lib/connectionDiagnosticsContext";
 import { ConnectionIncidentBubble } from "../connection/ConnectionStatusView";
-import { deriveConnectionDiagnostics } from "./status/connectionStatus";
+import {
+  deriveConnectionDiagnostics,
+  type ConnectionDiagnostics,
+  type ConnectionStatusInput,
+} from "./status/connectionStatus";
 
 /** Owns the rate-limit recovery modal toggle and hands its opener to `children`. */
 export function RateLimitRecoverySection({
@@ -46,6 +50,18 @@ function rateLimitWording(status: string): string {
   return text || "the agent did not report a reset time.";
 }
 
+export function deriveStructuredConnectionDiagnostics(input: Omit<ConnectionStatusInput, "rateLimitText">) {
+  return deriveConnectionDiagnostics({
+    ...input,
+    rateLimitText: (limit) => {
+      const reset = limit.resets_at === null ? null : new Date(limit.resets_at);
+      return reset && !Number.isNaN(reset.getTime())
+        ? `Rate-limited (${limit.kind}); resets at ${reset.toLocaleTimeString()}.`
+        : `Rate-limited (${limit.kind}); ${rateLimitWording(limit.status)}`;
+    },
+  });
+}
+
 export function SystemNotices({
   sessionId = "",
   status,
@@ -65,6 +81,7 @@ export function SystemNotices({
   retryCountdown,
   maxRetries,
   manualReconnect,
+  diagnostics: suppliedDiagnostics,
   onSwitchAgent,
   onResumeRateLimit,
   rateLimitResumeState = "idle",
@@ -89,35 +106,32 @@ export function SystemNotices({
   retryCountdown: number;
   maxRetries: number;
   manualReconnect: () => void;
+  diagnostics?: ConnectionDiagnostics;
   onSwitchAgent?: () => void;
   onResumeRateLimit?: () => void;
   rateLimitResumeState?: RespawnState;
   rateLimitResumeError?: string | null;
 }) {
   const { publish, clear } = useConnectionDiagnosticsPublisher();
-  const diagnostics = deriveConnectionDiagnostics({
-    status,
-    serverReachability,
-    lagged,
-    rateLimit,
-    rateLimitRetriesExhausted,
-    hasEverOpened,
-    reconnecting,
-    retryCount,
-    retryCountdown,
-    maxRetries,
-    rateLimitText: (limit) => {
-      const reset = limit.resets_at === null ? null : new Date(limit.resets_at);
-      return reset && !Number.isNaN(reset.getTime())
-        ? `Rate-limited (${limit.kind}); resets at ${reset.toLocaleTimeString()}.`
-        : `Rate-limited (${limit.kind}); ${rateLimitWording(limit.status)}`;
-    },
-    startupError,
-    workerStopped,
-    workerRestarting,
-    agentUnresponsive,
-    agentOrphaned,
-  });
+  const diagnostics =
+    suppliedDiagnostics ??
+    deriveStructuredConnectionDiagnostics({
+      status,
+      serverReachability,
+      lagged,
+      rateLimit,
+      rateLimitRetriesExhausted,
+      hasEverOpened,
+      reconnecting,
+      retryCount,
+      retryCountdown,
+      maxRetries,
+      startupError,
+      workerStopped,
+      workerRestarting,
+      agentUnresponsive,
+      agentOrphaned,
+    });
   useEffect(() => {
     publish({ sessionId, kind: "structured", diagnostics, onReconnect: manualReconnect });
   }, [diagnostics, manualReconnect, publish, sessionId]);
@@ -175,10 +189,5 @@ export function SystemNotices({
         )}
       </>
     ) : undefined;
-  return (
-    <>
-      <div className="h-11 shrink-0" aria-hidden="true" />
-      <ConnectionIncidentBubble diagnostics={diagnostics} onReconnect={manualReconnect} actions={actions} />
-    </>
-  );
+  return <ConnectionIncidentBubble diagnostics={diagnostics} onReconnect={manualReconnect} actions={actions} />;
 }
