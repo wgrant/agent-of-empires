@@ -138,8 +138,8 @@ export function ConnectionDiagnosticsDetails({
   );
 }
 
-/** Incident-only overlay. It avoids changing transcript geometry while the
- * route reconnects or its status catches up. */
+/** Incident-only overlay. Its caller reserves a compact top inset so the
+ * capsule does not cover the first transcript line. */
 export function ConnectionIncidentBubble({
   diagnostics,
   onReconnect,
