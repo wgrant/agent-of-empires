@@ -15,6 +15,47 @@ const STATE_CACHE_CAP = 32;
 const stateCache = new Map<string, AcpState>();
 const stateListeners = new Map<string, Set<() => void>>();
 
+export interface AcpStateCacheDebugEntry {
+  sessionId: string;
+  /** Zero is the next entry evicted. */
+  lruPosition: number;
+  activityRows: number;
+  queuedPrompts: number;
+  /** UTF-8 size of the live state when represented as JSON, not heap usage. */
+  estimatedJsonBytes: number;
+}
+
+export interface AcpStateCacheDebugSummary {
+  entryCount: number;
+  capacity: number;
+  totalEstimatedJsonBytes: number;
+  entries: AcpStateCacheDebugEntry[];
+}
+
+export function inspectAcpStateCache(): AcpStateCacheDebugSummary {
+  const encoder = new TextEncoder();
+  let totalEstimatedJsonBytes = 0;
+  const entries = [...stateCache.entries()].map(([sessionId, state], lruPosition) => {
+    const estimatedJsonBytes = encoder.encode(JSON.stringify(state)).byteLength;
+    totalEstimatedJsonBytes += estimatedJsonBytes;
+    return {
+      sessionId,
+      lruPosition,
+      activityRows: state.activity.length,
+      queuedPrompts: state.queuedPrompts.length,
+      estimatedJsonBytes,
+    };
+  });
+  return { entryCount: entries.length, capacity: STATE_CACHE_CAP, totalEstimatedJsonBytes, entries };
+}
+
+if (typeof window !== "undefined") {
+  const debugWindow = window as typeof window & {
+    __aoeDebug?: { acpStateCache?: () => AcpStateCacheDebugSummary };
+  };
+  debugWindow.__aoeDebug = { ...debugWindow.__aoeDebug, acpStateCache: inspectAcpStateCache };
+}
+
 function storageKey(sessionId: string): string {
   return STORAGE_KEY_PREFIX + sessionId;
 }
