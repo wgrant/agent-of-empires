@@ -1,10 +1,15 @@
 import { useState } from "react";
+import { LoaderCircle } from "lucide-react";
 
 import type { RespawnState } from "../../hooks/useRespawnSession";
 import type { AcpState } from "../../lib/acpTypes";
 import type { AcpContext } from "./AcpRuntime";
 import { SwitchAgentModal } from "./SwitchAgentModal";
-import { deriveConnectionIncident } from "./status/connectionStatus";
+import {
+  deriveConnectionIncident,
+  type ConnectionEdgeState,
+  type ConnectionHopState,
+} from "./status/connectionStatus";
 
 /** Owns the rate-limit recovery modal toggle and hands its opener to `children`. */
 export function RateLimitRecoverySection({
@@ -46,6 +51,74 @@ function rateLimitWording(status: string): string {
 
 const ACTION_BUTTON =
   "shrink-0 rounded-md border border-brand-700 bg-brand-900/40 px-2 py-1 text-[10px] font-mono uppercase tracking-wide text-brand-100 hover:bg-brand-900/60";
+
+function ConnectionNode({ label, state }: { label: string; state: ConnectionHopState }) {
+  const marker =
+    state === "working" ? (
+      <LoaderCircle className="size-2.5 animate-spin text-status-warning" aria-hidden="true" />
+    ) : state === "blocked" || state === "failed" ? (
+      <span className="flex size-2.5 items-center justify-center text-[9px] font-bold leading-none text-status-error">
+        !
+      </span>
+    ) : (
+      <span
+        className={`size-2 rounded-full ${state === "ready" ? "bg-text-muted" : "border border-surface-500"}`}
+        aria-hidden="true"
+      />
+    );
+  return (
+    <span className="flex shrink-0 items-center gap-1">
+      {marker}
+      {label}
+    </span>
+  );
+}
+
+function ConnectionEdge({ state, label }: { state: ConnectionEdgeState; label: string }) {
+  const lineClass =
+    state === "ready"
+      ? "border-text-muted/50"
+      : state === "working"
+        ? "border-status-warning/70"
+        : state === "blocked" || state === "failed"
+          ? "border-status-error/70"
+          : "border-surface-600 border-dashed";
+  return (
+    <span className="relative flex w-6 shrink-0 items-center justify-center" aria-label={`${label}: ${state}`}>
+      <span className={`w-full border-t ${lineClass}`} aria-hidden="true" />
+      {state === "working" && (
+        <LoaderCircle className="absolute size-3 animate-spin bg-surface-900 text-status-warning" aria-hidden="true" />
+      )}
+    </span>
+  );
+}
+
+function ConnectionRoute({
+  device,
+  deviceToServer,
+  server,
+  serverToAgent,
+  agent,
+}: {
+  device: ConnectionHopState;
+  deviceToServer: ConnectionEdgeState;
+  server: ConnectionHopState;
+  serverToAgent: ConnectionEdgeState;
+  agent: ConnectionHopState;
+}) {
+  return (
+    <div
+      className="flex shrink-0 items-center text-[10px] font-mono uppercase tracking-wide text-text-muted"
+      data-testid="connection-route"
+    >
+      <ConnectionNode label="Device" state={device} />
+      <ConnectionEdge state={deviceToServer} label="Device to AoE" />
+      <ConnectionNode label="AoE" state={server} />
+      <ConnectionEdge state={serverToAgent} label="AoE to agent" />
+      <ConnectionNode label="Agent" state={agent} />
+    </div>
+  );
+}
 
 export function SystemNotices({
   status,
@@ -134,24 +207,32 @@ export function SystemNotices({
   }
   const resumePending = rateLimitResumeState === "retrying" || rateLimitResumeState === "ok";
   if (!incident && messages.length === 0) return null;
-  const marker = (state: "ready" | "working" | "blocked" | "failed" | "unknown") =>
-    state === "ready" ? "●" : state === "working" ? "◌" : state === "blocked" || state === "failed" ? "!" : "○";
+  const noticeText = messages.map((message) => message.text).join(" · ");
+  const noticeTone = messages.some((message) => message.kind === "warn")
+    ? "text-status-warning"
+    : "text-text-muted";
   return (
-    <div className="border-b border-surface-800 bg-surface-900/80 px-4 py-2 space-y-1" role="status">
-      {incident && (
-        <div className="flex flex-wrap items-center gap-x-1.5 text-[10px] font-mono uppercase tracking-wide text-text-muted">
-          <span>{marker(incident.device)} Device</span>
-          <span>→</span>
-          <span>{marker(incident.server)} AoE</span>
-          <span>→</span>
-          <span>{marker(incident.agent)} Agent</span>
-        </div>
-      )}
-      {messages.map((m, i) => (
-        <div key={i} className={`text-xs ${m.kind === "warn" ? "text-brand-400" : "text-text-muted"}`}>
-          {m.text}
-        </div>
-      ))}
+    <div className="space-y-1 border-b border-surface-800 bg-surface-900/80 px-4 py-2" role="status">
+      <div className="flex min-w-0 items-center gap-2">
+        {incident && (
+          <ConnectionRoute
+            device={incident.device}
+            deviceToServer={incident.deviceToServer}
+            server={incident.server}
+            serverToAgent={incident.serverToAgent}
+            agent={incident.agent}
+          />
+        )}
+        {noticeText && (
+          <span
+            className={`min-w-0 flex-1 truncate text-xs ${noticeTone}`}
+            data-testid="connection-incident-summary"
+            title={noticeText}
+          >
+            {noticeText}
+          </span>
+        )}
+      </div>
       {rateLimit && (onResumeRateLimit || onSwitchAgent) && (
         <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
           {onResumeRateLimit && (
@@ -179,10 +260,10 @@ export function SystemNotices({
         <div className="pt-1 text-xs text-text-muted">Resume requested. New events should start streaming shortly.</div>
       )}
       {rateLimit && rateLimitResumeState === "failed" && rateLimitResumeError && (
-        <div className="pt-1 text-xs text-brand-400">Resume failed: {rateLimitResumeError}</div>
+        <div className="pt-1 text-xs text-status-error">Resume failed: {rateLimitResumeError}</div>
       )}
       {incident?.retriesExhausted && (
-        <div className="flex items-center justify-between gap-3 text-xs text-brand-400">
+        <div className="flex items-center justify-between gap-3 text-xs text-status-error">
           <span>Connection lost. Auto-retry stopped.</span>
           <button type="button" onClick={manualReconnect} className={ACTION_BUTTON}>
             Reconnect
