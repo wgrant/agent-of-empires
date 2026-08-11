@@ -5,6 +5,7 @@ import { ChevronUp } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import type { ConfigOptionDescriptor, AcpState } from "../../lib/acpTypes";
+import { ActionFeedbackNotice } from "./status/ActionFeedbackNotice";
 
 interface Props {
   configOptions: AcpState["configOptions"];
@@ -276,25 +277,12 @@ export function ConfigOptionSwitchFailedNotice({ failure, configOptions, onDismi
   const optionLabel = config?.options.find((o) => o.value === failure.value)?.name ?? failure.value;
   const configLabel = config?.name ?? failure.configId;
   return (
-    <div
-      data-testid="config-option-switch-failed-notice"
-      role="status"
-      className="flex items-start gap-3 rounded-md border border-amber-700/60 bg-amber-900/30 px-3 py-2 text-[12px] text-amber-100"
-    >
-      <div className="flex-1">
-        <div className="font-medium">
-          {configLabel} could not switch to {optionLabel}
-        </div>
-        <div className="text-[11px] text-amber-200/80">{failure.reason}</div>
-      </div>
-      <button
-        type="button"
-        onClick={onDismiss}
-        aria-label="Dismiss notice"
-        className="rounded px-1.5 py-0.5 text-amber-100 hover:bg-amber-700/30"
-      >
-        Dismiss
-      </button>
-    </div>
+    <ActionFeedbackNotice
+      testId="config-option-switch-failed-notice"
+      title={`${configLabel} could not switch to ${optionLabel}`}
+      detail={failure.reason}
+      onDismiss={onDismiss}
+      dismissLabel="Dismiss notice"
+    />
   );
 }
