@@ -23,6 +23,7 @@ import {
 } from "../lib/api";
 import { classifyResolveResponse, reducer, type Action } from "./acpSession/reducer";
 import { ACP_MAX_RETRIES, useAcpConnection } from "./acpSession/useAcpConnection";
+export type { ConnectionStatus, TransportDiagnostic } from "./acpSession/useAcpConnection";
 import { cacheGet, cacheSet, sweepExpiredStorage } from "./acpSession/stateCache";
 import { useLatestRef } from "./useLatestRef";
 

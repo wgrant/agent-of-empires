@@ -191,6 +191,10 @@ function AcpChrome({
     workerRestarting: state.workerRestarting || acpWorkerState === "resuming",
     agentUnresponsive: state.agentUnresponsive,
     agentOrphaned: state.agentOrphaned,
+    lastWebSocketOpenAt: ctx.lastWebSocketOpenAt,
+    lastServerMessageAt: ctx.lastServerMessageAt,
+    lastSuccessfulReplayAt: ctx.lastSuccessfulReplayAt,
+    lastTransportDiagnostic: ctx.lastTransportDiagnostic,
   });
   const connectionInset = connectionDiagnostics.hasIncident ? 44 : 0;
   const previousConnectionInsetRef = useRef(0);
@@ -243,6 +247,10 @@ function AcpChrome({
           workerRestarting={state.workerRestarting || acpWorkerState === "resuming"}
           agentUnresponsive={state.agentUnresponsive}
           agentOrphaned={state.agentOrphaned}
+          lastWebSocketOpenAt={ctx.lastWebSocketOpenAt}
+          lastServerMessageAt={ctx.lastServerMessageAt}
+          lastSuccessfulReplayAt={ctx.lastSuccessfulReplayAt}
+          lastTransportDiagnostic={ctx.lastTransportDiagnostic}
           hasEverOpened={ctx.hasEverOpened}
           reconnecting={ctx.reconnecting}
           retryCount={ctx.retryCount}

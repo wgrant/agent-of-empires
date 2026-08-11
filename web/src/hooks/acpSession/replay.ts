@@ -23,6 +23,12 @@ type ReplayPageResponse = {
 
 type Dispatch = (action: Action) => void;
 
+export interface TransportDiagnostic {
+  kind: "replay_http" | "replay_network" | "websocket_close" | "websocket_opaque" | "stale_heartbeat";
+  text: string;
+  at: number;
+}
+
 const getReplay = (sid: string, params: string): Promise<Response> =>
   fetch(`/api/sessions/${encodeURIComponent(sid)}/acp/replay?${params}`, { credentials: "same-origin" });
 
@@ -40,12 +46,37 @@ export async function fetchReplay(
   dispatch: Dispatch,
   setHasMoreOlder: (value: boolean) => void,
   setServerReachability?: (value: "reachable" | "unreachable") => void,
+  setLastSuccessfulReplayAt?: (value: number) => void,
+  setLastTransportDiagnostic?: (value: TransportDiagnostic) => void,
 ): Promise<void> {
   try {
-    if (lastSeq.current === 0) await fetchTail(sid, lastSeq, dispatch, setHasMoreOlder, setServerReachability);
-    else await fetchForward(sid, lastSeq.current, dispatch, setServerReachability);
+    if (lastSeq.current === 0) {
+      await fetchTail(
+        sid,
+        lastSeq,
+        dispatch,
+        setHasMoreOlder,
+        setServerReachability,
+        setLastSuccessfulReplayAt,
+        setLastTransportDiagnostic,
+      );
+    } else {
+      await fetchForward(
+        sid,
+        lastSeq.current,
+        dispatch,
+        setServerReachability,
+        setLastSuccessfulReplayAt,
+        setLastTransportDiagnostic,
+      );
+    }
   } catch {
     setServerReachability?.("unreachable");
+    setLastTransportDiagnostic?.({
+      kind: "replay_network",
+      text: "Replay request failed: network error.",
+      at: Date.now(),
+    });
   }
 }
 
@@ -55,9 +86,20 @@ async function fetchTail(
   dispatch: Dispatch,
   setHasMoreOlder: (value: boolean) => void,
   setServerReachability?: (value: "reachable" | "unreachable") => void,
+  setLastSuccessfulReplayAt?: (value: number) => void,
+  setLastTransportDiagnostic?: (value: TransportDiagnostic) => void,
 ): Promise<void> {
   const [tailRes, tailRowsRes] = await getReplayPair(sid, `before=${TAIL_BEFORE}&limit=${REPLAY_PAGE_SIZE}`);
-  if (!tailRes.ok || !tailRowsRes.ok) return;
+  if (!tailRes.ok || !tailRowsRes.ok) {
+    const failed = !tailRes.ok ? tailRes : tailRowsRes;
+    setServerReachability?.("reachable");
+    setLastTransportDiagnostic?.({
+      kind: "replay_http",
+      text: `Replay request rejected: HTTP ${failed.status}${failed.statusText ? ` ${failed.statusText}` : ""}.`,
+      at: Date.now(),
+    });
+    return;
+  }
   setServerReachability?.("reachable");
   const tail = (await tailRes.json()) as ReplayPageResponse;
   if (tail.lost) {
@@ -76,6 +118,7 @@ async function fetchTail(
     }
   }
   dispatch({ kind: "lagged_resolved" });
+  setLastSuccessfulReplayAt?.(Date.now());
 }
 
 async function fetchForward(
@@ -83,13 +126,24 @@ async function fetchForward(
   lastSeq: number,
   dispatch: Dispatch,
   setServerReachability?: (value: "reachable" | "unreachable") => void,
+  setLastSuccessfulReplayAt?: (value: number) => void,
+  setLastTransportDiagnostic?: (value: TransportDiagnostic) => void,
 ): Promise<void> {
   const firstSince = Math.max(0, lastSeq - REPLAY_OVERLAP);
   let cursor = firstSince;
   let target: number | null = null;
   for (;;) {
     const [res, rowsRes] = await getReplayPair(sid, `since=${cursor}&limit=${REPLAY_PAGE_SIZE}`);
-    if (!res.ok || !rowsRes.ok) return;
+    if (!res.ok || !rowsRes.ok) {
+      const failed = !res.ok ? res : rowsRes;
+      setServerReachability?.("reachable");
+      setLastTransportDiagnostic?.({
+        kind: "replay_http",
+        text: `Replay request rejected: HTTP ${failed.status}${failed.statusText ? ` ${failed.statusText}` : ""}.`,
+        at: Date.now(),
+      });
+      return;
+    }
     setServerReachability?.("reachable");
     const data = (await res.json()) as ReplayPageResponse;
     const pageRows = await readRows(rowsRes);
@@ -110,6 +164,7 @@ async function fetchForward(
     cursor = next;
   }
   dispatch({ kind: "lagged_resolved" });
+  setLastSuccessfulReplayAt?.(Date.now());
 }
 
 /** Fetch the page below `before`. Returns whether more older history remains, or null on failure. */

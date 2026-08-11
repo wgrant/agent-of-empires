@@ -75,6 +75,10 @@ export function SystemNotices({
   workerRestarting,
   agentUnresponsive,
   agentOrphaned,
+  lastWebSocketOpenAt,
+  lastServerMessageAt,
+  lastSuccessfulReplayAt,
+  lastTransportDiagnostic,
   hasEverOpened,
   reconnecting,
   retryCount,
@@ -100,6 +104,10 @@ export function SystemNotices({
   workerRestarting: boolean;
   agentUnresponsive: boolean;
   agentOrphaned: boolean;
+  lastWebSocketOpenAt: AcpContext["lastWebSocketOpenAt"];
+  lastServerMessageAt: AcpContext["lastServerMessageAt"];
+  lastSuccessfulReplayAt: AcpContext["lastSuccessfulReplayAt"];
+  lastTransportDiagnostic: AcpContext["lastTransportDiagnostic"];
   hasEverOpened: boolean;
   reconnecting: boolean;
   retryCount: number;
@@ -131,6 +139,10 @@ export function SystemNotices({
       workerRestarting,
       agentUnresponsive,
       agentOrphaned,
+      lastWebSocketOpenAt,
+      lastServerMessageAt,
+      lastSuccessfulReplayAt,
+      lastTransportDiagnostic,
     });
   useEffect(() => {
     publish({ sessionId, kind: "structured", diagnostics, onReconnect: manualReconnect });
