@@ -39,12 +39,13 @@ export async function fetchReplay(
   lastSeq: { current: number },
   dispatch: Dispatch,
   setHasMoreOlder: (value: boolean) => void,
+  setServerReachability?: (value: "reachable" | "unreachable") => void,
 ): Promise<void> {
   try {
-    if (lastSeq.current === 0) await fetchTail(sid, lastSeq, dispatch, setHasMoreOlder);
-    else await fetchForward(sid, lastSeq.current, dispatch);
+    if (lastSeq.current === 0) await fetchTail(sid, lastSeq, dispatch, setHasMoreOlder, setServerReachability);
+    else await fetchForward(sid, lastSeq.current, dispatch, setServerReachability);
   } catch {
-    // Best effort.
+    setServerReachability?.("unreachable");
   }
 }
 
@@ -53,15 +54,16 @@ async function fetchTail(
   lastSeq: { current: number },
   dispatch: Dispatch,
   setHasMoreOlder: (value: boolean) => void,
+  setServerReachability?: (value: "reachable" | "unreachable") => void,
 ): Promise<void> {
   const [tailRes, tailRowsRes] = await getReplayPair(sid, `before=${TAIL_BEFORE}&limit=${REPLAY_PAGE_SIZE}`);
-  if (!tailRes.ok) return;
+  if (!tailRes.ok || !tailRowsRes.ok) return;
+  setServerReachability?.("reachable");
   const tail = (await tailRes.json()) as ReplayPageResponse;
   if (tail.lost) {
     dispatch({ kind: "lagged", skipped: tail.highest_seq });
     return;
   }
-  if (!tailRowsRes.ok) return;
   const rows = toActivityRows(await readRows(tailRowsRes), sid);
   dispatch({ kind: "frames", frames: tail.frames ?? [], rows, oldestSeq: tail.next_cursor ?? 0 });
   setHasMoreOlder(tail.has_more ?? false);
@@ -76,13 +78,19 @@ async function fetchTail(
   dispatch({ kind: "lagged_resolved" });
 }
 
-async function fetchForward(sid: string, lastSeq: number, dispatch: Dispatch): Promise<void> {
+async function fetchForward(
+  sid: string,
+  lastSeq: number,
+  dispatch: Dispatch,
+  setServerReachability?: (value: "reachable" | "unreachable") => void,
+): Promise<void> {
   const firstSince = Math.max(0, lastSeq - REPLAY_OVERLAP);
   let cursor = firstSince;
   let target: number | null = null;
   for (;;) {
     const [res, rowsRes] = await getReplayPair(sid, `since=${cursor}&limit=${REPLAY_PAGE_SIZE}`);
     if (!res.ok || !rowsRes.ok) return;
+    setServerReachability?.("reachable");
     const data = (await res.json()) as ReplayPageResponse;
     const pageRows = await readRows(rowsRes);
     if (target === null) {

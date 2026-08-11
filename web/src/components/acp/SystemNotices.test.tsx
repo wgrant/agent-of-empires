@@ -24,6 +24,7 @@ type NoticeProps = React.ComponentProps<typeof SystemNotices>;
 function noticeProps(overrides?: Partial<NoticeProps>): NoticeProps {
   return {
     status: "open",
+    serverReachability: "unknown",
     lagged: false,
     rateLimit: null,
     rateLimitRetriesExhausted: false,
