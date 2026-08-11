@@ -12,6 +12,7 @@ import {
 import { safeSetItem } from "../../lib/safeStorage";
 
 const STATE_CACHE_CAP = 32;
+export const MAX_PERSISTED_STATE_BYTES = 2 * 1024 * 1024;
 const stateCache = new Map<string, AcpState>();
 const stateListeners = new Map<string, Set<() => void>>();
 
@@ -118,9 +119,22 @@ function toPersistedState(state: AcpState): AcpState {
   return { ...base, queuedPrompts: base.queuedPrompts.filter((q) => !q.attachments?.length) };
 }
 
+export function coldResumeState(state: AcpState): AcpState {
+  return {
+    ...emptyAcpState(),
+    queuedPrompts: state.queuedPrompts.filter((q) => !q.attachments?.length),
+    rejectedPrompts: state.rejectedPrompts,
+  };
+}
+
 export function persistState(sessionId: string, state: AcpState): void {
   const key = storageKey(sessionId);
-  const body = JSON.stringify({ savedAt: Date.now(), state: toPersistedState(state) } satisfies PersistedEntry);
+  let persistedState = toPersistedState(state);
+  let body = JSON.stringify({ savedAt: Date.now(), state: persistedState } satisfies PersistedEntry);
+  if (new TextEncoder().encode(body).byteLength > MAX_PERSISTED_STATE_BYTES) {
+    persistedState = coldResumeState(state);
+    body = JSON.stringify({ savedAt: Date.now(), state: persistedState } satisfies PersistedEntry);
+  }
   // On a quota failure evict one entry and retry once; the cache is best effort.
   if (safeSetItem(key, body) || (evictOldestPersistedAcpState(key) && safeSetItem(key, body))) {
     setQueueCount(sessionId, state.queuedPrompts.length);
