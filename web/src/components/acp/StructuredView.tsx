@@ -196,6 +196,8 @@ function AcpChrome({
     lastServerMessageAt: ctx.lastServerMessageAt,
     lastSuccessfulReplayAt: ctx.lastSuccessfulReplayAt,
     lastTransportDiagnostic: ctx.lastTransportDiagnostic,
+    reconnectingSince: ctx.reconnectingSince,
+    liveUpdatesStale: ctx.liveUpdatesStale,
   });
   const connectionInset = connectionDiagnostics.hasIncident ? 44 : 0;
   const previousConnectionInsetRef = useRef(0);
@@ -252,6 +254,8 @@ function AcpChrome({
           lastServerMessageAt={ctx.lastServerMessageAt}
           lastSuccessfulReplayAt={ctx.lastSuccessfulReplayAt}
           lastTransportDiagnostic={ctx.lastTransportDiagnostic}
+          reconnectingSince={ctx.reconnectingSince}
+          liveUpdatesStale={ctx.liveUpdatesStale}
           hasEverOpened={ctx.hasEverOpened}
           reconnecting={ctx.reconnecting}
           retryCount={ctx.retryCount}
