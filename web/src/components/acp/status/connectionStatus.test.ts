@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { deriveConnectionIncident } from "./connectionStatus";
+import {
+  deriveConnectionIncident,
+  deriveDashboardConnectionDiagnostics,
+  deriveTerminalConnectionDiagnostics,
+} from "./connectionStatus";
 
 const base = {
   status: "open" as const,
@@ -93,6 +97,30 @@ describe("deriveConnectionIncident", () => {
       server: "unknown",
       serverToAgent: "inactive",
       agent: "unknown",
+    });
+  });
+
+  it("keeps dashboard and terminal diagnostics in the same route contract", () => {
+    expect(deriveDashboardConnectionDiagnostics(false)).toMatchObject({
+      targetLabel: null,
+      hasIncident: false,
+      deviceToServer: "ready",
+      serverToAgent: "inactive",
+    });
+    expect(
+      deriveTerminalConnectionDiagnostics({
+        connected: false,
+        reconnecting: true,
+        retryCount: 2,
+        retryCountdown: 3,
+        maxRetries: 7,
+      }),
+    ).toMatchObject({
+      targetLabel: "Terminal",
+      hasIncident: true,
+      severity: "working",
+      deviceToServer: "working",
+      serverToAgent: "inactive",
     });
   });
 });

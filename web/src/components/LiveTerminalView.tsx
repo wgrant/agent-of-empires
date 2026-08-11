@@ -70,7 +70,8 @@ export function LiveTerminalView({ session, active = true, surface = "agent", te
     [],
   );
   const live = useLiveTerminal(ensureState === "ready" ? session.id : null, wsPath, receiveAgentClipboard);
-  const publishConnectionDiagnostics = useConnectionDiagnosticsPublisher();
+  const { publish: publishConnectionDiagnostics, clear: clearConnectionDiagnostics } =
+    useConnectionDiagnosticsPublisher();
   const terminalDiagnostics = deriveTerminalConnectionDiagnostics({
     connected: live.state.connected,
     reconnecting: live.state.reconnecting,
@@ -86,7 +87,7 @@ export function LiveTerminalView({ session, active = true, surface = "agent", te
       onReconnect: live.manualReconnect,
     });
   }, [live.manualReconnect, publishConnectionDiagnostics, session.id, terminalDiagnostics]);
-  useEffect(() => () => publishConnectionDiagnostics(null), [publishConnectionDiagnostics]);
+  useEffect(() => () => clearConnectionDiagnostics(session.id), [clearConnectionDiagnostics, session.id]);
   // The viewport hook supplies the Safari bottom inset and the occlusion-based
   // keyboard state used to gate the pane's sizing latch.
   const { keyboardHeight, keyboardOpen } = useMobileKeyboard();
@@ -239,7 +240,10 @@ export function LiveTerminalView({ session, active = true, surface = "agent", te
       />
 
       {terminalDiagnostics.hasIncident && (
-        <ConnectionIncidentBubble diagnostics={terminalDiagnostics} onReconnect={live.manualReconnect} />
+        <>
+          <div className="h-11 shrink-0" aria-hidden="true" />
+          <ConnectionIncidentBubble diagnostics={terminalDiagnostics} onReconnect={live.manualReconnect} />
+        </>
       )}
 
       {live.state.connected && live.state.ownerKnown && !live.state.isOwner && (

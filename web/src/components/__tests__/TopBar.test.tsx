@@ -94,6 +94,13 @@ describe("TopBar", () => {
     expect(getByLabelText("Debug build")).toBeTruthy();
   });
 
+  it("opens the shared dashboard connection details from the global control", () => {
+    const { getByLabelText, getByText } = renderTopBar();
+    fireEvent.click(getByLabelText("Show connection status"));
+    expect(getByText("Session polling")).toBeTruthy();
+    expect(getByText("Reachable")).toBeTruthy();
+  });
+
   it("exposes a Tips entry in the overflow menu that fires onOpenTips", () => {
     const onOpenTips = vi.fn();
     const { getByRole } = renderTopBar({ onOpenTips });
