@@ -36,6 +36,7 @@ interface Props {
 export interface AcpContext {
   state: AcpState;
   status: Session["status"];
+  serverReachability: Session["serverReachability"];
   hasEverOpened: boolean;
   /** The auto-reconnect backoff is armed between a close and the next dial. */
   reconnecting: boolean;
@@ -191,6 +192,7 @@ export function AcpRuntime({
       {children({
         state: acp.state,
         status: acp.status,
+        serverReachability: acp.serverReachability,
         hasEverOpened: acp.hasEverOpened,
         reconnecting: acp.reconnecting,
         retryCount: acp.retryCount,

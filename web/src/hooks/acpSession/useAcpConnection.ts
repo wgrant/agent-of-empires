@@ -78,6 +78,7 @@ export function useAcpConnection(
   const [hasMoreOlder, setHasMoreOlder] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [hasEverOpened, setHasEverOpened] = useState(false);
+  const [serverReachability, setServerReachability] = useState<"reachable" | "unreachable" | "unknown">("unknown");
 
   const lastSeqRef = useLatestRef(state.lastSeq);
   const oldestSeqRef = useLatestRef(state.oldestSeq);
@@ -192,6 +193,7 @@ export function useAcpConnection(
     setHasMoreOlder(false);
     setLoadingOlder(false);
     setHasEverOpened(false);
+    setServerReachability("unknown");
   }
 
   useEffect(() => {
@@ -240,7 +242,7 @@ export function useAcpConnection(
           return;
         case "lagged":
           dispatch({ kind: "lagged", skipped: (data as { skipped?: number }).skipped ?? 0 });
-          void fetchReplay(sessionId, lastSeqRef, dispatch, setHasMoreOlder);
+          void fetchReplay(sessionId, lastSeqRef, dispatch, setHasMoreOlder, setServerReachability);
           return;
         case "reduced_state": {
           const { state: reduced, unchanged } = data as { state?: ReducedState; unchanged?: string[] };
@@ -281,7 +283,7 @@ export function useAcpConnection(
       const myGen = dialGenRef.current;
       const isCurrentDial = () => !cancelled && dialGenRef.current === myGen;
       void (async () => {
-        await fetchReplay(sessionId, lastSeqRef, dispatch, setHasMoreOlder);
+        await fetchReplay(sessionId, lastSeqRef, dispatch, setHasMoreOlder, setServerReachability);
         if (!isCurrentDial()) return;
         const protocol = window.location.protocol === "https:" ? "wss" : "ws";
         const url = `${protocol}://${window.location.host}/sessions/${encodeURIComponent(sessionId)}/acp/ws?since=${lastSeqRef.current}`;
@@ -340,6 +342,7 @@ export function useAcpConnection(
 
   return {
     status,
+    serverReachability,
     reconnecting,
     retryCount,
     retryCountdown,
