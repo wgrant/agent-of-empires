@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ChevronDown, LoaderCircle, RotateCcw, X } from "lucide-react";
 
 import {
@@ -216,6 +216,7 @@ export function GlobalConnectionStatusButton({
 }) {
   const diagnostics = selectConnectionDiagnostics(snapshot);
   const [expanded, setExpanded] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
   const presentation = connectionStatusPresentation(diagnostics.primary);
   const tone =
     !incidentVisible && presentation.working
@@ -225,8 +226,23 @@ export function GlobalConnectionStatusButton({
         : presentation.tone === "warning"
           ? "text-status-warning"
           : "text-text-muted";
+  useEffect(() => {
+    if (!expanded) return;
+    const onDocumentPointerDown = (event: PointerEvent) => {
+      if (rootRef.current && !rootRef.current.contains(event.target as Node)) setExpanded(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setExpanded(false);
+    };
+    document.addEventListener("pointerdown", onDocumentPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onDocumentPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [expanded]);
   return (
-    <div className="relative">
+    <div ref={rootRef} className="relative">
       <button
         type="button"
         onClick={() => setExpanded((value) => !value)}
