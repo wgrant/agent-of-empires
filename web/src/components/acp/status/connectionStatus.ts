@@ -111,7 +111,7 @@ export interface ConnectionStatusSnapshot {
  * selected session adds detail to the dashboard route, while a no-session
  * surface remains a dashboard-only status. */
 export function selectConnectionDiagnostics(snapshot: ConnectionStatusSnapshot): ConnectionDiagnostics {
-  const dashboard = deriveDashboardConnectionDiagnostics(snapshot.dashboard.phase === "unavailable");
+  const dashboard = deriveDashboardConnectionDiagnostics(snapshot.dashboard);
   if (snapshot.session === null) return dashboard;
   const session = snapshot.session.diagnostics;
   // A selected stream cannot establish that AoE is currently reachable when
@@ -136,7 +136,14 @@ export function selectConnectionDiagnostics(snapshot: ConnectionStatusSnapshot):
       ],
     };
   }
-  return session;
+  return {
+    ...session,
+    sections: [
+      ...session.sections.filter((section) => section.id === "device"),
+      ...dashboard.sections.filter((section) => section.id === "server"),
+      ...session.sections.filter((section) => section.id !== "device" && section.id !== "server"),
+    ],
+  };
 }
 
 export interface ConnectionStatusInput {
@@ -505,20 +512,32 @@ export function deriveConnectionDiagnostics(input: ConnectionStatusInput): Conne
   };
 }
 
-export function deriveDashboardConnectionDiagnostics(serverDown: boolean): ConnectionDiagnostics {
-  const route: ConnectionRouteStatus = serverDown ? "disconnected" : "connected";
+export function deriveDashboardConnectionDiagnostics(
+  input: DashboardConnectionDiagnostics | boolean,
+): ConnectionDiagnostics {
+  const dashboard: DashboardConnectionDiagnostics =
+    typeof input === "boolean"
+      ? { phase: input ? "unavailable" : "connected", lastSuccessAt: null, failureSince: null }
+      : input;
+  const serverDown = dashboard.phase === "unavailable";
+  const route: ConnectionRouteStatus = serverDown
+    ? "disconnected"
+    : dashboard.phase === "checking"
+      ? "connecting"
+      : "connected";
+  const connectedAt = displayTime(dashboard.lastSuccessAt);
   return {
     device: "ready",
     deviceToServer: serverDown ? "failed" : "ready",
-    server: serverDown ? "failed" : "ready",
+    server: serverDown ? "failed" : dashboard.phase === "checking" ? "unknown" : "ready",
     serverToAgent: "inactive",
     agent: "unknown",
     targetLabel: null,
     route,
-    serverReachability: serverDown ? "unreachable" : "reachable",
+    serverReachability: serverDown ? "unreachable" : dashboard.phase === "checking" ? "unknown" : "reachable",
     session: "unknown",
     continuity: serverDown ? "unavailable" : "current",
-    primary: serverDown ? "disconnected" : "connected",
+    primary: serverDown ? "disconnected" : dashboard.phase === "checking" ? "connecting" : "connected",
     retriesExhausted: false,
     retryCount: null,
     maxRetries: null,
@@ -535,8 +554,12 @@ export function deriveDashboardConnectionDiagnostics(serverDown: boolean): Conne
         observations: [
           {
             label: "Server check",
-            state: serverDown ? "failed" : "ready",
-            value: serverDown ? "Unavailable" : "Current",
+            state: serverDown ? "failed" : dashboard.phase === "checking" ? "working" : "ready",
+            value: serverDown
+              ? "Unavailable"
+              : dashboard.phase === "checking"
+                ? "Checking connection"
+                : `Connected${connectedAt ? ` since ${connectedAt}` : ""}`,
           },
         ],
       },
