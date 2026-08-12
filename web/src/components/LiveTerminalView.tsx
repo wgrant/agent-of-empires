@@ -84,6 +84,7 @@ export function LiveTerminalView({ session, active = true, surface = "agent", te
       sessionId: session.id,
       kind: "terminal",
       diagnostics: terminalDiagnostics,
+      incidentVisible: true,
       onReconnect: live.manualReconnect,
     });
   }, [live.manualReconnect, publishConnectionDiagnostics, session.id, terminalDiagnostics]);

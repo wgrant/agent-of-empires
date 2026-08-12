@@ -2019,7 +2019,11 @@
         "web/src/hooks/useConnectionIncidentVisibility.ts",
         "web/src/components/acp/status/connectionStatus.ts",
         "web/src/components/connection/ConnectionStatusView.tsx",
-        "web/src/components/acp/StructuredView.tsx"
+        "web/src/components/acp/StructuredView.tsx",
+        "web/src/components/TopBar.tsx",
+        "web/src/components/LiveTerminalView.tsx",
+        "web/src/lib/connectionDiagnosticsContext.tsx",
+        "web/src/hooks/useAcpSession.ts"
       ]
     },
     {

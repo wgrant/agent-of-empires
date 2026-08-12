@@ -2,45 +2,33 @@ import { useEffect, useRef, useState } from "react";
 
 import type { ConnectionDiagnostics } from "../components/acp/status/connectionStatus";
 
-// A new structured view starts by opening its conversation socket. Most
-// session switches complete within this interval, so presenting that expected
-// handoff as a connection incident creates a distracting flash and relayout.
-// A slow start still becomes visible, while every observed failure bypasses
-// the delay. Keep this aligned with the design system's medium duration.
-export const INITIAL_CONNECTION_INCIDENT_DELAY_MS = 300;
+// Opening or re-opening a conversation socket is routine. Give it a short
+// grace period before it becomes an interruption worth covering the
+// transcript for, while still surfacing a sustained failure. This is long
+// enough to absorb ordinary session switches and brief mobile flaps.
+export const CONNECTION_INCIDENT_DELAY_MS = 3_000;
 
-export function shouldDelayInitialConnectionIncident(
-  diagnostics: ConnectionDiagnostics,
-): boolean {
+export function shouldDelayConnectionIncident(diagnostics: ConnectionDiagnostics): boolean {
   return (
     diagnostics.hasIncident &&
-    diagnostics.initialConnection &&
-    diagnostics.session === "starting" &&
-    diagnostics.serverReachability === "unknown"
+    diagnostics.serverReachability !== "unreachable" &&
+    (diagnostics.session === "starting" || diagnostics.session === "ready") &&
+    (diagnostics.route === "connecting" || diagnostics.route === "reconnecting")
   );
 }
 
 function initialVisibility(diagnostics: ConnectionDiagnostics): boolean {
-  return (
-    diagnostics.hasIncident &&
-    !shouldDelayInitialConnectionIncident(diagnostics)
-  );
+  return diagnostics.hasIncident && !shouldDelayConnectionIncident(diagnostics);
 }
 
 /**
- * Keep expected initial socket setup quiet, without hiding a slow start or a
- * real connection problem. `sessionId` is explicit so a reused view cannot
+ * Keep brief conversation-socket churn quiet, without hiding an observed
+ * server or agent problem. `sessionId` is explicit so a reused view cannot
  * briefly carry an incident from the previously selected session.
  */
-export function useConnectionIncidentVisibility(
-  sessionId: string,
-  diagnostics: ConnectionDiagnostics,
-): boolean {
+export function useConnectionIncidentVisibility(sessionId: string, diagnostics: ConnectionDiagnostics): boolean {
   const initial = initialVisibility(diagnostics);
-  const [visibility, setVisibility] = useState(() => ({
-    sessionId,
-    visible: initial,
-  }));
+  const [visibility, setVisibility] = useState(() => ({ sessionId, visible: initial }));
   const currentSessionIdRef = useRef(sessionId);
 
   if (currentSessionIdRef.current !== sessionId) {
@@ -48,7 +36,7 @@ export function useConnectionIncidentVisibility(
     setVisibility({ sessionId, visible: initial });
   }
 
-  const delayed = shouldDelayInitialConnectionIncident(diagnostics);
+  const delayed = shouldDelayConnectionIncident(diagnostics);
   useEffect(() => {
     if (!diagnostics.hasIncident) {
       setVisibility({ sessionId, visible: false });
@@ -60,10 +48,7 @@ export function useConnectionIncidentVisibility(
     }
 
     setVisibility({ sessionId, visible: false });
-    const timer = window.setTimeout(
-      () => setVisibility({ sessionId, visible: true }),
-      INITIAL_CONNECTION_INCIDENT_DELAY_MS,
-    );
+    const timer = window.setTimeout(() => setVisibility({ sessionId, visible: true }), CONNECTION_INCIDENT_DELAY_MS);
     return () => window.clearTimeout(timer);
   }, [delayed, diagnostics.hasIncident, sessionId]);
 

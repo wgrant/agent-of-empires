@@ -190,6 +190,7 @@ export function TopBar({
         <GlobalConnectionStatusButton
           diagnostics={connectionDiagnostics}
           onReconnect={publishedDiagnostics?.onReconnect}
+          incidentVisible={publishedDiagnostics?.incidentVisible ?? true}
         />
 
         {hasSessionIdentity && <PaletteTriggerPill onClick={onOpenPalette} showDesktop={false} />}

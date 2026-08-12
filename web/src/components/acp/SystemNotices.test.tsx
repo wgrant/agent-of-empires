@@ -59,7 +59,7 @@ describe("SystemNotices", () => {
     expect(mount().container.firstChild).toBeNull();
   });
 
-  it("shows a neutral loading state instead of an initial connection incident", () => {
+  it("shows a neutral loading state instead of the connection overlay", () => {
     const { getByRole, queryByTestId } = mount({
       status: "connecting",
       hasEverOpened: false,
@@ -76,7 +76,7 @@ describe("SystemNotices", () => {
       reconnecting: true,
       retryCount: 1,
     });
-    expect(getByLabelText("Device to AoE: working")).toBeDefined();
+    expect(getByLabelText("Device to AoE: ready")).toBeDefined();
     expect(getByLabelText("AoE to agent: inactive")).toBeDefined();
     expect(getByTestId("connection-route").parentElement).toBe(
       getByTestId("connection-incident-summary").parentElement,
@@ -95,8 +95,7 @@ describe("SystemNotices", () => {
     if (expected) {
       expand();
       expect(queryByText(expected)).not.toBeNull();
-    }
-    else expect(queryByText(/Auto-resume/)).toBeNull();
+    } else expect(queryByText(/Auto-resume/)).toBeNull();
   });
 
   // Without a parseable reset, the banner shows the agent's own wording, never a made-up clock.
