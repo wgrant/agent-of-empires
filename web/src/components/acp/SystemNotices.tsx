@@ -9,7 +9,9 @@ import { useConnectionDiagnosticsPublisher } from "../../lib/connectionDiagnosti
 import { ConnectionIncidentBubble } from "../connection/ConnectionStatusView";
 import {
   deriveConnectionDiagnostics,
+  selectConnectionDiagnostics,
   type ConnectionDiagnostics,
+  type ConnectionStatusSnapshot,
   type ConnectionStatusInput,
   type SessionConnectionDiagnostics,
 } from "./status/connectionStatus";
@@ -94,6 +96,7 @@ export function SystemNotices({
   manualReconnect,
   diagnostics: suppliedDiagnostics,
   sessionConnection,
+  connectionSnapshot,
   showConnectionIncident = true,
   onSwitchAgent,
   onResumeRateLimit,
@@ -128,6 +131,7 @@ export function SystemNotices({
   manualReconnect: () => void;
   diagnostics?: ConnectionDiagnostics;
   sessionConnection?: SessionConnectionDiagnostics;
+  connectionSnapshot?: ConnectionStatusSnapshot;
   showConnectionIncident?: boolean;
   onSwitchAgent?: () => void;
   onResumeRateLimit?: () => void;
@@ -158,27 +162,31 @@ export function SystemNotices({
       reconnectingSince,
       liveUpdatesStale,
     });
+  const effectiveSessionConnection: SessionConnectionDiagnostics = sessionConnection ?? {
+    kind: "structured",
+    sessionId,
+    diagnostics,
+    transport: {
+      route: diagnostics.route,
+      connectedAt: null,
+      lastMessageAt: null,
+      reconnectingSince: null,
+      retryCount: diagnostics.retryCount ?? 0,
+      retryCountdown: 0,
+      maxRetries: diagnostics.maxRetries ?? 0,
+      lastFailure: null,
+    },
+  };
+  const effectiveSnapshot: ConnectionStatusSnapshot = connectionSnapshot ?? {
+    dashboard: { phase: "checking", lastSuccessAt: null, failureSince: null },
+    session: effectiveSessionConnection,
+  };
+  const displayDiagnostics = selectConnectionDiagnostics(effectiveSnapshot);
   const initialSessionLoad = conversationSync === "initial";
   const publication = (
     <PublishedConnectionDiagnostics
       sessionId={sessionId}
-      sessionConnection={
-        sessionConnection ?? {
-          kind: "structured",
-          sessionId,
-          diagnostics,
-          transport: {
-            route: diagnostics.route,
-            connectedAt: null,
-            lastMessageAt: null,
-            reconnectingSince: null,
-            retryCount: diagnostics.retryCount ?? 0,
-            retryCountdown: 0,
-            maxRetries: diagnostics.maxRetries ?? 0,
-            lastFailure: null,
-          },
-        }
-      }
+      sessionConnection={effectiveSessionConnection}
       onReconnect={manualReconnect}
       incidentVisible={showConnectionIncident}
     />
@@ -250,8 +258,8 @@ export function SystemNotices({
   return (
     <>
       {publication}
-      {showConnectionIncident && diagnostics.hasIncident && (
-        <ConnectionIncidentBubble diagnostics={diagnostics} onReconnect={manualReconnect} actions={actions} />
+      {showConnectionIncident && displayDiagnostics.hasIncident && (
+        <ConnectionIncidentBubble snapshot={effectiveSnapshot} onReconnect={manualReconnect} actions={actions} />
       )}
     </>
   );
