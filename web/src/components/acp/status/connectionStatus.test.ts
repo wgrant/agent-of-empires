@@ -74,7 +74,7 @@ describe("connection status model", () => {
     }
   });
 
-  it("gates downstream status while the AoE route is not current", () => {
+  it("retains a known device-to-AoE route while gating downstream session status", () => {
     const diagnostics = deriveConnectionDiagnostics({
       ...base,
       status: "closed",
@@ -85,7 +85,7 @@ describe("connection status model", () => {
     });
     expect(diagnostics).toMatchObject({
       primary: "reconnecting",
-      deviceToServer: "working",
+      deviceToServer: "ready",
       server: "unknown",
       serverToAgent: "inactive",
       agent: "unknown",
