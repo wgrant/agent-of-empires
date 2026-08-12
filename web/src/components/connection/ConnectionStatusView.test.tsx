@@ -98,6 +98,7 @@ describe("ConnectionRoute", () => {
     const button = getByRole("button", { name: "Show connection status" });
     expect(button.className).toContain("text-text-muted");
     expect(button.className).not.toContain("text-status-warning");
+    expect(button.className).toContain("lg:w-40");
     expect(button.querySelector(".animate-spin")).not.toBeNull();
   });
 });

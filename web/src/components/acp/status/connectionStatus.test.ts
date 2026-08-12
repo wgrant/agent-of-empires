@@ -171,6 +171,18 @@ describe("connection status model", () => {
     ).toMatchObject({ primary: "disconnected", deviceToServer: "failed", serverToAgent: "inactive" });
   });
 
+  it("treats a dashboard poll timestamp as evidence, not a connection start time", () => {
+    const diagnostics = deriveDashboardConnectionDiagnostics({
+      phase: "connected",
+      lastSuccessAt: new Date("2026-08-12T13:04:00Z").getTime(),
+      failureSince: null,
+    });
+    expect(diagnostics.sections.find((section) => section.id === "server")?.observations[0]).toMatchObject({
+      label: "Server check",
+      value: "Connected",
+    });
+  });
+
   it("keeps transport failures and success timestamps in expanded observations", () => {
     const diagnostics = deriveConnectionDiagnostics({
       ...base,
