@@ -10,6 +10,7 @@ import {
   isPinnedToBottom,
   PINNED_BOTTOM_SLOP_PX,
   scrollRestoreDelta,
+  restoreEarlierHistoryScrollTop,
   topInsetScrollAdjustment,
 } from "./historyScroll";
 
@@ -19,6 +20,7 @@ const base = {
   scrollHeight: 5000,
   armed: true,
   canLoadEarlier: true,
+  hasScrolled: true,
   now: 10_000,
   lastLoadAt: 0,
 };
@@ -35,6 +37,7 @@ it("autoLoadDecision fires once per arming at the top of an overflowing transcri
       { armed: true, fire: false },
     ],
     ["no older history", { canLoadEarlier: false }, { armed: true, fire: false }],
+    ["the initial mount sample", { hasScrolled: false }, { armed: true, fire: false }],
   ];
   for (const [name, over, expected] of cases) expect(autoLoadDecision({ ...base, ...over }), name).toEqual(expected);
 });
@@ -58,6 +61,14 @@ it("scrollRestoreDelta compensates growth only when scrolled up", () => {
   expect(scrollRestoreDelta(1000, 1300, true)).toBe(0);
   expect(scrollRestoreDelta(1300, 1300, false)).toBe(0);
   expect(scrollRestoreDelta(1300, 1000, false)).toBe(0);
+});
+
+it("restoreEarlierHistoryScrollTop shows revealed history at the top and holds a mid-transcript reader's row", () => {
+  expect(restoreEarlierHistoryScrollTop(0, 1000, 1300)).toBe(0);
+  expect(restoreEarlierHistoryScrollTop(HISTORY_PRELOAD_PX, 1000, 1300)).toBe(0);
+  expect(restoreEarlierHistoryScrollTop(300, 1000, 1300)).toBe(600);
+  expect(restoreEarlierHistoryScrollTop(HISTORY_PRELOAD_PX + 1, 1000, 1300)).toBe(HISTORY_PRELOAD_PX + 1 + 300);
+  expect(restoreEarlierHistoryScrollTop(300, 1300, 1000)).toBe(300);
 });
 
 it("topInsetScrollAdjustment keeps a scrolled reader's row fixed but leaves room at the top", () => {

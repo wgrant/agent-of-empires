@@ -71,6 +71,50 @@ test("long transcript renders recent first and reveals older on Load earlier", a
   await expect(page.getByText("prompt number 0")).toBeVisible({ timeout: 10_000 });
 });
 
+// User story (#2236): replacing assistant-ui's bounded runtime for an
+// explicit older-history reveal must retain the reader's current row. The
+// runtime mounts tail-following by default, so this exercises the race by
+// dispatching the button handler directly rather than asking Playwright to
+// scroll the off-screen button into view first.
+test("Load earlier preserves the reader position through the runtime replacement", async ({ page }) => {
+  // Two navigations are required to catch a callback that accidentally keeps
+  // the first runtime's publication generation.
+  const events: unknown[] = [];
+  for (let i = 0; i < 250; i += 1) {
+    events.push(userPrompt(`anchor prompt ${i}`), agentMessageChunk(`anchor reply ${i}`), stopped());
+  }
+  const mock = await mockAcpSession(page, {
+    title: "story-history-scroll-anchor",
+    initialEvents: events,
+  });
+  await openStructuredSession(page, mock);
+
+  const viewport = page.getByTestId("acp-viewport");
+  await expect(page.getByText("anchor reply 249")).toBeVisible({ timeout: 10_000 });
+  await viewport.evaluate((el) => {
+    el.scrollTop = Math.floor((el.scrollHeight - el.clientHeight) / 2);
+  });
+  const before = await viewport.evaluate((el) => ({ scrollTop: el.scrollTop, scrollHeight: el.scrollHeight }));
+
+  for (let load = 0; load < 2; load += 1) {
+    const beforeLoad =
+      load === 0
+        ? before
+        : await viewport.evaluate((el) => ({ scrollTop: el.scrollTop, scrollHeight: el.scrollHeight }));
+    await page.getByTestId("acp-load-earlier").evaluate((el) => {
+      if (el instanceof HTMLButtonElement) el.click();
+    });
+
+    await expect.poll(() => viewport.evaluate((el) => el.scrollHeight)).toBeGreaterThan(beforeLoad.scrollHeight);
+    await expect
+      .poll(async () => {
+        const after = await viewport.evaluate((el) => ({ scrollTop: el.scrollTop, scrollHeight: el.scrollHeight }));
+        return after.scrollTop - (beforeLoad.scrollTop + after.scrollHeight - beforeLoad.scrollHeight);
+      })
+      .toBeCloseTo(0, -1);
+  }
+});
+
 test("large transcript keeps the mounted history range bounded while navigating", async ({ page }) => {
   const turns = 600;
   const events: unknown[] = [];
@@ -125,21 +169,41 @@ test("scroll to latest returns a scrolled-away reader to the loaded tail", async
 // User story (#2236): scrolling to the top auto-loads earlier messages,
 // no button click needed.
 test("scrolling to the top auto-loads earlier messages", async ({ page }) => {
+  const events: unknown[] = [];
+  for (let i = 0; i < 250; i += 1) {
+    events.push(userPrompt(`autoload prompt ${i}`), agentMessageChunk(`autoload reply ${i}`), stopped());
+  }
   const mock = await mockAcpSession(page, {
     title: "story-history-autoload",
-    initialEvents: longTranscript(),
+    initialEvents: events,
   });
   await openStructuredSession(page, mock);
 
-  await expect(page.getByText(`reply number ${TURNS - 1}`)).toBeVisible({ timeout: 10_000 });
-  await expect(page.getByText("prompt number 0")).toHaveCount(0);
+  await expect(page.getByText("autoload reply 249")).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByText("autoload prompt 0")).toHaveCount(0);
 
-  // Drive the viewport to the top; the scroll handler should reveal more
-  // history without a button click.
-  await page.getByTestId("acp-viewport").evaluate((el) => {
-    el.scrollTop = 0;
-  });
-  await expect(page.getByText("prompt number 0")).toBeVisible({ timeout: 10_000 });
+  const viewport = page.getByTestId("acp-viewport");
+  // Re-arm, then arrive at the top twice. Each range replacement
+  // remounts assistant-ui, so this catches a remount resetting automatic
+  // paging and mistaking its own restoration scroll for another user action.
+  for (let load = 0; load < 2; load += 1) {
+    await viewport.evaluate((el) => {
+      el.scrollTop = 300;
+    });
+    // The real control deliberately debounces arrivals at the boundary, so
+    // wait beyond that guard before simulating the next independent scroll.
+    await page.waitForTimeout(600);
+    const beforeHeight = await viewport.evaluate((el) => el.scrollHeight);
+    await viewport.evaluate((el) => {
+      el.scrollTop = 0;
+    });
+    await expect.poll(() => viewport.evaluate((el) => el.scrollHeight)).toBeGreaterThan(beforeHeight);
+    // The external viewport schedules its default initialization scroll in a
+    // frame; stay through it so this proves a history replacement cannot land
+    // at the top briefly and then fall through to the tail.
+    await page.waitForTimeout(250);
+    await expect.poll(() => viewport.evaluate((el) => el.scrollTop)).toBeLessThanOrEqual(16);
+  }
 });
 
 // User story (#2236, feature C): a transcript larger than one replay page

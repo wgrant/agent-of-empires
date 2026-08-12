@@ -13,6 +13,10 @@ export interface AutoLoadInput {
   /** Re-armed once the user scrolls away from the top. */
   armed: boolean;
   canLoadEarlier: boolean;
+  /** Whether this sample follows an actual viewport scroll. The initial
+   *  mount sample establishes scroll state but must not be mistaken for an
+   *  arrival at the top. */
+  hasScrolled: boolean;
   now: number;
   lastLoadAt: number;
 }
@@ -24,6 +28,7 @@ export interface AutoLoadDecision {
 
 /** Fires only when the transcript overflows, once per arming and cooldown window. */
 export function autoLoadDecision(i: AutoLoadInput): AutoLoadDecision {
+  if (!i.hasScrolled) return { armed: true, fire: false };
   const overflowing = i.scrollHeight > i.clientHeight + HISTORY_PRELOAD_PX;
   if (!overflowing || i.scrollTop > HISTORY_PRELOAD_PX) {
     return { armed: true, fire: false };
@@ -53,6 +58,23 @@ export function scrollRestoreDelta(prevScrollHeight: number, nextScrollHeight: n
   return delta > 0 ? delta : 0;
 }
 
+/** Restore an explicit older-history request after the replacement window has
+ * mounted. Unlike a live append, the reader asked to reveal content above the
+ * current view, so retain the same prior row even if the runtime briefly
+ * auto-scrolls while replacing its resource tree. */
+export function restoreEarlierHistoryScrollTop(
+  previousScrollTop: number,
+  previousScrollHeight: number,
+  nextScrollHeight: number,
+): number {
+  // At the top boundary the reader asked for older messages. Leaving them at
+  // the old first row, now far below the newly revealed page, looks like an
+  // arbitrary jump and hides the content they requested. Mid-transcript
+  // readers, however, retain their exact prior row.
+  if (previousScrollTop <= HISTORY_PRELOAD_PX) return 0;
+  return previousScrollTop + Math.max(0, nextScrollHeight - previousScrollHeight);
+}
+
 /** Scroll adjustment for a transient inset at the transcript's top. Readers
  * who are already at the top deliberately see the new breathing room; readers
  * partway through the transcript keep the same row under their eyes. The same
@@ -75,7 +97,6 @@ export function earlierAction(canRevealLoaded: boolean, hasMoreOlder: boolean): 
 export function canOfferEarlier(canRevealLoaded: boolean, hasMoreOlder: boolean): boolean {
   return canRevealLoaded || hasMoreOlder;
 }
-
 /** A settled load that didn't grow the transcript; left set it would jump the viewport on the next live append. */
 export function anchorIsStale(loading: boolean, anchor: number | null, scrollHeight: number): boolean {
   return !loading && anchor != null && anchor === scrollHeight;

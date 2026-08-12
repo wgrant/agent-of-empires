@@ -159,6 +159,7 @@ export function useTranscriptScroll({
         scrollHeight: vp.scrollHeight,
         armed: autoLoadArmedRef.current,
         canLoadEarlier: canLoadEarlierRef.current,
+        hasScrolled: !force,
         now: performance.now(),
         lastLoadAt: lastAutoLoadAtRef.current,
       });
