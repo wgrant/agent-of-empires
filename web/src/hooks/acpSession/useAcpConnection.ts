@@ -11,7 +11,7 @@ import {
 } from "../../lib/acpTypes";
 import { getOrCreateDeviceBindingSecret } from "../../lib/deviceBinding";
 import { getToken } from "../../lib/token";
-import { isServerDown, useServerDown } from "../../lib/connectionState";
+import { useDashboardConnectionDiagnostics } from "../../lib/connectionState";
 import { listen } from "../domEvents";
 import { useLatestRef } from "../useLatestRef";
 import { toActivityRows, transcriptDeltaAction, type Action } from "./reducer";
@@ -80,13 +80,13 @@ export function useAcpConnection(
   const [hasMoreOlder, setHasMoreOlder] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [hasEverOpened, setHasEverOpened] = useState(false);
-  const serverDown = useServerDown();
+  const dashboardConnection = useDashboardConnectionDiagnostics();
   const [serverReachability, setServerReachability] = useState<"reachable" | "unreachable" | "unknown">(() =>
-    isServerDown() ? "unreachable" : "reachable",
+    dashboardConnection.phase === "unavailable" ? "unreachable" : "reachable",
   );
   useEffect(() => {
-    setServerReachability(serverDown ? "unreachable" : "reachable");
-  }, [serverDown]);
+    setServerReachability(dashboardConnection.phase === "unavailable" ? "unreachable" : "reachable");
+  }, [dashboardConnection.phase]);
   const [lastWebSocketOpenAt, setLastWebSocketOpenAt] = useState<number | null>(null);
   const [lastServerMessageAt, setLastServerMessageAt] = useState<number | null>(null);
   const [lastTransportDiagnostic, setLastTransportDiagnostic] = useState<TransportDiagnostic | null>(null);

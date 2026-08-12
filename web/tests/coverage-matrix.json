@@ -2003,8 +2003,8 @@
       "id": "connectivity.lifecycle-fetch-toasts",
       "kind": "vitest",
       "risk": "medium",
-      "specs": ["src/lib/fetchInterceptor.test.ts"],
-      "components": ["web/src/lib/fetchInterceptor.ts"]
+      "specs": ["src/lib/fetchInterceptor.test.ts", "src/lib/connectionState.test.ts"],
+      "components": ["web/src/lib/fetchInterceptor.ts", "web/src/lib/connectionState.ts"]
     },
     {
       "id": "connectivity.connection-incident-presentation",
