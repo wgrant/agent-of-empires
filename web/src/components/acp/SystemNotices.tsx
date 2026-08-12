@@ -53,7 +53,9 @@ function rateLimitWording(status: string): string {
   return text || "the agent did not report a reset time.";
 }
 
-export function deriveStructuredConnectionDiagnostics(input: Omit<ConnectionStatusInput, "rateLimitText">) {
+export function deriveStructuredConnectionDiagnostics(
+  input: Omit<ConnectionStatusInput, "rateLimitText">,
+) {
   return deriveConnectionDiagnostics({
     ...input,
     rateLimitText: (limit) => {
@@ -92,6 +94,7 @@ export function SystemNotices({
   maxRetries,
   manualReconnect,
   diagnostics: suppliedDiagnostics,
+  showConnectionIncident = true,
   onSwitchAgent,
   onResumeRateLimit,
   rateLimitResumeState = "idle",
@@ -124,6 +127,7 @@ export function SystemNotices({
   maxRetries: number;
   manualReconnect: () => void;
   diagnostics?: ConnectionDiagnostics;
+  showConnectionIncident?: boolean;
   onSwitchAgent?: () => void;
   onResumeRateLimit?: () => void;
   rateLimitResumeState?: RespawnState;
@@ -154,38 +158,41 @@ export function SystemNotices({
       liveUpdatesStale,
     });
   const initialSessionLoad = conversationSync === "initial";
-  if (initialSessionLoad) return <InitialConversationLoadNotice sessionId={sessionId} />;
+  if (initialSessionLoad)
+    return <InitialConversationLoadNotice sessionId={sessionId} />;
   const rateLimitIncident =
-    conversationStatus?.kind === "blocked" && conversationStatus.cause === "rate_limited"
+    conversationStatus?.kind === "blocked" &&
+    conversationStatus.cause === "rate_limited"
       ? true
       : rateLimit !== null && diagnostics.session === "rate_limited";
-  const resumePending = rateLimitResumeState === "retrying" || rateLimitResumeState === "ok";
+  const resumePending =
+    rateLimitResumeState === "retrying" || rateLimitResumeState === "ok";
   const actions =
     rateLimitIncident || rateLimitRetriesExhausted ? (
       <>
-          {rateLimit && onResumeRateLimit && (
-            <button
-              type="button"
-              onClick={onResumeRateLimit}
-              disabled={resumePending}
-              className="rounded-md border border-brand-700 bg-brand-900/40 px-2 py-1 text-[10px] font-mono uppercase tracking-wide text-brand-100 hover:bg-brand-900/60 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {rateLimitResumeState === "retrying"
-                ? "Resuming…"
-                : rateLimitResumeState === "ok"
-                  ? "Resume requested"
-                  : "Resume now"}
-            </button>
-          )}
-          {rateLimit && onSwitchAgent && (
-            <button
-              type="button"
-              onClick={onSwitchAgent}
-              className="rounded-md border border-brand-700 bg-brand-900/40 px-2 py-1 text-[10px] font-mono uppercase tracking-wide text-brand-100 hover:bg-brand-900/60"
-            >
-              Continue in another agent
-            </button>
-          )}
+        {rateLimit && onResumeRateLimit && (
+          <button
+            type="button"
+            onClick={onResumeRateLimit}
+            disabled={resumePending}
+            className="rounded-md border border-brand-700 bg-brand-900/40 px-2 py-1 text-[10px] font-mono uppercase tracking-wide text-brand-100 hover:bg-brand-900/60 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {rateLimitResumeState === "retrying"
+              ? "Resuming…"
+              : rateLimitResumeState === "ok"
+                ? "Resume requested"
+                : "Resume now"}
+          </button>
+        )}
+        {rateLimit && onSwitchAgent && (
+          <button
+            type="button"
+            onClick={onSwitchAgent}
+            className="rounded-md border border-brand-700 bg-brand-900/40 px-2 py-1 text-[10px] font-mono uppercase tracking-wide text-brand-100 hover:bg-brand-900/60"
+          >
+            Continue in another agent
+          </button>
+        )}
         {rateLimitAutoResume === true && !rateLimitRetriesExhausted && (
           <span className="basis-full text-xs text-text-muted">
             Auto-resume is armed; the session resumes when the window clears.
@@ -193,12 +200,14 @@ export function SystemNotices({
         )}
         {rateLimitAutoResume === false && (
           <span className="basis-full text-xs text-text-muted">
-            Auto-resume is off for this profile; use Resume now, or enable acp.rate_limit_auto_resume.
+            Auto-resume is off for this profile; use Resume now, or enable
+            acp.rate_limit_auto_resume.
           </span>
         )}
         {rateLimitRetriesExhausted && (
           <span className="basis-full text-xs text-status-warning">
-            Auto-resume stopped after repeated attempts. Resume manually or send a new prompt.
+            Auto-resume stopped after repeated attempts. Resume manually or send
+            a new prompt.
           </span>
         )}
         {rateLimitResumeState === "ok" && (
@@ -207,15 +216,26 @@ export function SystemNotices({
           </span>
         )}
         {rateLimitResumeState === "failed" && rateLimitResumeError && (
-          <span className="basis-full text-xs text-status-error">Resume failed: {rateLimitResumeError}</span>
+          <span className="basis-full text-xs text-status-error">
+            Resume failed: {rateLimitResumeError}
+          </span>
         )}
       </>
     ) : undefined;
   return (
     <>
-      <PublishedConnectionDiagnostics sessionId={sessionId} diagnostics={diagnostics} onReconnect={manualReconnect} />
-      {diagnostics.hasIncident && (
-        <ConnectionIncidentBubble diagnostics={diagnostics} onReconnect={manualReconnect} actions={actions} />
+      <PublishedConnectionDiagnostics
+        sessionId={sessionId}
+        diagnostics={diagnostics}
+        onReconnect={manualReconnect}
+        visible={showConnectionIncident}
+      />
+      {showConnectionIncident && diagnostics.hasIncident && (
+        <ConnectionIncidentBubble
+          diagnostics={diagnostics}
+          onReconnect={manualReconnect}
+          actions={actions}
+        />
       )}
     </>
   );
@@ -225,16 +245,22 @@ function PublishedConnectionDiagnostics({
   sessionId,
   diagnostics,
   onReconnect,
+  visible,
 }: {
   sessionId: string;
   diagnostics: ConnectionDiagnostics;
   onReconnect: () => void;
+  visible: boolean;
 }) {
   const { publish, clear } = useConnectionDiagnosticsPublisher();
   useEffect(() => {
+    if (!visible) {
+      clear(sessionId);
+      return;
+    }
     publish({ sessionId, kind: "structured", diagnostics, onReconnect });
     return () => clear(sessionId);
-  }, [clear, diagnostics, onReconnect, publish, sessionId]);
+  }, [clear, diagnostics, onReconnect, publish, sessionId, visible]);
   return null;
 }
 
@@ -248,9 +274,15 @@ function InitialConversationLoadNotice({ sessionId }: { sessionId: string }) {
 
 function ConversationLoadingBubble() {
   return (
-    <div className="pointer-events-none absolute inset-x-0 top-2 z-30 flex justify-center px-3" role="status">
+    <div
+      className="pointer-events-none absolute inset-x-0 top-2 z-30 flex justify-center px-3"
+      role="status"
+    >
       <div className="flex items-center gap-2 rounded-full border border-surface-700 bg-surface-850/95 px-3 py-1.5 text-xs text-text-secondary shadow-lg backdrop-blur-sm">
-        <RotateCcw className="size-3 animate-spin text-text-muted" aria-hidden="true" />
+        <RotateCcw
+          className="size-3 animate-spin text-text-muted"
+          aria-hidden="true"
+        />
         Loading conversation…
       </div>
     </div>
