@@ -151,7 +151,6 @@ export interface ConnectionStatusInput {
   serverReachability: "reachable" | "unreachable" | "unknown";
   lagged: boolean;
   rateLimit: AcpState["rateLimit"];
-  rateLimitRetriesExhausted: boolean;
   hasEverOpened: boolean;
   reconnecting: boolean;
   retryCount: number;
@@ -177,26 +176,11 @@ function displayTime(timestamp: number | null): string | null {
 export function connectionStatusPresentation(primary: PrimaryConnectionStatus): ConnectionStatusPresentation {
   switch (primary) {
     case "connected":
-      return {
-        headline: "Connected",
-        description: "Connection healthy.",
-        tone: "neutral",
-        working: false,
-      };
+      return { headline: "Connected", description: "Connection healthy.", tone: "neutral", working: false };
     case "connecting":
-      return {
-        headline: "Connecting",
-        description: "Connecting to AoE.",
-        tone: "warning",
-        working: true,
-      };
+      return { headline: "Connecting", description: "Connecting to AoE.", tone: "warning", working: true };
     case "reconnecting":
-      return {
-        headline: "Reconnecting",
-        description: "Reconnecting to AoE.",
-        tone: "warning",
-        working: true,
-      };
+      return { headline: "Reconnecting", description: "Reconnecting to AoE.", tone: "warning", working: true };
     case "disconnected":
       return {
         headline: "Disconnected",
@@ -205,12 +189,7 @@ export function connectionStatusPresentation(primary: PrimaryConnectionStatus): 
         working: false,
       };
     case "agent_starting":
-      return {
-        headline: "Starting agent",
-        description: "Agent session is starting.",
-        tone: "warning",
-        working: true,
-      };
+      return { headline: "Starting agent", description: "Agent session is starting.", tone: "warning", working: true };
     case "agent_restarting":
       return {
         headline: "Restarting agent",
@@ -219,19 +198,9 @@ export function connectionStatusPresentation(primary: PrimaryConnectionStatus): 
         working: true,
       };
     case "agent_stopped":
-      return {
-        headline: "Agent stopped",
-        description: "Agent worker stopped.",
-        tone: "error",
-        working: false,
-      };
+      return { headline: "Agent stopped", description: "Agent worker stopped.", tone: "error", working: false };
     case "agent_failed":
-      return {
-        headline: "Agent failed",
-        description: "Agent session could not start.",
-        tone: "error",
-        working: false,
-      };
+      return { headline: "Agent failed", description: "Agent session could not start.", tone: "error", working: false };
     case "agent_unresponsive":
       return {
         headline: "Agent unresponsive",
@@ -343,7 +312,7 @@ export function deriveConnectionDiagnostics(input: ConnectionStatusInput): Conne
     ? "failed"
     : input.workerStopped
       ? "stopped"
-      : input.rateLimit || input.rateLimitRetriesExhausted
+      : input.rateLimit
         ? "rate_limited"
         : input.agentUnresponsive
           ? "unresponsive"
@@ -361,6 +330,10 @@ export function deriveConnectionDiagnostics(input: ConnectionStatusInput): Conne
           ? "delayed"
           : "current";
   const primary = primaryStatus({ route, session, continuity });
+  // The dashboard's shared reachability probe survives a session switch. A
+  // new conversation socket may still be connecting while the established
+  // device-to-AoE route remains known good; its own progress lives in the
+  // conversation-stream observation below.
   const deviceToServer: ConnectionEdgeState =
     input.serverReachability === "unreachable"
       ? "failed"
@@ -435,20 +408,12 @@ export function deriveConnectionDiagnostics(input: ConnectionStatusInput): Conne
     maxRetries: input.maxRetries,
     hasIncident: primary !== "connected",
     sections: [
-      {
-        id: "device",
-        label: "Device",
-        observations: [{ label: "Dashboard", state: "ready", value: "Active" }],
-      },
+      { id: "device", label: "Device", observations: [{ label: "Dashboard", state: "ready", value: "Active" }] },
       {
         id: "conversation",
         label: "Conversation",
         observations: [
-          {
-            label: "Conversation stream",
-            state: deviceToServer,
-            value: socketDescription,
-          },
+          { label: "Conversation stream", state: deviceToServer, value: socketDescription },
           ...(input.lagged
             ? [
                 {
@@ -499,11 +464,7 @@ export function deriveConnectionDiagnostics(input: ConnectionStatusInput): Conne
               id: "provider" as const,
               label: "Provider",
               observations: [
-                {
-                  label: "Rate limit",
-                  state: "blocked" as const,
-                  value: input.rateLimitText(input.rateLimit),
-                },
+                { label: "Rate limit", state: "blocked" as const, value: input.rateLimitText(input.rateLimit) },
               ],
             },
           ]
@@ -525,7 +486,6 @@ export function deriveDashboardConnectionDiagnostics(
     : dashboard.phase === "checking"
       ? "connecting"
       : "connected";
-  const connectedAt = displayTime(dashboard.lastSuccessAt);
   return {
     device: "ready",
     deviceToServer: serverDown ? "failed" : "ready",
@@ -543,11 +503,7 @@ export function deriveDashboardConnectionDiagnostics(
     maxRetries: null,
     hasIncident: serverDown,
     sections: [
-      {
-        id: "device",
-        label: "Device",
-        observations: [{ label: "Dashboard", state: "ready", value: "Active" }],
-      },
+      { id: "device", label: "Device", observations: [{ label: "Dashboard", state: "ready", value: "Active" }] },
       {
         id: "server",
         label: "AoE",
@@ -555,11 +511,11 @@ export function deriveDashboardConnectionDiagnostics(
           {
             label: "Server check",
             state: serverDown ? "failed" : dashboard.phase === "checking" ? "working" : "ready",
-            value: serverDown
-              ? "Unavailable"
-              : dashboard.phase === "checking"
-                ? "Checking connection"
-                : `Connected${connectedAt ? ` since ${connectedAt}` : ""}`,
+            // The dashboard route is sampled by a poller, not held open like
+            // a WebSocket. Its last-success time changes every poll, so it is
+            // evidence of current reachability rather than a useful
+            // connection-start timestamp.
+            value: serverDown ? "Unavailable" : dashboard.phase === "checking" ? "Checking connection" : "Connected",
           },
         ],
       },
@@ -599,11 +555,7 @@ export function deriveTerminalConnectionDiagnostics(input: {
     maxRetries: input.maxRetries,
     hasIncident: !input.connected,
     sections: [
-      {
-        id: "device",
-        label: "Device",
-        observations: [{ label: "Dashboard", state: "ready", value: "Active" }],
-      },
+      { id: "device", label: "Device", observations: [{ label: "Dashboard", state: "ready", value: "Active" }] },
       {
         id: "conversation",
         label: "Terminal connection",
