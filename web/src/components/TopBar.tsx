@@ -9,7 +9,8 @@ import type { PaneDisplay } from "./Dock";
 import { useWebSettings } from "../hooks/useWebSettings";
 import { StrokeIcon } from "./icons";
 import { usePublishedConnectionDiagnostics } from "../lib/connectionDiagnosticsContext";
-import { deriveDashboardConnectionDiagnostics } from "./acp/status/connectionStatus";
+import { selectConnectionDiagnostics } from "./acp/status/connectionStatus";
+import { useDashboardConnectionDiagnostics } from "../lib/connectionState";
 import { GlobalConnectionStatusButton } from "./connection/ConnectionStatusView";
 
 interface Props {
@@ -93,9 +94,11 @@ export function TopBar({
   const hasSessionIdentity = activeProjectName !== null && activeSession !== null;
   const sessionIdentityLabel = hasSessionIdentity ? `${activeProjectName} / ${activeSession.title}` : undefined;
   const publishedDiagnostics = usePublishedConnectionDiagnostics(activeSession?.id ?? null);
-  const connectionDiagnostics = isOffline
-    ? deriveDashboardConnectionDiagnostics(true)
-    : (publishedDiagnostics?.diagnostics ?? deriveDashboardConnectionDiagnostics(false));
+  const dashboardConnection = useDashboardConnectionDiagnostics();
+  const connectionDiagnostics = selectConnectionDiagnostics({
+    dashboard: isOffline ? { ...dashboardConnection, phase: "unavailable" } : dashboardConnection,
+    session: publishedDiagnostics?.session ?? null,
+  });
 
   return (
     <header {...tourAnchor(TOUR_ANCHORS.topbar)} className="h-12 bg-surface-850 flex items-stretch shrink-0">

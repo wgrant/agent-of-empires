@@ -1,14 +1,10 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
 
-import type { ConnectionDiagnostics } from "../components/acp/status/connectionStatus";
+import type { SessionConnectionDiagnostics } from "../components/acp/status/connectionStatus";
 
-export type ConnectionDiagnosticsKind = "structured" | "terminal";
-
-export interface PublishedConnectionDiagnostics {
-  sessionId: string;
-  kind: ConnectionDiagnosticsKind;
-  diagnostics: ConnectionDiagnostics;
+export interface PublishedSessionConnectionDiagnostics {
+  session: SessionConnectionDiagnostics;
   /** A routine connection attempt is already visible in the header, but is
    * not yet disruptive enough to show the transcript overlay. */
   incidentVisible: boolean;
@@ -16,25 +12,26 @@ export interface PublishedConnectionDiagnostics {
 }
 
 interface ConnectionDiagnosticsContextValue {
-  published: PublishedConnectionDiagnostics | null;
-  publish: (snapshot: PublishedConnectionDiagnostics) => void;
+  published: PublishedSessionConnectionDiagnostics | null;
+  publish: (snapshot: PublishedSessionConnectionDiagnostics) => void;
   clear: (sessionId: string) => void;
 }
 
 const ConnectionDiagnosticsContext = createContext<ConnectionDiagnosticsContextValue | null>(null);
 
-/** Shares the active view's existing connection observations with the global
- * header. A session id is carried with every snapshot, so a late unmount from
- * the previous view cannot briefly describe the newly selected session. */
+/** Holds the optional session half of connection status. The dashboard half
+ * has page lifetime and comes directly from connectionState. A session id is
+ * carried with every snapshot, so a late unmount cannot describe a newly
+ * selected session. */
 export function ConnectionDiagnosticsProvider({ children }: { children: ReactNode }) {
-  const [published, setPublished] = useState<PublishedConnectionDiagnostics | null>(null);
-  const publish = useCallback((snapshot: PublishedConnectionDiagnostics) => {
+  const [published, setPublished] = useState<PublishedSessionConnectionDiagnostics | null>(null);
+  const publish = useCallback((snapshot: PublishedSessionConnectionDiagnostics) => {
     setPublished((current) => {
       if (
-        current?.sessionId === snapshot.sessionId &&
-        current.kind === snapshot.kind &&
+        current?.session.sessionId === snapshot.session.sessionId &&
+        current.session.kind === snapshot.session.kind &&
         current.incidentVisible === snapshot.incidentVisible &&
-        JSON.stringify(current.diagnostics) === JSON.stringify(snapshot.diagnostics)
+        JSON.stringify(current.session) === JSON.stringify(snapshot.session)
       ) {
         return current;
       }
@@ -42,7 +39,7 @@ export function ConnectionDiagnosticsProvider({ children }: { children: ReactNod
     });
   }, []);
   const clear = useCallback((sessionId: string) => {
-    setPublished((current) => (current?.sessionId === sessionId ? null : current));
+    setPublished((current) => (current?.session.sessionId === sessionId ? null : current));
   }, []);
   const value = useMemo(() => ({ published, publish, clear }), [clear, published, publish]);
   return <ConnectionDiagnosticsContext.Provider value={value}>{children}</ConnectionDiagnosticsContext.Provider>;
@@ -58,5 +55,5 @@ export function useConnectionDiagnosticsPublisher() {
 
 export function usePublishedConnectionDiagnostics(activeSessionId: string | null) {
   const context = useContext(ConnectionDiagnosticsContext);
-  return context?.published?.sessionId === activeSessionId ? context.published : null;
+  return context?.published?.session.sessionId === activeSessionId ? context.published : null;
 }

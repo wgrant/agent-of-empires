@@ -6,7 +6,11 @@ import { MobileTerminalToolbar } from "./MobileTerminalToolbar";
 import { MobileLiveTerminal } from "./MobileLiveTerminal";
 import { KeyboardFab } from "./KeyboardFab";
 import { ConnectionIncidentBubble } from "./connection/ConnectionStatusView";
-import { deriveTerminalConnectionDiagnostics } from "./acp/status/connectionStatus";
+import {
+  deriveTerminalConnectionDiagnostics,
+  type SessionConnectionDiagnostics,
+  type StreamTransportDiagnostics,
+} from "./acp/status/connectionStatus";
 import { useConnectionDiagnosticsPublisher } from "../lib/connectionDiagnosticsContext";
 import { ensureSession, ensureTerminal, pasteImage } from "../lib/api";
 import { armClipboardWrite, writeClipboard } from "../lib/clipboard";
@@ -79,15 +83,29 @@ export function LiveTerminalView({ session, active = true, surface = "agent", te
     retryCountdown: live.state.retryCountdown,
     maxRetries: live.maxRetries,
   });
+  const streamTransport: StreamTransportDiagnostics = {
+    route: terminalDiagnostics.route,
+    connectedAt: null,
+    lastMessageAt: null,
+    reconnectingSince: null,
+    retryCount: live.state.retryCount,
+    retryCountdown: live.state.retryCountdown,
+    maxRetries: live.maxRetries,
+    lastFailure: null,
+  };
+  const sessionConnection: SessionConnectionDiagnostics = {
+    kind: "terminal",
+    sessionId: session.id,
+    diagnostics: terminalDiagnostics,
+    transport: streamTransport,
+  };
   useEffect(() => {
     publishConnectionDiagnostics({
-      sessionId: session.id,
-      kind: "terminal",
-      diagnostics: terminalDiagnostics,
+      session: sessionConnection,
       incidentVisible: true,
       onReconnect: live.manualReconnect,
     });
-  }, [live.manualReconnect, publishConnectionDiagnostics, session.id, terminalDiagnostics]);
+  }, [live.manualReconnect, publishConnectionDiagnostics, sessionConnection]);
   useEffect(() => () => clearConnectionDiagnostics(session.id), [clearConnectionDiagnostics, session.id]);
   // The viewport hook supplies the Safari bottom inset and the occlusion-based
   // keyboard state used to gate the pane's sizing latch.

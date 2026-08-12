@@ -8,6 +8,7 @@ import {
   deriveConnectionIncident,
   deriveDashboardConnectionDiagnostics,
   deriveTerminalConnectionDiagnostics,
+  selectConnectionDiagnostics,
 } from "./connectionStatus";
 
 const base = {
@@ -138,6 +139,36 @@ describe("connection status model", () => {
       route: "reconnecting",
       hasIncident: true,
     });
+  });
+
+  it("selects dashboard-only status without a session and gives an AoE outage priority over session state", () => {
+    const dashboard = { phase: "connected" as const, lastSuccessAt: 100, failureSince: null };
+    expect(selectConnectionDiagnostics({ dashboard, session: null })).toMatchObject({
+      targetLabel: null,
+      primary: "connected",
+    });
+
+    const session = {
+      kind: "structured" as const,
+      sessionId: "session",
+      diagnostics: deriveConnectionDiagnostics({ ...base, workerStopped: true }),
+      transport: {
+        route: "connected" as const,
+        connectedAt: 100,
+        lastMessageAt: 100,
+        reconnectingSince: null,
+        retryCount: 0,
+        retryCountdown: 0,
+        maxRetries: 7,
+        lastFailure: null,
+      },
+    };
+    expect(
+      selectConnectionDiagnostics({
+        dashboard: { phase: "unavailable", lastSuccessAt: 100, failureSince: 200 },
+        session,
+      }),
+    ).toMatchObject({ primary: "disconnected", deviceToServer: "failed", serverToAgent: "inactive" });
   });
 
   it("keeps transport failures and success timestamps in expanded observations", () => {

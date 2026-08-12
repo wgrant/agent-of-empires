@@ -11,6 +11,7 @@ import {
   deriveConnectionDiagnostics,
   type ConnectionDiagnostics,
   type ConnectionStatusInput,
+  type SessionConnectionDiagnostics,
 } from "./status/connectionStatus";
 import type { ConversationSyncStatus } from "./status/conversationSyncStatus";
 import type { ConversationStatus } from "./status/conversationStatus";
@@ -92,6 +93,7 @@ export function SystemNotices({
   maxRetries,
   manualReconnect,
   diagnostics: suppliedDiagnostics,
+  sessionConnection,
   showConnectionIncident = true,
   onSwitchAgent,
   onResumeRateLimit,
@@ -125,6 +127,7 @@ export function SystemNotices({
   maxRetries: number;
   manualReconnect: () => void;
   diagnostics?: ConnectionDiagnostics;
+  sessionConnection?: SessionConnectionDiagnostics;
   showConnectionIncident?: boolean;
   onSwitchAgent?: () => void;
   onResumeRateLimit?: () => void;
@@ -159,7 +162,23 @@ export function SystemNotices({
   const publication = (
     <PublishedConnectionDiagnostics
       sessionId={sessionId}
-      diagnostics={diagnostics}
+      sessionConnection={
+        sessionConnection ?? {
+          kind: "structured",
+          sessionId,
+          diagnostics,
+          transport: {
+            route: diagnostics.route,
+            connectedAt: null,
+            lastMessageAt: null,
+            reconnectingSince: null,
+            retryCount: diagnostics.retryCount ?? 0,
+            retryCountdown: 0,
+            maxRetries: diagnostics.maxRetries ?? 0,
+            lastFailure: null,
+          },
+        }
+      }
       onReconnect={manualReconnect}
       incidentVisible={showConnectionIncident}
     />
@@ -240,20 +259,20 @@ export function SystemNotices({
 
 function PublishedConnectionDiagnostics({
   sessionId,
-  diagnostics,
+  sessionConnection,
   onReconnect,
   incidentVisible,
 }: {
   sessionId: string;
-  diagnostics: ConnectionDiagnostics;
+  sessionConnection: SessionConnectionDiagnostics;
   onReconnect: () => void;
   incidentVisible: boolean;
 }) {
   const { publish, clear } = useConnectionDiagnosticsPublisher();
   useEffect(() => {
-    publish({ sessionId, kind: "structured", diagnostics, incidentVisible, onReconnect });
+    publish({ session: sessionConnection, incidentVisible, onReconnect });
     return () => clear(sessionId);
-  }, [clear, diagnostics, incidentVisible, onReconnect, publish, sessionId]);
+  }, [clear, incidentVisible, onReconnect, publish, sessionConnection, sessionId]);
   return null;
 }
 
