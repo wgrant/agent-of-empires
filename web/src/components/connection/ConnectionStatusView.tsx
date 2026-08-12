@@ -249,9 +249,9 @@ export function GlobalConnectionStatusButton({
         aria-expanded={expanded}
         aria-label="Show connection status"
         aria-description={presentation.description}
-        className={`flex h-8 shrink-0 items-center text-[10px] font-mono uppercase tracking-wide ${tone}`}
+        className={`flex h-8 shrink-0 items-center text-[10px] font-mono uppercase tracking-wide xl:min-w-32 ${tone}`}
       >
-        <span className="flex h-8 items-center gap-1.5 rounded-md px-2 transition-colors hover:bg-surface-700/60">
+        <span className="flex h-8 items-center gap-1.5 rounded-md px-2 transition-colors hover:bg-surface-700/60 xl:ml-1">
           {presentation.working ? (
             <LoaderCircle className="size-3 animate-spin" />
           ) : (
@@ -267,6 +267,7 @@ export function GlobalConnectionStatusButton({
               }`}
             />
           )}
+          <span className="hidden xl:inline">{connectionStatusCompactLabel(diagnostics)}</span>
         </span>
       </button>
       {expanded && (
