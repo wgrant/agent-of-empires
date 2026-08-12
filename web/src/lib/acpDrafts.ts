@@ -10,17 +10,33 @@ const DRAFT_KEY_PREFIX = "acp:draft:";
 // Attachments use their own key: text writes are debounced per keystroke while attachments write on stage/remove.
 const ATTACHMENT_KEY_PREFIX = "acp:draft-attachments:";
 
-// Sessions that already toasted "storage full"; a successful write re-arms the toast.
-const toastedSessions = new Set<string>();
+// Text drafts and raw attachments have different consequences when the
+// browser's small localStorage quota is exhausted. Text can only be recovered
+// by copying it elsewhere, while a staged attachment remains ready to send in
+// memory and merely will not survive a page reload. Keep their notices and
+// dedupe independent so an attachment warning never hides a later text-loss
+// error. See #1345 / #1000.
+const textPersistFailureSessions = new Set<string>();
+const attachmentPersistFailureSessions = new Set<string>();
 
-function notifyDraftPersistFailure(sessionId: string): void {
-  if (toastedSessions.has(sessionId)) return;
-  toastedSessions.add(sessionId);
+function notifyTextDraftPersistFailure(sessionId: string): void {
+  if (textPersistFailureSessions.has(sessionId)) return;
+  textPersistFailureSessions.add(sessionId);
   toastBus.handler?.error("Storage full: unsent draft not saved. Free space or copy your draft elsewhere.");
 }
 
-function clearDraftPersistFailure(sessionId: string): void {
-  toastedSessions.delete(sessionId);
+function notifyAttachmentPersistFailure(sessionId: string): void {
+  if (attachmentPersistFailureSessions.has(sessionId)) return;
+  attachmentPersistFailureSessions.add(sessionId);
+  toastBus.handler?.info("Attachment ready to send, but it will not be kept if this page reloads.");
+}
+
+function clearTextDraftPersistFailure(sessionId: string): void {
+  textPersistFailureSessions.delete(sessionId);
+}
+
+function clearAttachmentPersistFailure(sessionId: string): void {
+  attachmentPersistFailureSessions.delete(sessionId);
 }
 
 function draftKey(sessionId: string): string {
@@ -50,7 +66,8 @@ function notify(sessionId: string | null) {
 }
 
 export function __resetDraftPersistFailureNotifications(): void {
-  toastedSessions.clear();
+  textPersistFailureSessions.clear();
+  attachmentPersistFailureSessions.clear();
 }
 
 export function getDraft(sessionId: string): string {
@@ -65,10 +82,13 @@ export function setDraft(sessionId: string, text: string): void {
     ok = safeSetItem(draftKey(sessionId), text);
   }
   if (!ok) {
-    // Surface one toast per session so the user knows unsent text is at risk.
-    notifyDraftPersistFailure(sessionId);
+    // Non-empty draft failed to persist. Surface a single toast per
+    // session so the user knows their unsent text is at risk.
+    notifyTextDraftPersistFailure(sessionId);
   } else {
-    clearDraftPersistFailure(sessionId);
+    // Any successful write (including a removal that clears the draft)
+    // resets the dedupe, so a later exhaustion re-toasts.
+    clearTextDraftPersistFailure(sessionId);
   }
   notify(sessionId);
 }
@@ -121,9 +141,9 @@ export function setDraftAttachments(sessionId: string, attachments: readonly Pro
     if (!ok) safeRemoveItem(key);
   }
   if (!ok) {
-    notifyDraftPersistFailure(sessionId);
+    notifyAttachmentPersistFailure(sessionId);
   } else {
-    clearDraftPersistFailure(sessionId);
+    clearAttachmentPersistFailure(sessionId);
   }
   notify(sessionId);
 }
