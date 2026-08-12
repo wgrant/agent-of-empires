@@ -1,5 +1,6 @@
 import type { AcpState } from "../../../lib/acpTypes";
 import type { ConnectionStatus, TransportDiagnostic } from "../../../hooks/useAcpSession";
+import type { DashboardConnectionDiagnostics } from "../../../lib/connectionState";
 
 export type ConnectionHopState = "ready" | "working" | "blocked" | "failed" | "unknown";
 export type ConnectionEdgeState = "ready" | "working" | "blocked" | "failed" | "inactive";
@@ -79,6 +80,31 @@ export interface ConnectionDiagnostics {
   maxRetries: number | null;
   hasIncident: boolean;
   sections: ConnectionDiagnosticSection[];
+}
+
+/** Shared transport facts supplied by both structured and terminal streams.
+ * Protocol-specific hooks keep their own mechanics, but publish this common
+ * shape to the optional session half of connection status. */
+export interface StreamTransportDiagnostics {
+  route: ConnectionRouteStatus;
+  connectedAt: number | null;
+  lastMessageAt: number | null;
+  reconnectingSince: number | null;
+  retryCount: number;
+  retryCountdown: number;
+  maxRetries: number;
+  lastFailure: TransportDiagnostic | null;
+}
+
+/** The optional selected-session half of the two-part connection model. */
+export type SessionConnectionDiagnostics =
+  | { kind: "structured"; sessionId: string; diagnostics: ConnectionDiagnostics; transport: StreamTransportDiagnostics }
+  | { kind: "terminal"; sessionId: string; diagnostics: ConnectionDiagnostics; transport: StreamTransportDiagnostics };
+
+/** The only input the connection-status displays will ultimately consume. */
+export interface ConnectionStatusSnapshot {
+  dashboard: DashboardConnectionDiagnostics;
+  session: SessionConnectionDiagnostics | null;
 }
 
 export interface ConnectionStatusInput {
