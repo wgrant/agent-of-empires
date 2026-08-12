@@ -87,7 +87,9 @@ test.describe("Top bar", () => {
 
   test("offline indicator shows when API unreachable", async ({ page }) => {
     await page.goto("/");
-    await expect(page.getByText("offline")).toBeVisible();
+    const connection = page.getByRole("button", { name: "Show connection status" });
+    await expect(connection).toBeVisible();
+    await expect(connection).toHaveClass(/text-status-error/);
   });
 
   test("mobile: palette trigger collapses to icon", async ({ page }) => {
