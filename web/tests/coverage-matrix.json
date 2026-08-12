@@ -2007,6 +2007,22 @@
       "components": ["web/src/lib/fetchInterceptor.ts"]
     },
     {
+      "id": "connectivity.connection-incident-presentation",
+      "kind": "vitest",
+      "risk": "medium",
+      "specs": [
+        "src/hooks/useConnectionIncidentVisibility.test.tsx",
+        "src/components/acp/status/connectionStatus.test.ts",
+        "src/components/connection/ConnectionStatusView.test.tsx"
+      ],
+      "components": [
+        "web/src/hooks/useConnectionIncidentVisibility.ts",
+        "web/src/components/acp/status/connectionStatus.ts",
+        "web/src/components/connection/ConnectionStatusView.tsx",
+        "web/src/components/acp/StructuredView.tsx"
+      ]
+    },
+    {
       "id": "git-clone",
       "kind": "live-playwright",
       "risk": "medium",

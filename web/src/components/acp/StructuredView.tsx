@@ -7,6 +7,7 @@ import { ThreadPrimitive } from "@assistant-ui/react";
 import { AlertTriangle, ChevronDown, RotateCcw } from "lucide-react";
 
 import { useIsWideViewport } from "../../hooks/useIsWideViewport";
+import { useConnectionIncidentVisibility } from "../../hooks/useConnectionIncidentVisibility";
 import { useMobileKeyboard } from "../../hooks/useMobileKeyboard";
 import { useRespawnSession } from "../../hooks/useRespawnSession";
 import { useWebSettings } from "../../hooks/useWebSettings";
@@ -26,8 +27,16 @@ import { CompactionReminderBanner } from "./CompactionReminderBanner";
 import { Composer } from "./Composer";
 import { ContextPrimerBanner } from "./ContextPrimerBanner";
 import { PlanStrip } from "./PlanStrip";
-import { ModeSwitchFailedNotice, QueuedPromptsStrip, RejectedPromptsStrip } from "./PromptStrips";
-import { MonitoringBanner, ScheduledWakeupBanner, SessionBanners } from "./SessionBanners";
+import {
+  ModeSwitchFailedNotice,
+  QueuedPromptsStrip,
+  RejectedPromptsStrip,
+} from "./PromptStrips";
+import {
+  MonitoringBanner,
+  ScheduledWakeupBanner,
+  SessionBanners,
+} from "./SessionBanners";
 import { ConfigOptionSwitchFailedNotice } from "./SessionConfigControls";
 import { StartupErrorScreen } from "./StartupErrorScreen";
 import {
@@ -44,7 +53,11 @@ import {
 import { deriveConversationSyncStatus } from "./status/conversationSyncStatus";
 import { deriveConversationStatus } from "./status/conversationStatus";
 import { AssistantMessage, UserMessage } from "./ThreadMessages";
-import { ToolDensityToggle, ToolDisplayModeProvider, useToolDensityPref } from "./ToolDisplayMode";
+import {
+  ToolDensityToggle,
+  ToolDisplayModeProvider,
+  useToolDensityPref,
+} from "./ToolDisplayMode";
 import { useTranscriptScroll } from "./useTranscriptScroll";
 import { WorkingSpinner } from "./WorkingSpinner";
 
@@ -82,8 +95,16 @@ const STARTER_PROMPTS = [
 ];
 
 export function StructuredView(props: Props) {
-  const { sessionId, acpWorkerState, tool, clearAliases, archivedAt, snoozedUntil, onOpenFileRef, fileRefSession } =
-    props;
+  const {
+    sessionId,
+    acpWorkerState,
+    tool,
+    clearAliases,
+    archivedAt,
+    snoozedUntil,
+    onOpenFileRef,
+    fileRefSession,
+  } = props;
   const [showClearedTurns, setShowClearedTurns] = useState(false);
   const [toolDensity, toggleToolDensity] = useToolDensityPref();
   return (
@@ -99,7 +120,10 @@ export function StructuredView(props: Props) {
           >
             {(ctx) => (
               <BackgroundAgentsContext.Provider
-                value={{ agents: ctx.state.backgroundAgents, openPane: props.onOpenAgentsPane }}
+                value={{
+                  agents: ctx.state.backgroundAgents,
+                  openPane: props.onOpenAgentsPane,
+                }}
               >
                 <AcpChrome
                   view={props}
@@ -120,13 +144,19 @@ export function StructuredView(props: Props) {
 
 /** Bottom padding reserving the soft keyboard where the layout viewport does
  *  not shrink for it (iOS regular Safari); 0 elsewhere. */
-export function structuredViewRootStyle(keyboardHeight: number): React.CSSProperties | undefined {
+export function structuredViewRootStyle(
+  keyboardHeight: number,
+): React.CSSProperties | undefined {
   return keyboardHeight > 0 ? { paddingBottom: keyboardHeight } : undefined;
 }
 
 /** Flex root publishing the keyboard reservation and both conversation font
  *  sizes (as rem); `index.css` picks the active size. */
-export function StructuredViewRoot({ children }: { children: React.ReactNode }) {
+export function StructuredViewRoot({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   const { keyboardHeight } = useMobileKeyboard();
   const { settings } = useWebSettings();
   return (
@@ -136,8 +166,12 @@ export function StructuredViewRoot({ children }: { children: React.ReactNode }) 
       style={
         {
           ...structuredViewRootStyle(keyboardHeight),
-          "--acp-conversation-font-size-mobile": conversationFontSizeRem(settings.structuredMobileFontSize),
-          "--acp-conversation-font-size-desktop": conversationFontSizeRem(settings.structuredDesktopFontSize),
+          "--acp-conversation-font-size-mobile": conversationFontSizeRem(
+            settings.structuredMobileFontSize,
+          ),
+          "--acp-conversation-font-size-desktop": conversationFontSizeRem(
+            settings.structuredDesktopFontSize,
+          ),
         } as React.CSSProperties
       }
     >
@@ -210,7 +244,11 @@ function AcpChrome({
     nextWakeupAt: state.nextWakeupAt,
     monitorArmed: state.monitorArmed,
   });
-  const connectionInset = connectionDiagnostics.hasIncident ? 44 : 0;
+  const connectionIncidentVisible = useConnectionIncidentVisibility(
+    sessionId,
+    connectionDiagnostics,
+  );
+  const connectionInset = connectionIncidentVisible ? 44 : 0;
   const previousConnectionInsetRef = useRef(0);
   const pendingJumpToLatestRef = useRef(false);
   // Phone-width only: fold the composer away for reading.
@@ -250,7 +288,11 @@ function AcpChrome({
     const viewport = viewportRef.current;
     const previousInset = previousConnectionInsetRef.current;
     if (!viewport || previousInset === connectionInset) return;
-    viewport.scrollTop += topInsetScrollAdjustment(previousInset, connectionInset, viewport.scrollTop);
+    viewport.scrollTop += topInsetScrollAdjustment(
+      previousInset,
+      connectionInset,
+      viewport.scrollTop,
+    );
     previousConnectionInsetRef.current = connectionInset;
   }, [connectionInset, viewportRef]);
 
@@ -258,7 +300,9 @@ function AcpChrome({
     <RateLimitRecoverySection
       sessionId={sessionId}
       currentAgent={state.agent ?? acpAgent}
-      onPrefill={(text) => setPrimerPrefill({ id: `rate-limit-recovery-${Date.now()}`, text })}
+      onPrefill={(text) =>
+        setPrimerPrefill({ id: `rate-limit-recovery-${Date.now()}`, text })
+      }
     >
       {({ onSwitchAgent }) => (
         <SystemNotices
@@ -271,7 +315,9 @@ function AcpChrome({
           rateLimitRetriesExhausted={state.rateLimitRetriesExhausted}
           startupError={state.startupError !== null}
           workerStopped={state.workerStopped}
-          workerRestarting={state.workerRestarting || acpWorkerState === "resuming"}
+          workerRestarting={
+            state.workerRestarting || acpWorkerState === "resuming"
+          }
           agentUnresponsive={state.agentUnresponsive}
           agentOrphaned={state.agentOrphaned}
           lastWebSocketOpenAt={ctx.lastWebSocketOpenAt}
@@ -288,6 +334,7 @@ function AcpChrome({
           maxRetries={ctx.maxRetries}
           manualReconnect={ctx.manualReconnect}
           diagnostics={connectionDiagnostics}
+          showConnectionIncident={connectionIncidentVisible}
           onSwitchAgent={onSwitchAgent}
           onResumeRateLimit={() => void rateLimitResume.respawn()}
           rateLimitResumeState={rateLimitResume.state}
@@ -301,13 +348,20 @@ function AcpChrome({
   if (state.incompatibleAgent) {
     return (
       <div className="flex h-full flex-col bg-surface-900 text-text-primary">
-        <StartupErrorScreen detail={state.incompatibleAgent} sessionId={sessionId} isSandboxed={view.isSandboxed} />
+        <StartupErrorScreen
+          detail={state.incompatibleAgent}
+          sessionId={sessionId}
+          isSandboxed={view.isSandboxed}
+        />
       </div>
     );
   }
   return (
     <StructuredViewRoot>
-      <AttentionChime approvals={state.pendingApprovals.length} elicitations={state.pendingElicitations.length} />
+      <AttentionChime
+        approvals={state.pendingApprovals.length}
+        elicitations={state.pendingElicitations.length}
+      />
       <PlanStrip plan={state.plan} />
 
       <SessionBanners
@@ -342,7 +396,10 @@ function AcpChrome({
 
               {state.activity.length > 0 && (
                 <div className="mb-2 flex">
-                  <ToolDensityToggle density={toolDensity} onToggle={onToggleToolDensity} />
+                  <ToolDensityToggle
+                    density={toolDensity}
+                    onToggle={onToggleToolDensity}
+                  />
                 </div>
               )}
 
@@ -363,12 +420,16 @@ function AcpChrome({
                     data-testid="acp-load-earlier"
                     className="h-8 rounded-md border border-surface-700 bg-surface-800 px-3 text-xs text-text-secondary hover:bg-surface-700 hover:text-text-primary transition-colors cursor-pointer disabled:cursor-default disabled:opacity-60"
                   >
-                    {ctx.loadingEarlierHistory ? "Loading…" : "Load earlier messages"}
+                    {ctx.loadingEarlierHistory
+                      ? "Loading…"
+                      : "Load earlier messages"}
                   </button>
                 </div>
               )}
 
-              <ThreadPrimitive.Messages components={{ UserMessage, AssistantMessage }} />
+              <ThreadPrimitive.Messages
+                components={{ UserMessage, AssistantMessage }}
+              />
 
               {ctx.canLoadNewerHistory && (
                 <div className="mt-3 flex justify-center">
@@ -383,43 +444,51 @@ function AcpChrome({
                 </div>
               )}
 
-              {conversationStatus.kind === "active" && conversationStatus.cause === "working" && (
-                <>
-                {/* A turn parked on an approval or question is waiting on the user, not stalled. */}
-                {state.pendingElicitations.length === 0 && state.pendingApprovals.length === 0 ? (
-                  <div className="mt-3 ml-1">
-                    <WorkingSpinner
-                      thinking={state.thinking}
-                      tool={state.inFlightTool?.name ?? null}
-                      cancelling={state.cancelling}
-                      cancelEscalatesAt={state.cancelEscalatesAt}
-                      compacting={state.compacting}
-                      lastActivityRef={ctx.lastActivityRef}
-                      onForceEndTurn={ctx.forceEndTurn}
-                    />
-                  </div>
-                ) : null}
-                </>
-              )}
+              {conversationStatus.kind === "active" &&
+                conversationStatus.cause === "working" && (
+                  <>
+                    {/* A turn parked on an approval or question is waiting on the user, not stalled. */}
+                    {state.pendingElicitations.length === 0 &&
+                    state.pendingApprovals.length === 0 ? (
+                      <div className="mt-3 ml-1">
+                        <WorkingSpinner
+                          thinking={state.thinking}
+                          tool={state.inFlightTool?.name ?? null}
+                          cancelling={state.cancelling}
+                          cancelEscalatesAt={state.cancelEscalatesAt}
+                          compacting={state.compacting}
+                          lastActivityRef={ctx.lastActivityRef}
+                          onForceEndTurn={ctx.forceEndTurn}
+                        />
+                      </div>
+                    ) : null}
+                  </>
+                )}
 
               {conversationStatus.kind === "waiting" &&
                 conversationStatus.cause === "scheduled_wakeup" &&
                 state.nextWakeupAt && (
                   <div className="mt-3">
-                    <ScheduledWakeupBanner wakeAt={state.nextWakeupAt} reason={state.nextWakeupReason} />
+                    <ScheduledWakeupBanner
+                      wakeAt={state.nextWakeupAt}
+                      reason={state.nextWakeupReason}
+                    />
                   </div>
                 )}
-              {conversationStatus.kind === "waiting" && conversationStatus.cause === "monitoring" && (
-                <div className="mt-3">
-                  <MonitoringBanner description={state.monitorDescription} />
-                </div>
-              )}
+              {conversationStatus.kind === "waiting" &&
+                conversationStatus.cause === "monitoring" && (
+                  <div className="mt-3">
+                    <MonitoringBanner description={state.monitorDescription} />
+                  </div>
+                )}
 
               {state.pendingApprovals.map((approval) => (
                 <ApprovalCard
                   key={approval.nonce}
                   approval={approval}
-                  onResolve={(decision, optionId) => ctx.resolveApproval(approval.nonce, decision, optionId)}
+                  onResolve={(decision, optionId) =>
+                    ctx.resolveApproval(approval.nonce, decision, optionId)
+                  }
                 />
               ))}
 
@@ -427,7 +496,9 @@ function AcpChrome({
                 <AskUserQuestionCard
                   key={elicitation.nonce}
                   elicitation={elicitation}
-                  onResolve={(resolution) => ctx.resolveElicitation(elicitation.nonce, resolution)}
+                  onResolve={(resolution) =>
+                    ctx.resolveElicitation(elicitation.nonce, resolution)
+                  }
                 />
               ))}
             </div>
@@ -493,21 +564,32 @@ function ComposerDock({
 }) {
   const { sessionId, acpWorkerState, acpAgent } = view;
   const { state, status } = ctx;
-  const composerConnected = status === "open" && !state.workerStopped && !state.workerRestarting;
+  const composerConnected =
+    status === "open" && !state.workerStopped && !state.workerRestarting;
   return (
     <>
       <ComposerActionRail>
-        {conversationStatus.kind === "updating" && conversationStatus.cause === "reconnect" && (
-          <ConversationRefreshNotice />
+        {conversationStatus.kind === "updating" &&
+          conversationStatus.cause === "reconnect" && (
+            <ConversationRefreshNotice />
+          )}
+        {!composerConnected && (
+          <ComposerConnectionNotice diagnostics={connectionDiagnostics} />
         )}
-        {!composerConnected && <ComposerConnectionNotice diagnostics={connectionDiagnostics} />}
         <RejectedPromptsStrip
           rejected={state.rejectedPrompts}
           onRetry={ctx.sendPrompt}
           onDismiss={ctx.dismissRejectedPrompt}
-          disabled={state.workerRestarting || state.workerStopped || Boolean(state.startupError)}
+          disabled={
+            state.workerRestarting ||
+            state.workerStopped ||
+            Boolean(state.startupError)
+          }
         />
-        <ModeSwitchFailedNotice failure={state.modeSwitchFailed} onDismiss={ctx.dismissModeSwitchFailed} />
+        <ModeSwitchFailedNotice
+          failure={state.modeSwitchFailed}
+          onDismiss={ctx.dismissModeSwitchFailed}
+        />
         <ConfigOptionSwitchFailedNotice
           failure={state.configOptionSwitchFailed}
           configOptions={state.configOptions}
@@ -522,14 +604,20 @@ function ComposerDock({
           canSendNow={ctx.canSendQueuedNow}
           sendNowInterrupts={ctx.sendNowInterruptsTurn}
           pendingResume={
-            status !== "open" || acpWorkerState !== "running" || state.workerStopped || state.workerRestarting
+            status !== "open" ||
+            acpWorkerState !== "running" ||
+            state.workerStopped ||
+            state.workerRestarting
           }
         />
         <ContextPrimerBanner
           sessionId={sessionId}
           available={state.contextPrimerAvailable}
           onInsertPrimer={(text) =>
-            setPrimerPrefill({ id: `primer-${state.contextPrimerAvailable?.resetSeq ?? 0}-${Date.now()}`, text })
+            setPrimerPrefill({
+              id: `primer-${state.contextPrimerAvailable?.resetSeq ?? 0}-${Date.now()}`,
+              text,
+            })
           }
           onDismiss={ctx.dismissPrimer}
         />
@@ -552,7 +640,10 @@ function ComposerDock({
         />
       )}
 
-      <CollapsibleRegion id="conversation-composer" collapsed={collapsible && collapsed}>
+      <CollapsibleRegion
+        id="conversation-composer"
+        collapsed={collapsible && collapsed}
+      >
         <Composer
           key={sessionId}
           sessionId={sessionId}
@@ -581,14 +672,19 @@ function ComposerDock({
   );
 }
 
-function ComposerConnectionNotice({ diagnostics }: { diagnostics: ConnectionDiagnostics }) {
+function ComposerConnectionNotice({
+  diagnostics,
+}: {
+  diagnostics: ConnectionDiagnostics;
+}) {
   const presentation = connectionStatusPresentation(diagnostics.primary);
   const icon = presentation.working ? (
     <RotateCcw className="size-3 shrink-0 animate-spin" aria-hidden="true" />
   ) : (
     <AlertTriangle className="size-3 shrink-0" aria-hidden="true" />
   );
-  const tone = presentation.tone === "error" ? "text-status-error" : "text-status-warning";
+  const tone =
+    presentation.tone === "error" ? "text-status-error" : "text-status-warning";
   return (
     <div
       className={`flex items-center gap-1.5 border-b border-surface-800/70 px-3 py-1.5 text-[11px] md:hidden ${tone}`}
@@ -607,7 +703,10 @@ function ConversationRefreshNotice() {
       className="flex items-center gap-1.5 border-b border-surface-800/70 px-3 py-1.5 text-[11px] text-text-secondary"
       role="status"
     >
-      <RotateCcw className="size-3 shrink-0 animate-spin text-text-muted" aria-hidden="true" />
+      <RotateCcw
+        className="size-3 shrink-0 animate-spin text-text-muted"
+        aria-hidden="true"
+      />
       Updating conversation…
     </div>
   );
@@ -616,7 +715,9 @@ function ConversationRefreshNotice() {
 function EmptyState({ onPick }: { onPick: (text: string) => Promise<void> }) {
   return (
     <div className="mt-12 flex flex-col items-center gap-4 text-center">
-      <div className="text-sm text-text-muted">Ask the agent anything about this workspace.</div>
+      <div className="text-sm text-text-muted">
+        Ask the agent anything about this workspace.
+      </div>
       <div className="flex flex-wrap justify-center gap-2">
         {STARTER_PROMPTS.map((p) => (
           <button
@@ -657,7 +758,10 @@ function ClearedTurnsBanner({
       <span className="flex-1 text-left">
         {expanded ? "Hide" : "Show"} {hiddenCount} earlier turn
         {hiddenCount === 1 ? "" : "s"}
-        <span className="text-text-dim"> (cleared, not in the model's memory)</span>
+        <span className="text-text-dim">
+          {" "}
+          (cleared, not in the model's memory)
+        </span>
       </span>
     </button>
   );
