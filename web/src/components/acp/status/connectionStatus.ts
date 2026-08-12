@@ -1,11 +1,17 @@
 import type { AcpState } from "../../../lib/acpTypes";
-import type { ConnectionStatus, TransportDiagnostic } from "../../../hooks/useAcpSession";
+import type {
+  ConnectionStatus,
+  TransportDiagnostic,
+} from "../../../hooks/useAcpSession";
 
-export type ConnectionHopState = "ready" | "working" | "blocked" | "failed" | "unknown";
-export type ConnectionEdgeState = "ready" | "working" | "blocked" | "failed" | "inactive";
+export type ConnectionHopState =
+  "ready" | "working" | "blocked" | "failed" | "unknown";
+export type ConnectionEdgeState =
+  "ready" | "working" | "blocked" | "failed" | "inactive";
 
 /** What the browser can currently establish about its route to AoE. */
-export type ConnectionRouteStatus = "connected" | "connecting" | "reconnecting" | "disconnected";
+export type ConnectionRouteStatus =
+  "connected" | "connecting" | "reconnecting" | "disconnected";
 
 /** The last observed ACP-session availability. This is gated by route status
  * before it is presented as current state. */
@@ -20,7 +26,8 @@ export type AgentSessionStatus =
   | "unknown";
 
 /** Whether transcript updates can be treated as current. */
-export type ConversationContinuity = "current" | "delayed" | "missed" | "unavailable";
+export type ConversationContinuity =
+  "current" | "delayed" | "missed" | "unavailable";
 
 /** The sole status used by compact and expanded status entry points. */
 export type PrimaryConnectionStatus =
@@ -67,6 +74,12 @@ export interface ConnectionDiagnostics {
   agent: ConnectionHopState;
   targetLabel: "Agent" | "Terminal" | null;
   route: ConnectionRouteStatus;
+  /** Raw reachability observation, retained even while the route is being
+   * established so presentation can distinguish an unknown first dial from a
+   * known unavailable server. */
+  serverReachability: ConnectionStatusInput["serverReachability"];
+  /** True only for the first socket open of this mounted session. */
+  initialConnection: boolean;
   session: AgentSessionStatus;
   continuity: ConversationContinuity;
   primary: PrimaryConnectionStatus;
@@ -105,14 +118,31 @@ function displayTime(timestamp: number | null): string | null {
   return timestamp === null ? null : new Date(timestamp).toLocaleTimeString();
 }
 
-export function connectionStatusPresentation(primary: PrimaryConnectionStatus): ConnectionStatusPresentation {
+export function connectionStatusPresentation(
+  primary: PrimaryConnectionStatus,
+): ConnectionStatusPresentation {
   switch (primary) {
     case "connected":
-      return { headline: "Connected", description: "Connection healthy.", tone: "neutral", working: false };
+      return {
+        headline: "Connected",
+        description: "Connection healthy.",
+        tone: "neutral",
+        working: false,
+      };
     case "connecting":
-      return { headline: "Connecting", description: "Connecting to AoE.", tone: "warning", working: true };
+      return {
+        headline: "Connecting",
+        description: "Connecting to AoE.",
+        tone: "warning",
+        working: true,
+      };
     case "reconnecting":
-      return { headline: "Reconnecting", description: "Reconnecting to AoE.", tone: "warning", working: true };
+      return {
+        headline: "Reconnecting",
+        description: "Reconnecting to AoE.",
+        tone: "warning",
+        working: true,
+      };
     case "disconnected":
       return {
         headline: "Disconnected",
@@ -121,7 +151,12 @@ export function connectionStatusPresentation(primary: PrimaryConnectionStatus): 
         working: false,
       };
     case "agent_starting":
-      return { headline: "Starting agent", description: "Agent session is starting.", tone: "warning", working: true };
+      return {
+        headline: "Starting agent",
+        description: "Agent session is starting.",
+        tone: "warning",
+        working: true,
+      };
     case "agent_restarting":
       return {
         headline: "Restarting agent",
@@ -130,9 +165,19 @@ export function connectionStatusPresentation(primary: PrimaryConnectionStatus): 
         working: true,
       };
     case "agent_stopped":
-      return { headline: "Agent stopped", description: "Agent worker stopped.", tone: "error", working: false };
+      return {
+        headline: "Agent stopped",
+        description: "Agent worker stopped.",
+        tone: "error",
+        working: false,
+      };
     case "agent_failed":
-      return { headline: "Agent failed", description: "Agent session could not start.", tone: "error", working: false };
+      return {
+        headline: "Agent failed",
+        description: "Agent session could not start.",
+        tone: "error",
+        working: false,
+      };
     case "agent_unresponsive":
       return {
         headline: "Agent unresponsive",
@@ -171,7 +216,9 @@ export function connectionStatusPresentation(primary: PrimaryConnectionStatus): 
   }
 }
 
-export function connectionStatusCompactLabel(diagnostics: ConnectionDiagnostics): string {
+export function connectionStatusCompactLabel(
+  diagnostics: ConnectionDiagnostics,
+): string {
   const presentation = connectionStatusPresentation(diagnostics.primary);
   return diagnostics.primary === "reconnecting"
     ? `${presentation.headline} · ${diagnostics.retryCount ?? 0}/${diagnostics.maxRetries ?? 0}`
@@ -179,7 +226,9 @@ export function connectionStatusCompactLabel(diagnostics: ConnectionDiagnostics)
 }
 
 /** Composer-side explanation for a session that cannot accept a prompt yet. */
-export function connectionComposerNotice(primary: PrimaryConnectionStatus): string {
+export function connectionComposerNotice(
+  primary: PrimaryConnectionStatus,
+): string {
   return `${connectionStatusPresentation(primary).headline}. New messages will wait until this session resumes.`;
 }
 
@@ -187,7 +236,10 @@ function primaryStatus({
   route,
   session,
   continuity,
-}: Pick<ConnectionDiagnostics, "route" | "session" | "continuity">): PrimaryConnectionStatus {
+}: Pick<
+  ConnectionDiagnostics,
+  "route" | "session" | "continuity"
+>): PrimaryConnectionStatus {
   if (route === "disconnected") return "disconnected";
   if (route === "reconnecting") return "reconnecting";
   if (route === "connecting") return "connecting";
@@ -229,9 +281,14 @@ function sessionDescription(session: AgentSessionStatus): string {
  * evaluated first: while the browser cannot reach AoE, every downstream ACP
  * observation is historical rather than a current diagnosis.
  */
-export function deriveConnectionDiagnostics(input: ConnectionStatusInput): ConnectionDiagnostics {
+export function deriveConnectionDiagnostics(
+  input: ConnectionStatusInput,
+): ConnectionDiagnostics {
   const retriesExhausted =
-    input.status !== "open" && input.hasEverOpened && !input.reconnecting && input.retryCount >= input.maxRetries;
+    input.status !== "open" &&
+    input.hasEverOpened &&
+    !input.reconnecting &&
+    input.retryCount >= input.maxRetries;
   const route: ConnectionRouteStatus =
     input.status === "open"
       ? "connected"
@@ -263,13 +320,19 @@ export function deriveConnectionDiagnostics(input: ConnectionStatusInput): Conne
           : "current";
   const primary = primaryStatus({ route, session, continuity });
   const deviceToServer: ConnectionEdgeState =
-    route === "connected" ? "ready" : route === "disconnected" ? "failed" : "working";
+    route === "connected"
+      ? "ready"
+      : route === "disconnected"
+        ? "failed"
+        : "working";
   const observedAgent: ConnectionHopState =
     session === "failed" || session === "stopped"
       ? "failed"
       : session === "rate_limited"
         ? "blocked"
-        : session === "starting" || session === "restarting" || session === "unresponsive"
+        : session === "starting" ||
+            session === "restarting" ||
+            session === "unresponsive"
           ? "working"
           : "ready";
   const serverToAgent: ConnectionEdgeState =
@@ -319,6 +382,8 @@ export function deriveConnectionDiagnostics(input: ConnectionStatusInput): Conne
     agent: routeIsCurrent ? observedAgent : "unknown",
     targetLabel: "Agent",
     route,
+    serverReachability: input.serverReachability,
+    initialConnection: input.status === "connecting" && !input.hasEverOpened,
     session,
     continuity,
     primary,
@@ -327,12 +392,20 @@ export function deriveConnectionDiagnostics(input: ConnectionStatusInput): Conne
     maxRetries: input.maxRetries,
     hasIncident: primary !== "connected",
     sections: [
-      { id: "device", label: "Device", observations: [{ label: "Dashboard", state: "ready", value: "Active" }] },
+      {
+        id: "device",
+        label: "Device",
+        observations: [{ label: "Dashboard", state: "ready", value: "Active" }],
+      },
       {
         id: "conversation",
         label: "Conversation",
         observations: [
-          { label: "Conversation stream", state: deviceToServer, value: socketDescription },
+          {
+            label: "Conversation stream",
+            state: deviceToServer,
+            value: socketDescription,
+          },
           ...(input.lagged
             ? [
                 {
@@ -359,7 +432,9 @@ export function deriveConnectionDiagnostics(input: ConnectionStatusInput): Conne
                 {
                   label: "Last connection event",
                   state:
-                    input.lastTransportDiagnostic.kind === "replay_http" ? ("failed" as const) : ("working" as const),
+                    input.lastTransportDiagnostic.kind === "replay_http"
+                      ? ("failed" as const)
+                      : ("working" as const),
                   value: `${transportAt ? `${transportAt} · ` : ""}${input.lastTransportDiagnostic.text}`,
                 },
               ]
@@ -373,7 +448,9 @@ export function deriveConnectionDiagnostics(input: ConnectionStatusInput): Conne
           {
             label: "Agent session",
             state: routeIsCurrent ? observedAgent : "inactive",
-            value: routeIsCurrent ? sessionDescription(session) : `Last known: ${sessionDescription(session)}`,
+            value: routeIsCurrent
+              ? sessionDescription(session)
+              : `Last known: ${sessionDescription(session)}`,
           },
         ],
       },
@@ -383,7 +460,11 @@ export function deriveConnectionDiagnostics(input: ConnectionStatusInput): Conne
               id: "provider" as const,
               label: "Provider",
               observations: [
-                { label: "Rate limit", state: "blocked" as const, value: input.rateLimitText(input.rateLimit) },
+                {
+                  label: "Rate limit",
+                  state: "blocked" as const,
+                  value: input.rateLimitText(input.rateLimit),
+                },
               ],
             },
           ]
@@ -392,8 +473,12 @@ export function deriveConnectionDiagnostics(input: ConnectionStatusInput): Conne
   };
 }
 
-export function deriveDashboardConnectionDiagnostics(serverDown: boolean): ConnectionDiagnostics {
-  const route: ConnectionRouteStatus = serverDown ? "disconnected" : "connected";
+export function deriveDashboardConnectionDiagnostics(
+  serverDown: boolean,
+): ConnectionDiagnostics {
+  const route: ConnectionRouteStatus = serverDown
+    ? "disconnected"
+    : "connected";
   return {
     device: "ready",
     deviceToServer: serverDown ? "failed" : "ready",
@@ -402,6 +487,8 @@ export function deriveDashboardConnectionDiagnostics(serverDown: boolean): Conne
     agent: "unknown",
     targetLabel: null,
     route,
+    serverReachability: serverDown ? "unreachable" : "reachable",
+    initialConnection: false,
     session: "unknown",
     continuity: serverDown ? "unavailable" : "current",
     primary: serverDown ? "disconnected" : "connected",
@@ -410,7 +497,11 @@ export function deriveDashboardConnectionDiagnostics(serverDown: boolean): Conne
     maxRetries: null,
     hasIncident: serverDown,
     sections: [
-      { id: "device", label: "Device", observations: [{ label: "Dashboard", state: "ready", value: "Active" }] },
+      {
+        id: "device",
+        label: "Device",
+        observations: [{ label: "Dashboard", state: "ready", value: "Active" }],
+      },
       {
         id: "server",
         label: "AoE",
@@ -433,14 +524,21 @@ export function deriveTerminalConnectionDiagnostics(input: {
   retryCountdown: number;
   maxRetries: number;
 }): ConnectionDiagnostics {
-  const retriesExhausted = !input.connected && !input.reconnecting && input.retryCount >= input.maxRetries;
+  const retriesExhausted =
+    !input.connected &&
+    !input.reconnecting &&
+    input.retryCount >= input.maxRetries;
   const route: ConnectionRouteStatus = input.connected
     ? "connected"
     : input.reconnecting
       ? "reconnecting"
       : "disconnected";
   const deviceToServer: ConnectionEdgeState =
-    route === "connected" ? "ready" : route === "reconnecting" ? "working" : "failed";
+    route === "connected"
+      ? "ready"
+      : route === "reconnecting"
+        ? "working"
+        : "failed";
   return {
     device: "ready",
     deviceToServer,
@@ -449,6 +547,8 @@ export function deriveTerminalConnectionDiagnostics(input: {
     agent: input.connected ? "ready" : "unknown",
     targetLabel: "Terminal",
     route,
+    serverReachability: input.connected ? "reachable" : "unknown",
+    initialConnection: false,
     session: input.connected ? "ready" : "unknown",
     continuity: input.connected ? "current" : "unavailable",
     primary: route,
@@ -457,7 +557,11 @@ export function deriveTerminalConnectionDiagnostics(input: {
     maxRetries: input.maxRetries,
     hasIncident: !input.connected,
     sections: [
-      { id: "device", label: "Device", observations: [{ label: "Dashboard", state: "ready", value: "Active" }] },
+      {
+        id: "device",
+        label: "Device",
+        observations: [{ label: "Dashboard", state: "ready", value: "Active" }],
+      },
       {
         id: "conversation",
         label: "Terminal connection",
@@ -500,7 +604,9 @@ export function deriveTerminalConnectionDiagnostics(input: {
 }
 
 /** Compatibility selector for incident-only placements. */
-export function deriveConnectionIncident(input: ConnectionStatusInput): ConnectionDiagnostics | null {
+export function deriveConnectionIncident(
+  input: ConnectionStatusInput,
+): ConnectionDiagnostics | null {
   const diagnostics = deriveConnectionDiagnostics(input);
   return diagnostics.hasIncident ? diagnostics : null;
 }
