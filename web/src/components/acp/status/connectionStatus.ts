@@ -107,6 +107,38 @@ export interface ConnectionStatusSnapshot {
   session: SessionConnectionDiagnostics | null;
 }
 
+/** Select the compact diagnostic view from the two connection halves. A
+ * selected session adds detail to the dashboard route, while a no-session
+ * surface remains a dashboard-only status. */
+export function selectConnectionDiagnostics(snapshot: ConnectionStatusSnapshot): ConnectionDiagnostics {
+  const dashboard = deriveDashboardConnectionDiagnostics(snapshot.dashboard.phase === "unavailable");
+  if (snapshot.session === null) return dashboard;
+  const session = snapshot.session.diagnostics;
+  // A selected stream cannot establish that AoE is currently reachable when
+  // the page-wide dashboard probe says otherwise. Keep its detail sections as
+  // historical context, but make the compact status and graph lead with the
+  // dashboard route failure.
+  if (snapshot.dashboard.phase === "unavailable") {
+    return {
+      ...session,
+      deviceToServer: "failed",
+      server: "failed",
+      serverToAgent: "inactive",
+      agent: "unknown",
+      route: "disconnected",
+      serverReachability: "unreachable",
+      continuity: "unavailable",
+      primary: "disconnected",
+      hasIncident: true,
+      sections: [
+        ...dashboard.sections,
+        ...session.sections.filter((section) => section.id !== "device" && section.id !== "server"),
+      ],
+    };
+  }
+  return session;
+}
+
 export interface ConnectionStatusInput {
   status: ConnectionStatus;
   serverReachability: "reachable" | "unreachable" | "unknown";
