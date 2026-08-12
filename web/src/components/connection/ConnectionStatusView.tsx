@@ -234,24 +234,26 @@ export function GlobalConnectionStatusButton({
         aria-label="Show connection status"
         aria-description={presentation.description}
         title={presentation.description}
-        className={`flex h-8 items-center gap-1.5 rounded-md px-2 text-[10px] font-mono uppercase tracking-wide transition-colors hover:bg-surface-700/60 lg:w-40 ${tone}`}
+        className={`flex h-8 items-center text-[10px] font-mono uppercase tracking-wide lg:w-40 ${tone}`}
       >
-        {presentation.working ? (
-          <LoaderCircle className="size-3 animate-spin" />
-        ) : (
-          <span
-            className={`size-2 rounded-full ${
-              !incidentVisible && presentation.working
-                ? "bg-text-muted"
-                : presentation.tone === "error"
-                  ? "bg-status-error"
-                  : presentation.tone === "warning"
-                    ? "bg-status-warning"
-                    : "bg-text-muted"
-            }`}
-          />
-        )}
-        <span className="hidden lg:inline">{connectionStatusCompactLabel(diagnostics)}</span>
+        <span className="flex h-8 items-center gap-1.5 rounded-md px-2 transition-colors hover:bg-surface-700/60">
+          {presentation.working ? (
+            <LoaderCircle className="size-3 animate-spin" />
+          ) : (
+            <span
+              className={`size-2 rounded-full ${
+                !incidentVisible && presentation.working
+                  ? "bg-text-muted"
+                  : presentation.tone === "error"
+                    ? "bg-status-error"
+                    : presentation.tone === "warning"
+                      ? "bg-status-warning"
+                      : "bg-text-muted"
+              }`}
+            />
+          )}
+          <span className="hidden lg:inline">{connectionStatusCompactLabel(diagnostics)}</span>
+        </span>
       </button>
       {expanded && (
         <div className="fixed right-3 top-14 z-50 max-md:inset-x-3 max-md:top-auto max-md:bottom-3">
