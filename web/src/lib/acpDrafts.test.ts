@@ -46,6 +46,17 @@ function toastErrors(): string[] {
   return errors;
 }
 
+function toastCapture(): { errors: string[]; infos: string[] } {
+  const capture = { errors: [] as string[], infos: [] as string[] };
+  toastBus.handler = {
+    push: (msg, kind) => capture[kind === "error" ? "errors" : "infos"].push(msg),
+    error: (msg) => capture.errors.push(msg),
+    info: (msg) => capture.infos.push(msg),
+    openLink: () => {},
+  };
+  return capture;
+}
+
 const unsubs: (() => void)[] = [];
 function listen(filter: string[] | null) {
   const cb = vi.fn();
@@ -188,15 +199,17 @@ describe("attachment drafts (#2493)", () => {
     expect([getDraftAttachments("s-1"), hasDraftAttachments("s-1"), hasDraft("s-1")]).toEqual([[], false, false]);
   });
 
-  it("removes the key on a failed write so a stale draft is never restored, toasting once", () => {
-    const errors = toastErrors();
+  it("removes stale data and warns once that an attachment will not survive a reload", () => {
+    const capture = toastCapture();
     setDraftAttachments("s-1", [img("OLD")]);
     quotaFull();
     setDraftAttachments("s-1", [img("NEW-TOO-BIG")]);
     setDraftAttachments("s-1", [img("BIGGER")]);
     vi.restoreAllMocks();
     expect(localStorage.getItem("acp:draft-attachments:s-1")).toBeNull();
-    expect(errors).toEqual([expect.stringMatching(/storage full/i)]);
+    expect(getDraftAttachments("s-1")).toEqual([]);
+    expect(capture.errors).toEqual([]);
+    expect(capture.infos).toEqual(["Attachment ready to send, but it will not be kept if this page reloads."]);
   });
 });
 
