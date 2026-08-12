@@ -9,6 +9,9 @@ export interface PublishedConnectionDiagnostics {
   sessionId: string;
   kind: ConnectionDiagnosticsKind;
   diagnostics: ConnectionDiagnostics;
+  /** A routine connection attempt is already visible in the header, but is
+   * not yet disruptive enough to show the transcript overlay. */
+  incidentVisible: boolean;
   onReconnect?: () => void;
 }
 
@@ -30,6 +33,7 @@ export function ConnectionDiagnosticsProvider({ children }: { children: ReactNod
       if (
         current?.sessionId === snapshot.sessionId &&
         current.kind === snapshot.kind &&
+        current.incidentVisible === snapshot.incidentVisible &&
         JSON.stringify(current.diagnostics) === JSON.stringify(snapshot.diagnostics)
       ) {
         return current;

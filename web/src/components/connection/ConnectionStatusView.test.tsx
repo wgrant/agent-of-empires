@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { render } from "@testing-library/react";
 
 import { deriveConnectionDiagnostics } from "../acp/status/connectionStatus";
-import { ConnectionRoute } from "./ConnectionStatusView";
+import { ConnectionRoute, GlobalConnectionStatusButton } from "./ConnectionStatusView";
 
 const base = {
   status: "open" as const,
@@ -35,7 +35,9 @@ describe("ConnectionRoute", () => {
       {
         name: "reconnecting route",
         input: { status: "closed" as const, reconnecting: true, retryCount: 2 },
-        activeEdge: "connection-edge-device-to-aoe",
+        // The shared dashboard probe still knows the device can reach AoE;
+        // the header spinner carries the per-conversation reconnect progress.
+        activeEdge: null,
         pendingNode: null,
       },
       {
@@ -67,5 +69,14 @@ describe("ConnectionRoute", () => {
       }
       unmount();
     }
+  });
+
+  it("keeps a routine reconnect neutral in the global header before its incident grace period expires", () => {
+    const diagnostics = deriveConnectionDiagnostics({ ...base, status: "closed", reconnecting: true, retryCount: 1 });
+    const { getByRole } = render(<GlobalConnectionStatusButton diagnostics={diagnostics} incidentVisible={false} />);
+    const button = getByRole("button", { name: "Show connection status" });
+    expect(button.className).toContain("text-text-muted");
+    expect(button.className).not.toContain("text-status-warning");
+    expect(button.querySelector(".animate-spin")).not.toBeNull();
   });
 });

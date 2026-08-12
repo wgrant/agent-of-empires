@@ -199,18 +199,24 @@ export function ConnectionIncidentBubble({
 export function GlobalConnectionStatusButton({
   diagnostics,
   onReconnect,
+  incidentVisible = true,
 }: {
   diagnostics: ConnectionDiagnostics;
   onReconnect?: () => void;
+  /** While routine socket churn is inside its grace period, retain the
+   * immediate spinning progress cue without styling it as a warning. */
+  incidentVisible?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const presentation = connectionStatusPresentation(diagnostics.primary);
   const tone =
-    presentation.tone === "error"
-      ? "text-status-error"
-      : presentation.tone === "warning"
-        ? "text-status-warning"
-        : "text-text-muted";
+    !incidentVisible && presentation.working
+      ? "text-text-muted"
+      : presentation.tone === "error"
+        ? "text-status-error"
+        : presentation.tone === "warning"
+          ? "text-status-warning"
+          : "text-text-muted";
   return (
     <div className="relative">
       <button
@@ -227,11 +233,13 @@ export function GlobalConnectionStatusButton({
         ) : (
           <span
             className={`size-2 rounded-full ${
-              presentation.tone === "error"
-                ? "bg-status-error"
-                : presentation.tone === "warning"
-                  ? "bg-status-warning"
-                  : "bg-text-muted"
+              !incidentVisible && presentation.working
+                ? "bg-text-muted"
+                : presentation.tone === "error"
+                  ? "bg-status-error"
+                  : presentation.tone === "warning"
+                    ? "bg-status-warning"
+                    : "bg-text-muted"
             }`}
           />
         )}
