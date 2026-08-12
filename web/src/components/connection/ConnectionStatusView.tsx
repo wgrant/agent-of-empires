@@ -249,8 +249,7 @@ export function GlobalConnectionStatusButton({
         aria-expanded={expanded}
         aria-label="Show connection status"
         aria-description={presentation.description}
-        title={presentation.description}
-        className={`flex h-8 items-center text-[10px] font-mono uppercase tracking-wide lg:w-40 ${tone}`}
+        className={`flex h-8 shrink-0 items-center text-[10px] font-mono uppercase tracking-wide ${tone}`}
       >
         <span className="flex h-8 items-center gap-1.5 rounded-md px-2 transition-colors hover:bg-surface-700/60">
           {presentation.working ? (
@@ -268,7 +267,6 @@ export function GlobalConnectionStatusButton({
               }`}
             />
           )}
-          <span className="hidden lg:inline">{connectionStatusCompactLabel(diagnostics)}</span>
         </span>
       </button>
       {expanded && (
