@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { describe, expect, it } from "vitest";
-import { render } from "@testing-library/react";
+import { fireEvent, render } from "@testing-library/react";
 
 import { deriveConnectionDiagnostics, type ConnectionDiagnostics } from "../acp/status/connectionStatus";
 import { ConnectionRoute, GlobalConnectionStatusButton } from "./ConnectionStatusView";
@@ -102,5 +102,16 @@ describe("ConnectionRoute", () => {
     expect(button.className).not.toContain("hover:bg-surface-700/60");
     expect(button.querySelector(".hover\\:bg-surface-700\\/60")).not.toBeNull();
     expect(button.querySelector(".animate-spin")).not.toBeNull();
+  });
+
+  it("dismisses expanded connection details when pressing outside the control", () => {
+    const diagnostics = deriveConnectionDiagnostics(base);
+    const { getByRole } = render(<GlobalConnectionStatusButton snapshot={snapshot(diagnostics)} />);
+    const button = getByRole("button", { name: "Show connection status" });
+    fireEvent.click(button);
+    expect(button.getAttribute("aria-expanded")).toBe("true");
+
+    fireEvent.pointerDown(document.body);
+    expect(button.getAttribute("aria-expanded")).toBe("false");
   });
 });
