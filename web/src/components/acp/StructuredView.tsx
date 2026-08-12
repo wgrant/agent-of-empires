@@ -36,6 +36,8 @@ import {
   connectionComposerNotice,
   connectionStatusPresentation,
   type ConnectionDiagnostics,
+  type SessionConnectionDiagnostics,
+  type StreamTransportDiagnostics,
 } from "./status/connectionStatus";
 import { deriveConversationSyncStatus } from "./status/conversationSyncStatus";
 import { deriveConversationStatus } from "./status/conversationStatus";
@@ -198,6 +200,22 @@ function AcpChrome({
     reconnectingSince: ctx.reconnectingSince,
     liveUpdatesStale: ctx.liveUpdatesStale,
   });
+  const streamTransport: StreamTransportDiagnostics = {
+    route: connectionDiagnostics.route,
+    connectedAt: ctx.lastWebSocketOpenAt,
+    lastMessageAt: ctx.lastServerMessageAt,
+    reconnectingSince: ctx.reconnectingSince,
+    retryCount: ctx.retryCount,
+    retryCountdown: ctx.retryCountdown,
+    maxRetries: ctx.maxRetries,
+    lastFailure: ctx.lastTransportDiagnostic,
+  };
+  const sessionConnection: SessionConnectionDiagnostics = {
+    kind: "structured",
+    sessionId,
+    diagnostics: connectionDiagnostics,
+    transport: streamTransport,
+  };
   const conversationSync = deriveConversationSyncStatus({
     replaySyncing: ctx.replaySyncing,
     hasEverOpened: ctx.hasEverOpened,
@@ -284,6 +302,7 @@ function AcpChrome({
           maxRetries={ctx.maxRetries}
           manualReconnect={ctx.manualReconnect}
           diagnostics={connectionDiagnostics}
+          sessionConnection={sessionConnection}
           showConnectionIncident={connectionIncidentVisible}
           onSwitchAgent={onSwitchAgent}
           onResumeRateLimit={() => void rateLimitResume.respawn()}
