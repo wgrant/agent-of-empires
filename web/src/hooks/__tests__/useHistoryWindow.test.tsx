@@ -85,6 +85,33 @@ describe("useHistoryWindow", () => {
     expect(result.current.windowedActivity.length).toBeLessThanOrEqual(MAX_HISTORY_WINDOW);
   });
 
+  it("advances its replacement generation for history navigation, not live appends", () => {
+    const activity = transcript(1000, 1);
+    const { result, rerender } = renderHook(({ rows }) => useHistoryWindow("s1", rows, false), {
+      initialProps: { rows: activity },
+    });
+    const initialGeneration = result.current.generation;
+
+    act(() => result.current.loadEarlier());
+    expect(result.current.generation).toBe(initialGeneration + 1);
+
+    const afterNavigation = result.current.generation;
+    const liveActivity = activity.concat([{ id: "live", kind: "message" as const, text: "live" }]);
+    rerender({ rows: liveActivity });
+    expect(result.current.generation).toBe(afterNavigation);
+
+    act(() => result.current.jumpToLatest());
+    expect(result.current.generation).toBe(afterNavigation + 1);
+
+    const afterTailJump = result.current.generation;
+    rerender({
+      rows: transcript(10, 1)
+        .map((row) => ({ ...row, id: `older-${row.id}` }))
+        .concat(liveActivity),
+    });
+    expect(result.current.generation).toBe(afterTailJump + 1);
+  });
+
   it("loadEarlier crosses a tool-heavy turn instead of leaving the boundary unchanged", () => {
     const activity: ActivityRow[] = [{ id: "old-user", kind: "user_prompt", text: "old prompt" }];
     for (let i = 0; i < 400; i += 1) {
