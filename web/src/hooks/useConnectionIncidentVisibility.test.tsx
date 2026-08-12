@@ -5,8 +5,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { deriveConnectionDiagnostics } from "../components/acp/status/connectionStatus";
 import {
-  INITIAL_CONNECTION_INCIDENT_DELAY_MS,
-  shouldDelayInitialConnectionIncident,
+  CONNECTION_INCIDENT_DELAY_MS,
+  shouldDelayConnectionIncident,
   useConnectionIncidentVisibility,
 } from "./useConnectionIncidentVisibility";
 
@@ -33,54 +33,43 @@ const base = {
   liveUpdatesStale: false,
 };
 
-const diagnostics = (changes = {}) =>
-  deriveConnectionDiagnostics({ ...base, ...changes });
+const diagnostics = (changes = {}) => deriveConnectionDiagnostics({ ...base, ...changes });
 
 describe("useConnectionIncidentVisibility", () => {
   afterEach(() => vi.useRealTimers());
 
-  it("holds only an unknown initial socket handshake, then shows a slow start", () => {
+  it("holds routine socket setup and reconnection, then shows a sustained interruption", () => {
     vi.useFakeTimers();
-    const initial = diagnostics({
-      status: "connecting",
-      hasEverOpened: false,
-      serverReachability: "unknown",
-    });
-    expect(shouldDelayInitialConnectionIncident(initial)).toBe(true);
+    const initial = diagnostics({ status: "connecting", hasEverOpened: false, serverReachability: "reachable" });
+    expect(shouldDelayConnectionIncident(initial)).toBe(true);
 
     const { result, rerender } = renderHook(
-      ({ sessionId, value }) =>
-        useConnectionIncidentVisibility(sessionId, value),
+      ({ sessionId, value }) => useConnectionIncidentVisibility(sessionId, value),
       { initialProps: { sessionId: "first", value: initial } },
     );
     expect(result.current).toBe(false);
 
-    act(() => vi.advanceTimersByTime(INITIAL_CONNECTION_INCIDENT_DELAY_MS));
+    act(() => vi.advanceTimersByTime(CONNECTION_INCIDENT_DELAY_MS));
     expect(result.current).toBe(true);
 
-    rerender({ sessionId: "second", value: diagnostics() });
+    rerender({ sessionId: "first", value: diagnostics() });
     expect(result.current).toBe(false);
+
+    rerender({ sessionId: "first", value: diagnostics({ status: "closed", reconnecting: true, retryCount: 1 }) });
+    expect(result.current).toBe(false);
+    act(() => vi.advanceTimersByTime(CONNECTION_INCIDENT_DELAY_MS));
+    expect(result.current).toBe(true);
   });
 
   it("shows known connection and agent failures immediately", () => {
     const cases = [
-      diagnostics({
-        status: "connecting",
-        hasEverOpened: false,
-        serverReachability: "unreachable",
-      }),
-      diagnostics({
-        status: "connecting",
-        hasEverOpened: false,
-        workerStopped: true,
-      }),
-      diagnostics({ status: "closed", reconnecting: true, retryCount: 1 }),
+      diagnostics({ status: "connecting", hasEverOpened: false, serverReachability: "unreachable" }),
+      diagnostics({ status: "connecting", hasEverOpened: false, workerStopped: true }),
+      diagnostics({ status: "closed", retryCount: 7 }),
     ];
     for (const value of cases) {
-      expect(shouldDelayInitialConnectionIncident(value)).toBe(false);
-      const { result, unmount } = renderHook(() =>
-        useConnectionIncidentVisibility("session", value),
-      );
+      expect(shouldDelayConnectionIncident(value)).toBe(false);
+      const { result, unmount } = renderHook(() => useConnectionIncidentVisibility("session", value));
       expect(result.current).toBe(true);
       unmount();
     }
