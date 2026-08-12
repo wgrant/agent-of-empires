@@ -11,6 +11,7 @@ import { useConnectionIncidentVisibility } from "../../hooks/useConnectionIncide
 import { useMobileKeyboard } from "../../hooks/useMobileKeyboard";
 import { useRespawnSession } from "../../hooks/useRespawnSession";
 import { useWebSettings } from "../../hooks/useWebSettings";
+import { useDashboardConnectionDiagnostics } from "../../lib/connectionState";
 import { lastClearIndex } from "../../lib/acpHistoryWindow";
 import { AgentProfileProvider } from "../../lib/agentProfileContext";
 import { conversationFontSizeRem } from "../../lib/conversationFontSize";
@@ -36,7 +37,9 @@ import { ComposerActionRail } from "./status/ComposerActionRail";
 import {
   connectionComposerNotice,
   connectionStatusPresentation,
+  selectConnectionDiagnostics,
   type ConnectionDiagnostics,
+  type ConnectionStatusSnapshot,
   type SessionConnectionDiagnostics,
   type StreamTransportDiagnostics,
 } from "./status/connectionStatus";
@@ -215,6 +218,9 @@ function AcpChrome({
     diagnostics: connectionDiagnostics,
     transport: streamTransport,
   };
+  const dashboardConnection = useDashboardConnectionDiagnostics();
+  const connectionSnapshot: ConnectionStatusSnapshot = { dashboard: dashboardConnection, session: sessionConnection };
+  const displayConnectionDiagnostics = selectConnectionDiagnostics(connectionSnapshot);
   const conversationSync = deriveConversationSyncStatus({
     replaySyncing: ctx.replaySyncing,
     hasEverOpened: ctx.hasEverOpened,
@@ -228,7 +234,7 @@ function AcpChrome({
     nextWakeupAt: state.nextWakeupAt,
     monitorArmed: state.monitorArmed,
   });
-  const connectionIncidentVisible = useConnectionIncidentVisibility(sessionId, connectionDiagnostics);
+  const connectionIncidentVisible = useConnectionIncidentVisibility(sessionId, displayConnectionDiagnostics);
   const connectionInset = connectionIncidentVisible ? 44 : 0;
   const previousConnectionInsetRef = useRef(0);
   const pendingJumpToLatestRef = useRef(false);
@@ -302,6 +308,7 @@ function AcpChrome({
           manualReconnect={ctx.manualReconnect}
           diagnostics={connectionDiagnostics}
           sessionConnection={sessionConnection}
+          connectionSnapshot={connectionSnapshot}
           showConnectionIncident={connectionIncidentVisible}
           onSwitchAgent={onSwitchAgent}
           onResumeRateLimit={() => void rateLimitResume.respawn()}

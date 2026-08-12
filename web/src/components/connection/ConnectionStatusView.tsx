@@ -1,11 +1,15 @@
 import { useState, type ReactNode } from "react";
 import { ChevronDown, LoaderCircle, RotateCcw, X } from "lucide-react";
 
-import { connectionStatusCompactLabel, connectionStatusPresentation } from "../acp/status/connectionStatus";
+import {
+  connectionStatusCompactLabel,
+  connectionStatusPresentation,
+  selectConnectionDiagnostics,
+} from "../acp/status/connectionStatus";
 
 import type {
   ConnectionDiagnosticObservation,
-  ConnectionDiagnostics,
+  ConnectionStatusSnapshot,
   ConnectionEdgeState,
   ConnectionHopState,
 } from "../acp/status/connectionStatus";
@@ -61,7 +65,8 @@ function ConnectionEdge({ state, label }: { state: ConnectionEdgeState; label: s
   );
 }
 
-export function ConnectionRoute({ diagnostics }: { diagnostics: ConnectionDiagnostics }) {
+export function ConnectionRoute({ snapshot }: { snapshot: ConnectionStatusSnapshot }) {
+  const diagnostics = selectConnectionDiagnostics(snapshot);
   return (
     <div
       className="flex shrink-0 items-center text-[10px] font-mono uppercase tracking-wide text-text-muted"
@@ -90,20 +95,21 @@ function Observation({ observation }: { observation: ConnectionDiagnosticObserva
 }
 
 export function ConnectionDiagnosticsDetails({
-  diagnostics,
+  snapshot,
   onReconnect,
   onClose,
   actions,
 }: {
-  diagnostics: ConnectionDiagnostics;
+  snapshot: ConnectionStatusSnapshot;
   onReconnect?: () => void;
   onClose?: () => void;
   actions?: ReactNode;
 }) {
+  const diagnostics = selectConnectionDiagnostics(snapshot);
   return (
     <div className="w-[min(30rem,calc(100vw-2rem))] rounded-lg border border-surface-700 bg-surface-850 p-3 shadow-xl">
       <div className="mb-3 flex items-center justify-between gap-3">
-        <ConnectionRoute diagnostics={diagnostics} />
+        <ConnectionRoute snapshot={snapshot} />
         {onClose && (
           <button
             type="button"
@@ -147,14 +153,15 @@ export function ConnectionDiagnosticsDetails({
 /** Incident-only overlay. Its caller reserves a compact top inset so the
  * capsule does not cover the first transcript line. */
 export function ConnectionIncidentBubble({
-  diagnostics,
+  snapshot,
   onReconnect,
   actions,
 }: {
-  diagnostics: ConnectionDiagnostics;
+  snapshot: ConnectionStatusSnapshot;
   onReconnect?: () => void;
   actions?: ReactNode;
 }) {
+  const diagnostics = selectConnectionDiagnostics(snapshot);
   const [expanded, setExpanded] = useState(false);
   const presentation = connectionStatusPresentation(diagnostics.primary);
   const tone = presentation.tone === "error" ? "text-status-error" : "text-status-warning";
@@ -169,7 +176,7 @@ export function ConnectionIncidentBubble({
           aria-description={presentation.description}
           className="flex max-w-full items-center gap-2 rounded-full border border-surface-700 bg-surface-850/95 px-3 py-1.5 shadow-lg backdrop-blur-sm hover:bg-surface-800"
         >
-          <ConnectionRoute diagnostics={diagnostics} />
+          <ConnectionRoute snapshot={snapshot} />
           <span
             className={`max-w-32 truncate text-xs sm:max-w-40 ${tone}`}
             data-testid="connection-incident-summary"
@@ -184,7 +191,7 @@ export function ConnectionIncidentBubble({
         {expanded && (
           <div className="absolute left-1/2 top-[calc(100%+0.5rem)] -translate-x-1/2 max-md:fixed max-md:inset-x-3 max-md:top-auto max-md:bottom-3 max-md:translate-x-0">
             <ConnectionDiagnosticsDetails
-              diagnostics={diagnostics}
+              snapshot={snapshot}
               onReconnect={onReconnect}
               onClose={() => setExpanded(false)}
               actions={actions}
@@ -197,16 +204,17 @@ export function ConnectionIncidentBubble({
 }
 
 export function GlobalConnectionStatusButton({
-  diagnostics,
+  snapshot,
   onReconnect,
   incidentVisible = true,
 }: {
-  diagnostics: ConnectionDiagnostics;
+  snapshot: ConnectionStatusSnapshot;
   onReconnect?: () => void;
   /** While routine socket churn is inside its grace period, retain the
    * immediate spinning progress cue without styling it as a warning. */
   incidentVisible?: boolean;
 }) {
+  const diagnostics = selectConnectionDiagnostics(snapshot);
   const [expanded, setExpanded] = useState(false);
   const presentation = connectionStatusPresentation(diagnostics.primary);
   const tone =
@@ -248,7 +256,7 @@ export function GlobalConnectionStatusButton({
       {expanded && (
         <div className="fixed right-3 top-14 z-50 max-md:inset-x-3 max-md:top-auto max-md:bottom-3">
           <ConnectionDiagnosticsDetails
-            diagnostics={diagnostics}
+            snapshot={snapshot}
             onReconnect={onReconnect}
             onClose={() => setExpanded(false)}
           />

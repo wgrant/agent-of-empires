@@ -8,10 +8,12 @@ import { KeyboardFab } from "./KeyboardFab";
 import { ConnectionIncidentBubble } from "./connection/ConnectionStatusView";
 import {
   deriveTerminalConnectionDiagnostics,
+  selectConnectionDiagnostics,
   type SessionConnectionDiagnostics,
   type StreamTransportDiagnostics,
 } from "./acp/status/connectionStatus";
 import { useConnectionDiagnosticsPublisher } from "../lib/connectionDiagnosticsContext";
+import { useDashboardConnectionDiagnostics } from "../lib/connectionState";
 import { ensureSession, ensureTerminal, pasteImage } from "../lib/api";
 import { armClipboardWrite, writeClipboard } from "../lib/clipboard";
 import type { ArmedClipboardWrite } from "../lib/clipboard";
@@ -74,6 +76,7 @@ export function LiveTerminalView({ session, active = true, surface = "agent", te
     [],
   );
   const live = useLiveTerminal(ensureState === "ready" ? session.id : null, wsPath, receiveAgentClipboard);
+  const dashboardConnection = useDashboardConnectionDiagnostics();
   const { publish: publishConnectionDiagnostics, clear: clearConnectionDiagnostics } =
     useConnectionDiagnosticsPublisher();
   const terminalDiagnostics = deriveTerminalConnectionDiagnostics({
@@ -99,6 +102,7 @@ export function LiveTerminalView({ session, active = true, surface = "agent", te
     diagnostics: terminalDiagnostics,
     transport: streamTransport,
   };
+  const connectionSnapshot = { dashboard: dashboardConnection, session: sessionConnection };
   useEffect(() => {
     publishConnectionDiagnostics({
       session: sessionConnection,
@@ -258,10 +262,10 @@ export function LiveTerminalView({ session, active = true, surface = "agent", te
         }`}
       />
 
-      {terminalDiagnostics.hasIncident && (
+      {selectConnectionDiagnostics(connectionSnapshot).hasIncident && (
         <>
           <div className="h-11 shrink-0" aria-hidden="true" />
-          <ConnectionIncidentBubble diagnostics={terminalDiagnostics} onReconnect={live.manualReconnect} />
+          <ConnectionIncidentBubble snapshot={connectionSnapshot} onReconnect={live.manualReconnect} />
         </>
       )}
 

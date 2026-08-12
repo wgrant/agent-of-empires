@@ -3,7 +3,7 @@
 import { describe, expect, it } from "vitest";
 import { render } from "@testing-library/react";
 
-import { deriveConnectionDiagnostics } from "../acp/status/connectionStatus";
+import { deriveConnectionDiagnostics, type ConnectionDiagnostics } from "../acp/status/connectionStatus";
 import { ConnectionRoute, GlobalConnectionStatusButton } from "./ConnectionStatusView";
 
 const base = {
@@ -28,6 +28,25 @@ const base = {
   reconnectingSince: null,
   liveUpdatesStale: false,
 };
+
+const snapshot = (diagnostics: ConnectionDiagnostics) => ({
+  dashboard: { phase: "connected" as const, lastSuccessAt: 100, failureSince: null },
+  session: {
+    kind: "structured" as const,
+    sessionId: "session",
+    diagnostics,
+    transport: {
+      route: diagnostics.route,
+      connectedAt: null,
+      lastMessageAt: null,
+      reconnectingSince: null,
+      retryCount: diagnostics.retryCount ?? 0,
+      retryCountdown: 0,
+      maxRetries: diagnostics.maxRetries ?? 7,
+      lastFailure: null,
+    },
+  },
+});
 
 describe("ConnectionRoute", () => {
   it("assigns progress animation to the in-flight route edge, not its endpoint", () => {
@@ -56,7 +75,7 @@ describe("ConnectionRoute", () => {
 
     for (const { name, input, activeEdge, pendingNode } of cases) {
       const { getByTestId, unmount } = render(
-        <ConnectionRoute diagnostics={deriveConnectionDiagnostics({ ...base, ...input })} />,
+        <ConnectionRoute snapshot={snapshot(deriveConnectionDiagnostics({ ...base, ...input }))} />,
       );
       const route = getByTestId("connection-route");
       expect(route.querySelectorAll(".animate-spin"), name).toHaveLength(activeEdge ? 1 : 0);
@@ -73,7 +92,9 @@ describe("ConnectionRoute", () => {
 
   it("keeps a routine reconnect neutral in the global header before its incident grace period expires", () => {
     const diagnostics = deriveConnectionDiagnostics({ ...base, status: "closed", reconnecting: true, retryCount: 1 });
-    const { getByRole } = render(<GlobalConnectionStatusButton diagnostics={diagnostics} incidentVisible={false} />);
+    const { getByRole } = render(
+      <GlobalConnectionStatusButton snapshot={snapshot(diagnostics)} incidentVisible={false} />,
+    );
     const button = getByRole("button", { name: "Show connection status" });
     expect(button.className).toContain("text-text-muted");
     expect(button.className).not.toContain("text-status-warning");

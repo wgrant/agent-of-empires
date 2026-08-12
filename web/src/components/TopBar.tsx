@@ -9,9 +9,9 @@ import type { PaneDisplay } from "./Dock";
 import { useWebSettings } from "../hooks/useWebSettings";
 import { StrokeIcon } from "./icons";
 import { usePublishedConnectionDiagnostics } from "../lib/connectionDiagnosticsContext";
-import { selectConnectionDiagnostics } from "./acp/status/connectionStatus";
 import { useDashboardConnectionDiagnostics } from "../lib/connectionState";
 import { GlobalConnectionStatusButton } from "./connection/ConnectionStatusView";
+import type { ConnectionStatusSnapshot } from "./acp/status/connectionStatus";
 
 interface Props {
   activeWorkspace: Workspace | undefined;
@@ -95,10 +95,10 @@ export function TopBar({
   const sessionIdentityLabel = hasSessionIdentity ? `${activeProjectName} / ${activeSession.title}` : undefined;
   const publishedDiagnostics = usePublishedConnectionDiagnostics(activeSession?.id ?? null);
   const dashboardConnection = useDashboardConnectionDiagnostics();
-  const connectionDiagnostics = selectConnectionDiagnostics({
+  const connectionSnapshot: ConnectionStatusSnapshot = {
     dashboard: isOffline ? { ...dashboardConnection, phase: "unavailable" } : dashboardConnection,
     session: publishedDiagnostics?.session ?? null,
-  });
+  } as const;
 
   return (
     <header {...tourAnchor(TOUR_ANCHORS.topbar)} className="h-12 bg-surface-850 flex items-stretch shrink-0">
@@ -191,7 +191,7 @@ export function TopBar({
           </span>
         )}
         <GlobalConnectionStatusButton
-          diagnostics={connectionDiagnostics}
+          snapshot={connectionSnapshot}
           onReconnect={publishedDiagnostics?.onReconnect}
           incidentVisible={publishedDiagnostics?.incidentVisible ?? true}
         />
