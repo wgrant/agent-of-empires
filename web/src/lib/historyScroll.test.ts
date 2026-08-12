@@ -10,6 +10,7 @@ import {
   isPinnedToBottom,
   PINNED_BOTTOM_SLOP_PX,
   scrollRestoreDelta,
+  restoreEarlierHistoryScrollTop,
   topInsetScrollAdjustment,
 } from "./historyScroll";
 
@@ -19,6 +20,7 @@ const base = {
   scrollHeight: 5000,
   armed: true,
   canLoadEarlier: true,
+  hasScrolled: true,
   now: 10_000,
   lastLoadAt: 0,
 };
@@ -26,6 +28,10 @@ const base = {
 describe("autoLoadDecision", () => {
   it("fires at the top when armed, overflowing, and past the cooldown", () => {
     expect(autoLoadDecision(base)).toEqual({ armed: false, fire: true });
+  });
+
+  it("does not treat the initial mount sample as a scroll to the top", () => {
+    expect(autoLoadDecision({ ...base, hasScrolled: false })).toEqual({ armed: true, fire: false });
   });
 
   it("re-arms and does not fire away from the top", () => {
@@ -92,6 +98,19 @@ describe("scrollRestoreDelta", () => {
   });
 });
 
+describe("restoreEarlierHistoryScrollTop", () => {
+  it("shows newly revealed history to a reader already at the top", () => {
+    expect(restoreEarlierHistoryScrollTop(0, 1000, 1300)).toBe(0);
+    expect(restoreEarlierHistoryScrollTop(HISTORY_PRELOAD_PX, 1000, 1300)).toBe(0);
+  });
+
+  it("keeps a mid-transcript older-history reader on the same prior row", () => {
+    expect(restoreEarlierHistoryScrollTop(300, 1000, 1300)).toBe(600);
+    expect(restoreEarlierHistoryScrollTop(HISTORY_PRELOAD_PX + 1, 1000, 1300)).toBe(HISTORY_PRELOAD_PX + 1 + 300);
+    expect(restoreEarlierHistoryScrollTop(300, 1300, 1000)).toBe(300);
+  });
+});
+
 describe("topInsetScrollAdjustment", () => {
   it("leaves readers at the top room for a transient overlay", () => {
     expect(topInsetScrollAdjustment(0, 44, 0)).toBe(0);
@@ -121,7 +140,6 @@ describe("earlierAction / canOfferEarlier", () => {
     expect(canOfferEarlier(false, false)).toBe(false);
   });
 });
-
 describe("anchorIsStale", () => {
   it("is stale when settled with no growth", () => {
     expect(anchorIsStale(false, 1000, 1000)).toBe(true);

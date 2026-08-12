@@ -29,6 +29,10 @@ export function acpRetryDelayMs(attempt: number): number {
   return Math.min(ACP_RETRY_CAP_MS, ACP_RETRY_BASE_MS * 2 ** Math.max(0, attempt - 1));
 }
 
+export function hasOlderHistoryFromWatermark(oldestSeq: number): boolean {
+  return oldestSeq > 1;
+}
+
 // The server sends a heartbeat every 30s. A proxy RST can leave a socket OPEN but dead, so a
 // socket silent past this window is redialed. It stays under the daemon's 90s pong reaper.
 const ACP_WS_WATCHDOG_INTERVAL_MS = 15000;
@@ -229,9 +233,12 @@ export function useAcpConnection(
 
   useEffect(() => {
     const cached = sessionId ? cacheGet(sessionId) : undefined;
+    const mayHaveOlderHistory = hasOlderHistoryFromWatermark(cached?.oldestSeq ?? 0);
     loadingOlderRef.current = false;
     lastSeqRef.current = cached?.lastSeq ?? 0;
     oldestSeqRef.current = cached?.oldestSeq ?? 0;
+    hasMoreOlderRef.current = mayHaveOlderHistory;
+    setHasMoreOlder(mayHaveOlderHistory);
     if (!sessionId) return;
     dispatch({ kind: "hydrate", state: cached ?? emptyAcpState() });
     retryCountRef.current = 0;

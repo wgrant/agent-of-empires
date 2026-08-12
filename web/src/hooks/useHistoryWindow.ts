@@ -48,6 +48,10 @@ export interface HistoryWindowState {
   loadNewer: () => void;
   /** Re-anchor the bounded range at the live tail in one step. */
   jumpToLatest: () => void;
+  /** Advances when the bounded range is explicitly navigated or an older
+   *  server page prepends it. Consumers that retain index-based resources use
+   *  this as an atomic replacement boundary. */
+  generation: number;
 }
 
 /** An explicitly expanded transcript stays useful without mounting an
@@ -82,6 +86,7 @@ export function useHistoryWindow(
   const [visibleRows, setVisibleRows] = useState(() => rememberedHistoryWindow(sessionId));
   const [windowEnd, setWindowEnd] = useState(() => activity.length);
   const [windowSessionId, setWindowSessionId] = useState(sessionId);
+  const [generation, setGeneration] = useState(0);
   const [previousRows, setPreviousRows] = useState(() => ({
     length: activity.length,
     firstId: activity[0]?.id ?? null,
@@ -91,6 +96,7 @@ export function useHistoryWindow(
     setWindowSessionId(sessionId);
     setVisibleRows(rememberedHistoryWindow(sessionId));
     setWindowEnd(activity.length);
+    setGeneration(0);
     setPreviousRows({ length: activity.length, firstId: activity[0]?.id ?? null, lastId: activity.at(-1)?.id ?? null });
   } else if (
     previousRows.length !== activity.length ||
@@ -109,6 +115,9 @@ export function useHistoryWindow(
     } else if (prepended) {
       // Keep the reader on the same rows when an older server page is added.
       setWindowEnd((end) => Math.min(activity.length, end + growth));
+      // This replaces the external runtime's bounded source range. Live tail
+      // appends deliberately do not advance this generation. See #2236.
+      setGeneration((current) => current + 1);
     } else if (appended && windowEnd === previousRows.length) {
       // Follow a live tail only while this range already includes it. Keep the
       // reader's current top stable until the bounded range is full; after
@@ -128,6 +137,7 @@ export function useHistoryWindow(
   );
   const windowedActivity = useMemo(() => activity.slice(start, boundedEnd), [activity, boundedEnd, start]);
   const loadEarlier = useCallback(() => {
+    setGeneration((current) => current + 1);
     if (visibleRows < MAX_HISTORY_WINDOW) {
       const next = nextHistoryWindowSize(activity, visibleRows, boundedEnd);
       if (next <= MAX_HISTORY_WINDOW) {
@@ -155,10 +165,12 @@ export function useHistoryWindow(
     );
   }, [activity, boundedEnd, sessionId, visibleRows]);
   const loadNewer = useCallback(() => {
+    setGeneration((current) => current + 1);
     setVisibleRows(MAX_HISTORY_WINDOW);
     setWindowEnd((end) => Math.min(activity.length, end + DEFAULT_HISTORY_WINDOW));
   }, [activity.length]);
   const jumpToLatest = useCallback(() => {
+    setGeneration((current) => current + 1);
     setVisibleRows(MAX_HISTORY_WINDOW);
     setWindowEnd(activity.length);
   }, [activity.length]);
@@ -169,5 +181,6 @@ export function useHistoryWindow(
     loadEarlier,
     loadNewer,
     jumpToLatest,
+    generation,
   };
 }
