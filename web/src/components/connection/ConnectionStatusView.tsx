@@ -234,7 +234,7 @@ export function GlobalConnectionStatusButton({
         aria-label="Show connection status"
         aria-description={presentation.description}
         title={presentation.description}
-        className={`flex h-8 items-center gap-1.5 rounded-md px-2 text-[10px] font-mono uppercase tracking-wide transition-colors hover:bg-surface-700/60 ${tone}`}
+        className={`flex h-8 items-center gap-1.5 rounded-md px-2 text-[10px] font-mono uppercase tracking-wide transition-colors hover:bg-surface-700/60 lg:w-40 ${tone}`}
       >
         {presentation.working ? (
           <LoaderCircle className="size-3 animate-spin" />
