@@ -99,10 +99,12 @@ describe("ConnectionRoute", () => {
     expect(button.className).toContain("text-text-muted");
     expect(button.className).not.toContain("text-status-warning");
     expect(button.className).toContain("shrink-0");
+    expect(button.className).toContain("xl:min-w-32");
     expect(button.getAttribute("title")).toBeNull();
     expect(button.className).not.toContain("hover:bg-surface-700/60");
     expect(button.querySelector(".hover\\:bg-surface-700\\/60")).not.toBeNull();
     expect(button.querySelector(".animate-spin")).not.toBeNull();
+    expect(button.querySelector(".hidden.xl\\:inline")?.textContent).toBe("Reconnecting · 1/7");
   });
 
   it("dismisses expanded connection details when pressing outside the control", () => {
