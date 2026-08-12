@@ -7,7 +7,7 @@ import {
   type ExternalStoreAdapter,
   type ThreadMessageLike,
 } from "@assistant-ui/react";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode } from "react";
 
 import { useAcpSession } from "../../hooks/useAcpSession";
 import { useHistoryWindow } from "../../hooks/useHistoryWindow";
@@ -20,6 +20,27 @@ import { activityToThreadMessages, clearFoldGeneration } from "./activityMessage
 import { useCancelEscalation } from "./useCancelEscalation";
 
 type Session = ReturnType<typeof useAcpSession>;
+
+/** A viewport position captured before navigating the bounded transcript.
+ * This belongs above the keyed assistant-ui runtime: navigation deliberately
+ * remounts that runtime to dispose index-based resources, but the replacement
+ * view must still restore the reader's position after it mounts. */
+export interface HistoryScrollAnchor {
+  scrollTop: number;
+  scrollHeight: number;
+  publishedGeneration: number;
+  sawAsyncLoad: boolean;
+}
+
+/** Navigation controls must survive a keyed assistant-ui replacement. A
+ * replacement can itself emit a scroll event; treating that as a fresh user
+ * arrival at the top chains history loads and leaves the reader at seemingly
+ * random positions. */
+export interface HistoryNavigationController {
+  autoLoadArmed: boolean;
+  lastLoadAt: number;
+  restoringScroll: boolean;
+}
 
 interface Props {
   sessionId: string;
@@ -77,6 +98,20 @@ export interface AcpContext {
   canLoadNewerHistory: boolean;
   loadNewerHistory: () => void;
   jumpToLatestHistory: () => void;
+  /** Last row already published into assistant-ui's current runtime. */
+  publishedTailId: string | null;
+  /** Increments whenever assistant-ui is replaced with a different bounded
+   * transcript range. Lets the viewport restore an explicit history anchor
+   * after that runtime is mounted. */
+  publishedTranscriptGeneration: number;
+  /** A bounded history replacement restores its own reader position, so the
+   * viewport must not also run assistant-ui's default initial tail scroll. */
+  suppressHistoryInitializeScroll: boolean;
+  /** Stable across assistant-ui runtime replacement. The view stores an
+   * explicit older-history scroll anchor here and consumes it once the next
+   * transcript publication has mounted. */
+  historyScrollAnchorRef: MutableRefObject<HistoryScrollAnchor | null>;
+  historyNavigationControllerRef: MutableRefObject<HistoryNavigationController>;
   loadingEarlierHistory: boolean;
   replaySyncing: boolean;
 }
@@ -129,13 +164,21 @@ export function AcpRuntime({
     acp.cancelPrompt,
     acp.forceEndTurn,
   );
-  // Only the recent slice renders, so a long session does not block first paint.
-  const { windowedActivity, canLoadEarlier, canLoadNewer, loadEarlier, loadNewer, jumpToLatest } = useHistoryWindow(
-    sessionId,
-    acp.state.activity,
-    showClearedTurns,
-    acp.hasEverOpened,
-  );
+  // Render only the most recent slice of the transcript so a long
+  // session does not block first paint on mobile; older rows stay in
+  // reducer state and are revealed via "Load earlier". Before the first
+  // WebSocket open, a warm-cache replay re-anchors this remembered depth
+  // at the fresh tail. Later live appends preserve the current start.
+  // See #2144 and #2236.
+  const {
+    windowedActivity,
+    canLoadEarlier,
+    canLoadNewer,
+    loadEarlier,
+    loadNewer,
+    jumpToLatest,
+    generation: historyGeneration,
+  } = useHistoryWindow(sessionId, acp.state.activity, showClearedTurns, acp.hasEverOpened);
   const { loadOlder, hasMoreOlder, loadingOlder } = acp;
   const loadEarlierHistory = useCallback(() => {
     const action = earlierAction(canLoadEarlier, hasMoreOlder);
@@ -151,22 +194,66 @@ export function AcpRuntime({
     const pending = optimistic.filter((o) => !serverIds.has(o.id));
     return pending.length > 0 ? windowedActivity.concat(pending) : windowedActivity;
   }, [windowedActivity, acp.state.optimisticRows, acp.state.activity]);
-
   const visiblyBusy = isVisiblyBusy(acp.state);
+
+  // assistant-ui resources retain indexes into their message store. Replace
+  // the provider whenever bounded history navigation moves to a different
+  // index space, while ordinary live updates keep the existing runtime.
+  const [publishedTranscript, setPublishedTranscript] = useState(() => ({
+    activity: displayActivity,
+    turnActive: acp.state.turnActive,
+    visiblyBusy: isVisiblyBusy(acp.state),
+    generation: 0,
+    historyGeneration,
+    suppressInitializeScroll: false,
+  }));
+  const historyScrollAnchorRef = useRef<HistoryScrollAnchor | null>(null);
+  const historyNavigationControllerRef = useRef<HistoryNavigationController>({
+    autoLoadArmed: true,
+    lastLoadAt: 0,
+    restoringScroll: false,
+  });
+  useEffect(() => {
+    setPublishedTranscript((current) => {
+      const movedHistoryWindow = current.historyGeneration !== historyGeneration;
+      if (
+        current.activity === displayActivity &&
+        current.turnActive === acp.state.turnActive &&
+        current.visiblyBusy === visiblyBusy &&
+        current.historyGeneration === historyGeneration
+      ) {
+        return current;
+      }
+      return {
+        activity: displayActivity,
+        turnActive: acp.state.turnActive,
+        visiblyBusy,
+        generation: movedHistoryWindow ? current.generation + 1 : current.generation,
+        historyGeneration,
+        suppressInitializeScroll: movedHistoryWindow,
+      };
+    });
+  }, [acp.state.turnActive, displayActivity, historyGeneration, visiblyBusy]);
+
+  // Memoise the activity → ThreadMessageLike conversion. The function
+  // walks the activity array, allocates a new AssistantBuilder
+  // per turn, and produces brand-new message objects. Without
+  // useMemo, every parent re-render (e.g. WS heartbeat, hover state)
+  // re-builds the transcript and assistant-ui treats every
   const messages = useMemo(
     () =>
       activityToThreadMessages(
-        displayActivity,
-        visiblyBusy,
+        publishedTranscript.activity,
+        publishedTranscript.visiblyBusy,
         showClearedTurns,
         agentProfile.capabilities.todos,
         agentProfile,
       ),
-    [displayActivity, visiblyBusy, showClearedTurns, agentProfile],
+    [publishedTranscript.activity, publishedTranscript.visiblyBusy, showClearedTurns, agentProfile],
   );
   const foldGeneration = useMemo(
-    () => clearFoldGeneration(displayActivity, showClearedTurns),
-    [displayActivity, showClearedTurns],
+    () => clearFoldGeneration(publishedTranscript.activity, showClearedTurns),
+    [publishedTranscript.activity, showClearedTurns],
   );
 
   const adapter: ExternalStoreAdapter<ThreadMessageLike> = {
@@ -177,7 +264,7 @@ export function AcpRuntime({
     // has to track only the main turn, exactly like Composer.tsx's turnActive
     // gate, or a background sub-agent with an idle main turn silently eats
     // every keystroke.
-    isRunning: acp.state.turnActive,
+    isRunning: publishedTranscript.turnActive,
     convertMessage: (m) => m,
     // The idle Enter path: text comes from the message, attachments from our staging.
     onNew: async (msg) => {
@@ -198,7 +285,7 @@ export function AcpRuntime({
   };
 
   return (
-    <RuntimeHost key={foldGeneration} adapter={adapter}>
+    <RuntimeHost key={`${foldGeneration}:${publishedTranscript.generation}`} adapter={adapter}>
       {children({
         state: acp.state,
         status: acp.status,
@@ -239,6 +326,11 @@ export function AcpRuntime({
         canLoadNewerHistory: canLoadNewer,
         loadNewerHistory: loadNewer,
         jumpToLatestHistory: jumpToLatest,
+        publishedTailId: publishedTranscript.activity.at(-1)?.id ?? null,
+        publishedTranscriptGeneration: publishedTranscript.generation,
+        suppressHistoryInitializeScroll: publishedTranscript.suppressInitializeScroll,
+        historyScrollAnchorRef,
+        historyNavigationControllerRef,
         loadingEarlierHistory: loadingOlder,
         replaySyncing: acp.replaySyncing,
       })}
