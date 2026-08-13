@@ -17,6 +17,7 @@ import { DiffViewerHeader } from "./DiffViewerHeader";
 import { FullFileViewer } from "./FullFileViewer";
 import { FileContentViewer } from "./FileContentViewer";
 import { MarkdownFileView } from "./MarkdownFileView";
+import { RasterImagePreview } from "./FileImageViewer";
 import { FindBar } from "./find/FindBar";
 import { changedLines } from "./find/changedLines";
 import type { FindMatch } from "./find/findMatches";
@@ -93,6 +94,7 @@ export function DiffFileViewer({
   const [draft, setDraft] = useState<DraftRange | null>(null);
   const [selected, setSelected] = useState<SelectedLineRange | null>(null);
   const [findOpen, setFindOpen] = useState(false);
+  const [showImagePreview, setShowImagePreview] = useState(false);
 
   // Reset transient state on a file or target change, during render; a cited line starts selected.
   const syncKey = JSON.stringify([sessionId, repoName ?? null, filePath, revision, targetLine ?? null]);
@@ -102,6 +104,7 @@ export function DiffFileViewer({
     setDraft(null);
     setSelected(targetLine != null ? lineRange(targetLine, "additions") : null);
     setFindOpen(false);
+    setShowImagePreview(false);
   }
 
   const oldContent = contents?.old_content ?? "";
@@ -290,6 +293,18 @@ export function DiffFileViewer({
   let body: ReactNode;
   if (showRendered) {
     body = <MarkdownFileView content={contents.file.status === "deleted" ? oldContent : newContent} />;
+  } else if (contents.is_binary && showImagePreview) {
+    body = (
+      <RasterImagePreview
+        sessionId={sessionId}
+        filePath={resolvedPath}
+        fallback={
+          <Centered>
+            <span className="text-sm">{isFullFile ? "Binary file" : "Binary file changed"}</span>
+          </Centered>
+        }
+      />
+    );
   } else if (contents.is_binary) {
     body = (
       <Centered>
@@ -351,6 +366,9 @@ export function DiffFileViewer({
         onToggleFind={() => setFindOpen((v) => !v)}
         isWide={isWide}
         splitActive={splitActive}
+        imagePreviewAvailable={contents.is_binary}
+        showImagePreview={showImagePreview}
+        onShowImagePreview={setShowImagePreview}
       />
 
       {findOpen && !showRendered && !contents.is_binary && !contents.truncated && (
