@@ -126,26 +126,26 @@ describe("DiffFileViewer markdown toggle", () => {
     expect(screen.queryByTestId("pierre-diff")).toBeNull();
     expect(screen.queryByRole("button", { name: "Split" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Find in diff" })).toBeNull();
-    expect(screen.getByRole("button", { name: "Rendered" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "Preview" }).getAttribute("aria-pressed")).toBe("true");
   });
 
-  it("flips to Raw, shows the diff, and persists the preference", async () => {
+  it("flips to Diff, shows the diff, and persists the preference", async () => {
     mock.contents = mdContents;
     render(<DiffFileViewer sessionId="s1" filePath="notes.md" />);
-    await screen.findByRole("button", { name: "Raw" });
+    await screen.findByRole("button", { name: "Diff" });
 
-    fireEvent.click(screen.getByRole("button", { name: "Raw" }));
+    fireEvent.click(screen.getByRole("button", { name: "Diff" }));
 
     await waitFor(() => expect(screen.getByTestId("pierre-diff")).toBeTruthy());
     expect(splitButton()).toBeTruthy();
     expect(JSON.parse(window.localStorage.getItem("aoe-web-settings") ?? "{}").markdownPreview).toBe("raw");
   });
 
-  it("shows no Rendered/Raw toggle for a non-markdown file", async () => {
+  it("shows no Preview/Diff toggle for a non-markdown file", async () => {
     render(<DiffFileViewer sessionId="s1" filePath="a.ts" />);
     await screen.findByText(/Modified/i);
-    expect(screen.queryByRole("button", { name: "Rendered" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Raw" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Preview" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Diff" })).toBeNull();
   });
 });
 
