@@ -91,7 +91,7 @@ describe("DiffFileViewer split layout", () => {
     await screen.findByText(/Modified/i);
     expect(splitButton().getAttribute("aria-pressed")).toBe("false");
     expect(screen.getByTestId("pierre-diff").getAttribute("data-diff-style")).toBe("unified");
-    expect(screen.queryByRole("button", { name: "Rendered" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Preview" })).toBeNull();
 
     fireEvent.click(splitButton());
 
@@ -122,9 +122,9 @@ describe("DiffFileViewer markdown toggle", () => {
     expect(screen.queryByTestId("pierre-diff")).toBeNull();
     expect(screen.queryByRole("button", { name: "Split" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Find in diff" })).toBeNull();
-    expect(screen.getByRole("button", { name: "Rendered" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "Preview" }).getAttribute("aria-pressed")).toBe("true");
 
-    fireEvent.click(screen.getByRole("button", { name: "Raw" }));
+    fireEvent.click(screen.getByRole("button", { name: "Diff" }));
 
     await waitFor(() => expect(screen.getByTestId("pierre-diff")).toBeTruthy());
     expect(splitButton()).toBeTruthy();
