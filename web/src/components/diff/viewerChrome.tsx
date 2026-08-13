@@ -60,7 +60,7 @@ export function BackButton({ label, onClick }: { label: string; onClick: () => v
   );
 }
 
-/** Rendered/Raw switch over the shared `markdownPreview` setting. */
+/** Preview/Diff switch over the shared `markdownPreview` setting. */
 export function MarkdownToggle({ className }: { className?: string }) {
   const { settings, update } = useWebSettings();
   return (
@@ -68,16 +68,16 @@ export function MarkdownToggle({ className }: { className?: string }) {
       <ToggleButton
         pressed={settings.markdownPreview === "rendered"}
         onClick={() => update({ markdownPreview: "rendered" })}
-        title="Rendered Markdown"
+        title="Preview rendered Markdown"
       >
-        Rendered
+        Preview
       </ToggleButton>
       <ToggleButton
         pressed={settings.markdownPreview === "raw"}
         onClick={() => update({ markdownPreview: "raw" })}
-        title="Raw Markdown source"
+        title="Show Markdown diff"
       >
-        Raw
+        Diff
       </ToggleButton>
     </div>
   );
