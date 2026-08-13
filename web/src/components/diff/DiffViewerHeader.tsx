@@ -24,6 +24,9 @@ interface Props {
   onToggleFind: () => void;
   isWide: boolean;
   splitActive: boolean;
+  imagePreviewAvailable?: boolean;
+  showImagePreview?: boolean;
+  onShowImagePreview?: (show: boolean) => void;
 }
 
 export function DiffViewerHeader({
@@ -36,6 +39,9 @@ export function DiffViewerHeader({
   onToggleFind,
   isWide,
   splitActive,
+  imagePreviewAvailable = false,
+  showImagePreview = false,
+  onShowImagePreview,
 }: Props) {
   const { settings, update } = useWebSettings();
   const [label, color] = STATUS[file.status] ?? [file.status, "text-text-muted"];
@@ -50,7 +56,25 @@ export function DiffViewerHeader({
       <LineCounts additions={file.additions} deletions={file.deletions} />
       <div className="ml-auto flex items-center gap-2">
         {markdownAvailable && <MarkdownToggle />}
-        {!showRendered && (
+        {imagePreviewAvailable && onShowImagePreview && (
+          <div className={GROUP}>
+            <ToggleButton
+              pressed={showImagePreview}
+              onClick={() => onShowImagePreview(true)}
+              title="Preview current image"
+            >
+              Preview
+            </ToggleButton>
+            <ToggleButton
+              pressed={!showImagePreview}
+              onClick={() => onShowImagePreview(false)}
+              title="Binary diff summary"
+            >
+              Diff
+            </ToggleButton>
+          </div>
+        )}
+        {!showRendered && !imagePreviewAvailable && (
           <>
             <button
               type="button"
