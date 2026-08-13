@@ -2075,6 +2075,7 @@ function AppContent({
                             onClose={handleCloseFile}
                             commentsEnabled={commentsEnabled}
                             commentsStore={diffComments}
+                            fallbackToFileViewer
                           />
                         )
                       }

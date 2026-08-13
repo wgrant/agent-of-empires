@@ -15,6 +15,7 @@ import type { AnchoredComment, DiffSide } from "./comments/types";
 import { DiffWorkerPoolProvider } from "./pierre/DiffWorkerPoolProvider";
 import { DiffViewerHeader } from "./DiffViewerHeader";
 import { FullFileViewer } from "./FullFileViewer";
+import { FileContentViewer } from "./FileContentViewer";
 import { MarkdownFileView } from "./MarkdownFileView";
 import { FindBar } from "./find/FindBar";
 import { changedLines } from "./find/changedLines";
@@ -38,6 +39,10 @@ interface Props {
   /** Enables line selection comments; requires `commentsStore`. */
   commentsEnabled?: boolean;
   commentsStore?: UseDiffCommentsResult;
+  /** A transcript citation can name an ignored or untracked workspace file.
+   *  Prefer its diff when available, but fall back to the provenance-confined
+   *  full-file viewer when Git cannot supply one. */
+  fallbackToFileViewer?: boolean;
 }
 
 interface DraftRange {
@@ -67,6 +72,7 @@ export function DiffFileViewer({
   backLabel = "Transcript",
   commentsEnabled = false,
   commentsStore,
+  fallbackToFileViewer = false,
 }: Props) {
   const { contents, loading, error } = useFileContents(sessionId, filePath, repoName, revision);
   const { theme } = useShikiTheme();
@@ -255,6 +261,9 @@ export function DiffFileViewer({
     );
   }
   if (error) {
+    if (fallbackToFileViewer) {
+      return <FileContentViewer sessionId={sessionId} filePath={filePath} onBack={onClose} backLabel={backLabel} />;
+    }
     return (
       <div className="flex-1 flex flex-col bg-surface-900 overflow-hidden">
         <div className="px-3 py-2 border-b border-surface-700/20 flex items-center gap-2 shrink-0">
