@@ -6,6 +6,14 @@ import { DiffFileViewer } from "../DiffFileViewer";
 import type { RichFileContentsResponse } from "../../../lib/types";
 import type { UseDiffCommentsResult } from "../../../hooks/useDiffComments";
 
+vi.mock("../../../lib/api", () => ({
+  getSessionFile: vi.fn(),
+}));
+
+vi.mock("../FullFileViewer", () => ({
+  FullFileViewer: ({ content }: { content: string }) => <pre>{content}</pre>,
+}));
+
 const mock = vi.hoisted(() => ({
   contents: undefined as RichFileContentsResponse | undefined,
   loading: false,
@@ -184,6 +192,15 @@ describe("DiffFileViewer states and header", () => {
     expect(screen.getByText("boom")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Back to transcript" }));
     expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("falls back to the full-file viewer for an unavailable cited diff", async () => {
+    const { getSessionFile } = await import("../../../lib/api");
+    vi.mocked(getSessionFile).mockResolvedValue({ content: "# Generated brief", is_binary: false, truncated: false });
+    mock.contents = undefined;
+    mock.error = "Failed to load file contents";
+    render(<DiffFileViewer sessionId="s1" filePath=".agent-briefs/task.md" fallbackToFileViewer />);
+    expect(await screen.findByText("# Generated brief")).toBeTruthy();
   });
 
   it("renders status, counts, and no back button without onClose", () => {

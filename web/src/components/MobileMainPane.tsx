@@ -199,6 +199,7 @@ export function MobileMainPane({
                         backLabel="Files"
                         commentsEnabled={commentsEnabled}
                         commentsStore={diffComments}
+                        fallbackToFileViewer
                       />
                     )
                   }

@@ -11,6 +11,8 @@ interface Props {
   /** The server confines which paths may be read. */
   filePath: string;
   onBack?: () => void;
+  /** Accessible destination for the back button. */
+  backLabel?: string;
 }
 
 interface Loaded {
@@ -20,7 +22,7 @@ interface Loaded {
 }
 
 /** A session file: Markdown with a Rendered/Raw toggle, otherwise highlighted source. */
-export function FileContentViewer({ sessionId, filePath, onBack }: Props) {
+export function FileContentViewer({ sessionId, filePath, onBack, backLabel = "Back to files" }: Props) {
   const { settings } = useWebSettings();
   const containerRef = useRef<HTMLDivElement>(null);
   // Keyed by target so a stale response from a fast switch is ignored at render.
@@ -66,7 +68,7 @@ export function FileContentViewer({ sessionId, filePath, onBack }: Props) {
       className="flex-1 flex flex-col bg-surface-900 overflow-hidden focus:outline-none"
     >
       <div className="px-3 py-2 border-b border-surface-700/20 flex items-center gap-2 shrink-0">
-        {onBack && <BackButton label="Files" onClick={onBack} />}
+        {onBack && <BackButton label={backLabel.replace(/^Back to /i, "")} onClick={onBack} />}
         <span className="font-mono text-[12px] text-text-primary truncate">{filePath}</span>
         {isMarkdown && !data?.is_binary && <MarkdownToggle className="ml-auto" />}
       </div>
