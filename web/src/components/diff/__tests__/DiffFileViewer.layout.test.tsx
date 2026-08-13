@@ -24,6 +24,15 @@ const mdContents: RichFileContentsResponse = {
   truncated: false,
 };
 
+const imageContents: RichFileContentsResponse = {
+  file: { path: "diagram.png", old_path: null, status: "modified", additions: 0, deletions: 0 },
+  old_content: "",
+  new_content: "",
+  patch: "",
+  is_binary: true,
+  truncated: false,
+};
+
 const mock = vi.hoisted(() => ({
   contents: undefined as RichFileContentsResponse | undefined,
   observe: vi.fn(),
@@ -120,5 +129,26 @@ describe("DiffFileViewer markdown toggle", () => {
     await waitFor(() => expect(screen.getByTestId("pierre-diff")).toBeTruthy());
     expect(splitButton()).toBeTruthy();
     expect(JSON.parse(window.localStorage.getItem("aoe-web-settings") ?? "{}").markdownPreview).toBe("raw");
+  });
+});
+
+describe("DiffFileViewer image toggle", () => {
+  it("keeps the binary summary by default and can preview the current raster", async () => {
+    mock.contents = imageContents;
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, blob: () => Promise.resolve(new Blob(["png"])) }));
+    vi.stubGlobal("URL", {
+      ...URL,
+      createObjectURL: vi.fn(() => "blob:diagram-preview"),
+      revokeObjectURL: vi.fn(),
+    });
+
+    render(<DiffFileViewer sessionId="s1" filePath="diagram.png" />);
+
+    expect(await screen.findByText("Binary file changed")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Diff" }).getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+    const image = await screen.findByRole("img", { name: "diagram.png" });
+    expect(image.getAttribute("src")).toBe("blob:diagram-preview");
+    expect(screen.getByRole("button", { name: "Preview" }).getAttribute("aria-pressed")).toBe("true");
   });
 });

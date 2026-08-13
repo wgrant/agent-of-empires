@@ -10,6 +10,13 @@ interface Props {
   fallback: ReactNode;
 }
 
+interface RasterPreviewProps {
+  sessionId: string;
+  filePath: string;
+  /** Displayed when byte sniffing says this is not a supported raster image. */
+  fallback: ReactNode;
+}
+
 function loadErrorForStatus(status: number): string {
   if (status === 404) return "File not found";
   if (status === 403) return "File is not available to this session";
@@ -20,7 +27,7 @@ function loadErrorForStatus(status: number): string {
 /** Displays a workspace image through the authenticated, session-confined
  * byte endpoint. A blob URL is required because token authentication is
  * injected into fetch requests, not bare img navigations. */
-export function FileImageViewer({ sessionId, filePath, onBack, fallback }: Props) {
+export function RasterImagePreview({ sessionId, filePath, fallback }: RasterPreviewProps) {
   const [loaded, setLoaded] = useState<{
     key: string;
     url: string | null;
@@ -70,6 +77,29 @@ export function FileImageViewer({ sessionId, filePath, onBack, fallback }: Props
 
   const current = loaded.key === key ? loaded : { key, url: null, error: null, notImage: false };
   if (current.notImage) return fallback;
+  if (current.url) {
+    return (
+      <ZoomableImage
+        src={current.url}
+        alt={filePath}
+        className="flex-1 min-h-0 p-3"
+        onError={() =>
+          setLoaded((value) => (value.key === key ? { ...value, url: null, error: "Could not decode image" } : value))
+        }
+      />
+    );
+  }
+  return (
+    <div className={`flex-1 flex items-center justify-center ${current.error ? "text-status-error" : "text-text-dim"}`}>
+      <span className="text-sm">{current.error ?? "Loading image..."}</span>
+    </div>
+  );
+}
+
+/** Displays a workspace image through the authenticated, session-confined
+ * byte endpoint. A blob URL is required because token authentication is
+ * injected into fetch requests, not bare img navigations. */
+export function FileImageViewer({ sessionId, filePath, onBack, fallback }: Props) {
   return (
     <div className="flex-1 flex flex-col bg-surface-900 overflow-hidden">
       <div className="px-3 py-2 border-b border-surface-700/20 flex items-center gap-2 shrink-0">
@@ -86,22 +116,7 @@ export function FileImageViewer({ sessionId, filePath, onBack, fallback }: Props
         )}
         <span className="font-mono text-[12px] text-text-primary truncate">{filePath}</span>
       </div>
-      {current.url ? (
-        <ZoomableImage
-          src={current.url}
-          alt={filePath}
-          className="flex-1 min-h-0 p-3"
-          onError={() =>
-            setLoaded((value) => (value.key === key ? { ...value, url: null, error: "Could not decode image" } : value))
-          }
-        />
-      ) : (
-        <div
-          className={`flex-1 flex items-center justify-center ${current.error ? "text-status-error" : "text-text-dim"}`}
-        >
-          <span className="text-sm">{current.error ?? "Loading image..."}</span>
-        </div>
-      )}
+      <RasterImagePreview sessionId={sessionId} filePath={filePath} fallback={fallback} />
     </div>
   );
 }
