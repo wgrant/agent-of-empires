@@ -347,7 +347,7 @@ function AcpChrome({
       <SessionBanners
         sessionId={sessionId}
         state={state}
-        conversationStatus={conversationStatus}
+        connectionSnapshot={connectionSnapshot}
         acpWorkerState={acpWorkerState}
         trashedAt={view.trashedAt}
         archivedAt={view.archivedAt}

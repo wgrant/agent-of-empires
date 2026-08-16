@@ -42,6 +42,11 @@ describe("ACP session diagnostics", () => {
         expected: { runtime: { kind: "stopped", reason: "user_stopped" } },
       },
       {
+        name: "a stopping worker remains transitional",
+        changes: { state: { ...emptyAcpState(), workerStopped: true }, workerState: "stopping" },
+        expected: { runtime: { kind: "stopping" } },
+      },
+      {
         name: "restart causes retain their recovery meaning",
         changes: { state: { ...emptyAcpState(), agentOrphaned: true, workerRestarting: true } },
         expected: { runtime: { kind: "restarting", reason: "prompt_orphaned" } },

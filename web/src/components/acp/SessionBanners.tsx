@@ -2,15 +2,20 @@ import { useEffect, useState } from "react";
 
 import { useRespawnSession } from "../../hooks/useRespawnSession";
 import type { AcpState } from "../../lib/acpTypes";
-import { pickWorkerStoppedVariant, showWorkerStoppingBanner } from "./workerStoppedBanner";
-import type { ConversationStatus } from "./status/conversationStatus";
+import type { ConnectionStatusSnapshot } from "./status/connectionStatus";
+import {
+  deriveSessionIncident,
+  type ConversationDiagnosticsSnapshot,
+  type SessionIncident,
+} from "./status/conversationDiagnostics";
+import { deriveSessionDiagnostics, type SessionDiagnostics } from "./status/sessionDiagnostics";
 import { StartupErrorBanner } from "./StartupErrorBanner";
 
 /** Worker lifecycle and triage banners stacked above the transcript. */
 export function SessionBanners({
   sessionId,
   state,
-  conversationStatus,
+  connectionSnapshot,
   acpWorkerState,
   trashedAt,
   archivedAt,
@@ -20,7 +25,7 @@ export function SessionBanners({
 }: {
   sessionId: string;
   state: AcpState;
-  conversationStatus: ConversationStatus;
+  connectionSnapshot: ConnectionStatusSnapshot;
   acpWorkerState: "absent" | "resuming" | "running" | "stopping";
   trashedAt: string | null;
   archivedAt: string | null;
@@ -28,64 +33,60 @@ export function SessionBanners({
   onRestore?: () => Promise<boolean> | void;
   dismissError: () => void;
 }) {
+  const diagnostics = deriveSessionDiagnostics({
+    state,
+    workerState: acpWorkerState,
+    trashedAt,
+    archivedAt,
+    snoozedUntil,
+  });
+  const conversationDiagnostics: ConversationDiagnosticsSnapshot = {
+    connection: connectionSnapshot,
+    session: { sessionId, kind: "structured", lifecycle: diagnostics },
+  };
+  const incident = deriveSessionIncident(conversationDiagnostics);
+
   return (
     <>
       <ConversationLifecycleNotice
-        status={conversationStatus}
         sessionId={sessionId}
-        startupError={state.startupError}
-        workerStopped={state.workerStopped}
-        agentUnresponsive={state.agentUnresponsive}
-        agentOrphaned={state.agentOrphaned}
-        trashedAt={trashedAt}
-        archivedAt={archivedAt}
-        snoozedUntil={snoozedUntil}
+        diagnostics={diagnostics}
+        incident={incident}
         onRestore={onRestore}
       />
-      {showWorkerStoppingBanner({ acpWorkerState, startupError: state.startupError }) && <WorkerStoppingBanner />}
       {state.lastError && <InteractionErrorBanner message={state.lastError} onDismiss={dismissError} />}
     </>
   );
 }
 
 export function ConversationLifecycleNotice({
-  status,
   sessionId,
-  startupError,
-  workerStopped,
-  agentUnresponsive,
-  agentOrphaned,
-  trashedAt,
-  archivedAt,
-  snoozedUntil,
+  diagnostics,
+  incident,
   onRestore,
 }: {
-  status: ConversationStatus;
   sessionId: string;
-  startupError: string | null;
-  workerStopped: boolean;
-  agentUnresponsive: boolean;
-  agentOrphaned: boolean;
-  trashedAt: string | null;
-  archivedAt: string | null;
-  snoozedUntil: string | null;
+  diagnostics: SessionDiagnostics;
+  incident: SessionIncident | null;
   onRestore?: () => Promise<boolean> | void;
 }) {
-  if (status.kind === "blocked" && status.cause === "agent_failed" && startupError) {
-    return <StartupErrorBanner sessionId={sessionId} message={startupError} />;
+  if (!incident) return null;
+  if (incident.kind === "failed") return <StartupErrorBanner sessionId={sessionId} message={incident.detail} />;
+  if (incident.kind === "restarting") {
+    return (
+      <WorkerRestartingBanner
+        agentUnresponsive={diagnostics.evidence.agentUnresponsive}
+        agentOrphaned={diagnostics.evidence.agentOrphaned}
+      />
+    );
   }
-  if (status.kind === "updating" && status.cause === "agent_restarting") {
-    return <WorkerRestartingBanner agentUnresponsive={agentUnresponsive} agentOrphaned={agentOrphaned} />;
+  if (incident.kind === "stopping") return <WorkerStoppingBanner />;
+  if (incident.kind === "trashed") return <TrashedWorkerStoppedBanner sessionId={sessionId} onRestore={onRestore} />;
+  if (incident.kind === "archived") return <ArchivedWorkerStoppedBanner sessionId={sessionId} />;
+  if (incident.kind === "snoozed" && diagnostics.disposition.kind === "snoozed") {
+    return <SnoozedWorkerStoppedBanner sessionId={sessionId} snoozedUntil={diagnostics.disposition.until} />;
   }
-  if (status.kind !== "blocked" || status.cause !== "agent_stopped") return null;
-
-  const variant = pickWorkerStoppedVariant({ workerStopped, startupError, trashedAt, archivedAt, snoozedUntil });
-  if (variant === "trashed") return <TrashedWorkerStoppedBanner sessionId={sessionId} onRestore={onRestore} />;
-  if (variant === "archived") return <ArchivedWorkerStoppedBanner sessionId={sessionId} />;
-  if (variant === "snoozed" && snoozedUntil) {
-    return <SnoozedWorkerStoppedBanner sessionId={sessionId} snoozedUntil={snoozedUntil} />;
-  }
-  if (variant === "generic") return <WorkerStoppedBanner sessionId={sessionId} />;
+  if (incident.kind === "stopped") return <WorkerStoppedBanner sessionId={sessionId} />;
   return null;
 }
 
