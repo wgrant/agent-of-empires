@@ -9,6 +9,7 @@ import {
   type SessionIncident,
 } from "./status/conversationDiagnostics";
 import { deriveSessionDiagnostics, type SessionDiagnostics } from "./status/sessionDiagnostics";
+import { ActionFeedbackNotice } from "./status/ActionFeedbackNotice";
 import { StartupErrorBanner } from "./StartupErrorBanner";
 
 /** Worker lifecycle and triage banners stacked above the transcript. */
@@ -54,7 +55,15 @@ export function SessionBanners({
         incident={incident}
         onRestore={onRestore}
       />
-      {state.lastError && <InteractionErrorBanner message={state.lastError} onDismiss={dismissError} />}
+      {state.lastError && (
+        <ActionFeedbackNotice
+          title="Action did not complete"
+          detail={state.lastError}
+          onDismiss={dismissError}
+          dismissLabel="Dismiss action error"
+          testId="acp-interaction-error"
+        />
+      )}
     </>
   );
 }
@@ -139,24 +148,6 @@ function ChipBanner({
         {children}
         {detail ? <span className={dim}>: {detail}</span> : null}
       </span>
-    </div>
-  );
-}
-
-function InteractionErrorBanner({ message, onDismiss }: { message: string; onDismiss: () => void }) {
-  return (
-    <div className="flex items-start justify-between gap-3 border-b border-status-warning/30 bg-status-warning/10 px-4 py-2 text-status-warning">
-      <div className="flex-1 min-w-0">
-        <div className="text-xs font-medium">Action did not complete</div>
-        <div className="mt-0.5 text-xs text-status-warning/90 break-words">{message}</div>
-      </div>
-      <button
-        type="button"
-        onClick={onDismiss}
-        className="shrink-0 rounded-md border border-status-warning/40 bg-status-warning/20 px-2 py-1 text-[10px] font-mono uppercase tracking-wide text-status-warning hover:bg-status-warning/30"
-      >
-        Dismiss
-      </button>
     </div>
   );
 }
