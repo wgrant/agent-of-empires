@@ -3,6 +3,7 @@ import {
   type ConnectionDiagnostics,
   type ConnectionStatusSnapshot,
 } from "./connectionStatus";
+import { derivePromptDispatchPolicy } from "../../../lib/acpPromptDispatchPolicy";
 import type { SessionDiagnostics } from "./sessionDiagnostics";
 
 export interface SelectedSessionDiagnostics {
@@ -152,23 +153,25 @@ export function deriveComposerAvailability(snapshot: ConversationDiagnosticsSnap
   if (runtime.kind === "blocked") return { kind: "blocked", reason: "rate_limited", action: "switch_agent" };
   if (disposition.kind === "archived") return { kind: "resume_then_send", reason: "archived" };
   if (disposition.kind === "snoozed") return { kind: "resume_then_send", reason: "snoozed" };
-  if (runtime.kind === "stopped") return { kind: "resume_then_send", reason: "stopped" };
-  if (
-    connection.route !== "connected" ||
-    runtime.kind === "starting" ||
-    runtime.kind === "stopping" ||
-    runtime.kind === "restarting"
-  ) {
-    return { kind: "queue_for_recovery" };
+  const promptPolicy = derivePromptDispatchPolicy({
+    transportOpen: connection.route === "connected",
+    workerState: session.lifecycle.evidence.workerState,
+    workerStopped: session.lifecycle.evidence.workerStopped,
+    workerRestarting: session.lifecycle.evidence.workerRestarting,
+    workerIdleStopped: session.lifecycle.evidence.workerIdleStopped,
+    turnActive:
+      turn.kind === "running" ||
+      turn.kind === "awaiting_user" ||
+      turn.kind === "cancelling" ||
+      turn.kind === "compacting",
+    canSteer: session.lifecycle.evidence.canSteer,
+    cancelling: turn.kind === "cancelling",
+    compacting: turn.kind === "compacting",
+  });
+  if (promptPolicy.kind === "queue") {
+    return promptPolicy.reason === "turn" ? { kind: "queue_after_turn" } : { kind: "queue_for_recovery" };
   }
-  if (runtime.kind === "dormant") return { kind: "wake_agent" };
-  if (turn.kind === "awaiting_user" || turn.kind === "cancelling" || turn.kind === "compacting") {
-    return { kind: "queue_after_turn" };
-  }
-  if (turn.kind === "running") {
-    return session.lifecycle.evidence.workerState === "running" && session.lifecycle.evidence.workerStopped === false
-      ? { kind: "steer_now" }
-      : { kind: "queue_after_turn" };
-  }
+  if (promptPolicy.kind === "dispatch_wake") return { kind: "wake_agent" };
+  if (turn.kind === "running" && session.lifecycle.evidence.canSteer) return { kind: "steer_now" };
   return { kind: "send_now" };
 }
