@@ -31,7 +31,7 @@ export type SessionAction =
   | "wait";
 
 export interface SessionIncident {
-  kind: "trashed" | "archived" | "snoozed" | "failed" | "stopped" | "blocked" | "restarting" | "dormant";
+  kind: "trashed" | "archived" | "snoozed" | "failed" | "stopped" | "stopping" | "blocked" | "restarting" | "dormant";
   action: SessionAction;
   title: string;
   detail: string;
@@ -102,6 +102,13 @@ export function deriveSessionIncident(snapshot: ConversationDiagnosticsSnapshot)
         title: "Agent stopped",
         detail: "Reconnect to start the agent again.",
       };
+    case "stopping":
+      return {
+        kind: "stopping",
+        action: "wait",
+        title: "Stopping agent",
+        detail: "AoE is waiting for the agent process to exit.",
+      };
     case "blocked":
       return {
         kind: "blocked",
@@ -146,7 +153,12 @@ export function deriveComposerAvailability(snapshot: ConversationDiagnosticsSnap
   if (disposition.kind === "archived") return { kind: "resume_then_send", reason: "archived" };
   if (disposition.kind === "snoozed") return { kind: "resume_then_send", reason: "snoozed" };
   if (runtime.kind === "stopped") return { kind: "resume_then_send", reason: "stopped" };
-  if (connection.route !== "connected" || runtime.kind === "starting" || runtime.kind === "restarting") {
+  if (
+    connection.route !== "connected" ||
+    runtime.kind === "starting" ||
+    runtime.kind === "stopping" ||
+    runtime.kind === "restarting"
+  ) {
     return { kind: "queue_for_recovery" };
   }
   if (runtime.kind === "dormant") return { kind: "wake_agent" };

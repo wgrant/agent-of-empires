@@ -4,28 +4,30 @@ import { cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { ConversationLifecycleNotice } from "./SessionBanners";
+import { deriveSessionDiagnostics } from "./status/sessionDiagnostics";
+import { emptyAcpState } from "../../lib/acpTypes";
 
 afterEach(cleanup);
 
 describe("ConversationLifecycleNotice", () => {
   it("surfaces a restarting agent as the session-level status", () => {
+    const diagnostics = deriveSessionDiagnostics({
+      state: { ...emptyAcpState(), workerRestarting: true },
+      workerState: "resuming",
+      archivedAt: null,
+      snoozedUntil: null,
+      trashedAt: null,
+    });
     const { getByText } = render(
       <ConversationLifecycleNotice
-        status={{
-          kind: "updating",
-          cause: "agent_restarting",
-          tone: "progress",
-          placement: "session",
-          composer: "queue",
-        }}
         sessionId="session-1"
-        startupError={null}
-        workerStopped={false}
-        agentUnresponsive={false}
-        agentOrphaned={false}
-        trashedAt={null}
-        archivedAt={null}
-        snoozedUntil={null}
+        diagnostics={diagnostics}
+        incident={{
+          kind: "restarting",
+          action: "wait",
+          title: "Restarting agent",
+          detail: "AoE is restoring the agent session.",
+        }}
       />,
     );
     expect(getByText(/Restarting structured view worker/i)).toBeDefined();
