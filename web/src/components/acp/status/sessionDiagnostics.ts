@@ -1,6 +1,6 @@
 import type { AcpState } from "../../../lib/acpTypes";
 
-export type AcpWorkerLifecycleState = "absent" | "resuming" | "running";
+export type AcpWorkerLifecycleState = "absent" | "resuming" | "running" | "stopping";
 
 export type SessionDisposition =
   | { kind: "live" }
@@ -11,6 +11,7 @@ export type SessionDisposition =
 export type AgentRuntime =
   | { kind: "unknown" }
   | { kind: "starting" }
+  | { kind: "stopping" }
   | { kind: "ready" }
   | { kind: "dormant"; reason: "idle_auto_stop" }
   | {
@@ -71,6 +72,7 @@ function deriveRuntime(input: SessionDiagnosticsInput): AgentRuntime {
   }
   if (state.startupError) return { kind: "failed", category: "startup", message: state.startupError };
   if (state.rateLimit) return { kind: "blocked", reason: "rate_limited" };
+  if (workerState === "stopping") return { kind: "stopping" };
   if (state.workerStopped) return { kind: "stopped", reason: "user_stopped" };
   if (state.agentUnresponsive) return { kind: "restarting", reason: "cancel_unresponsive" };
   if (state.agentOrphaned) return { kind: "restarting", reason: "prompt_orphaned" };

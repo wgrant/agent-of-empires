@@ -36,6 +36,7 @@ describe("conversation diagnostics selectors", () => {
       [snapshot({ archivedAt: "2026-08-16T10:00:00Z" }), "archived", "resume_then_send"],
       [snapshot({ state: { ...emptyAcpState(), startupError: "binary missing" } }), "failed", "blocked"],
       [snapshot({ state: { ...emptyAcpState(), workerStopped: true } }), "stopped", "resume_then_send"],
+      [snapshot({ workerState: "stopping" }), "stopping", "queue_for_recovery"],
       [
         snapshot({
           state: { ...emptyAcpState(), rateLimit: { kind: "rate_limit", status: "later", resets_at: null } },
