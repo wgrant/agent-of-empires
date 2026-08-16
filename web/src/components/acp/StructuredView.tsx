@@ -13,6 +13,7 @@ import { useWebSettings } from "../../hooks/useWebSettings";
 import { useDashboardConnectionDiagnostics } from "../../lib/connectionState";
 import { lastClearIndex } from "../../lib/acpHistoryWindow";
 import { visibleSessionNotices } from "../../lib/acpTypes";
+import { derivePromptOutbox } from "../../lib/acpPromptOutbox";
 import { AgentProfileProvider } from "../../lib/agentProfileContext";
 import { conversationFontSizeRem } from "../../lib/conversationFontSize";
 import type { FileRef, FileRefSession } from "../../lib/fileRef";
@@ -530,6 +531,12 @@ function ComposerDock({
   const { sessionId, acpWorkerState, acpAgent, acpProvider } = view;
   const { state, status } = ctx;
   const composerConnected = status === "open" && !state.workerStopped && !state.workerRestarting;
+  const promptOutbox = derivePromptOutbox({
+    queued: state.queuedPrompts,
+    rejected: state.rejectedPrompts,
+    waitingForRecovery:
+      status !== "open" || acpWorkerState !== "running" || state.workerStopped || state.workerRestarting,
+  });
   return (
     <>
       <ComposerActionRail>
@@ -539,7 +546,7 @@ function ComposerDock({
         )}
         {!composerConnected && <ComposerConnectionNotice diagnostics={connectionDiagnostics} />}
         <RejectedPromptsStrip
-          rejected={state.rejectedPrompts}
+          rejected={promptOutbox.rejected}
           onRetry={ctx.sendPrompt}
           onDismiss={ctx.dismissRejectedPrompt}
           disabled={state.workerRestarting || state.workerStopped || Boolean(state.startupError)}
@@ -551,16 +558,14 @@ function ComposerDock({
           onDismiss={ctx.dismissConfigOptionSwitchFailed}
         />
         <QueuedPromptsStrip
-          queued={state.queuedPrompts}
+          queued={promptOutbox.queued}
           onRemove={ctx.removeQueuedPrompt}
           onEdit={ctx.editQueuedPrompt}
           onClear={ctx.clearQueue}
           onSendNow={ctx.sendQueuedNow}
           canSendNow={ctx.canSendQueuedNow}
           sendNowInterrupts={ctx.sendNowInterruptsTurn}
-          pendingResume={
-            status !== "open" || acpWorkerState !== "running" || state.workerStopped || state.workerRestarting
-          }
+          pendingResume={promptOutbox.queuedDelivery === "waiting_for_recovery"}
         />
         <ContextPrimerBanner
           sessionId={sessionId}
@@ -615,7 +620,7 @@ function ComposerDock({
           pendingAttachments={ctx.pendingAttachments}
           setPendingAttachments={ctx.setPendingAttachments}
           primerPrefill={primerPrefill}
-          queuedPrompts={state.queuedPrompts}
+          queuedPrompts={promptOutbox.queued}
           editQueuedPrompt={ctx.editQueuedPrompt}
         />
       </CollapsibleRegion>
