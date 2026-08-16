@@ -178,7 +178,11 @@ export function SystemNotices({
     },
   };
   const effectiveSnapshot: ConnectionStatusSnapshot = connectionSnapshot ?? {
-    dashboard: { phase: "checking", lastSuccessAt: null, failureSince: null },
+    dashboard: {
+      phase: diagnostics.serverReachability === "unreachable" ? "unavailable" : "connected",
+      lastSuccessAt: null,
+      failureSince: null,
+    },
     session: effectiveSessionConnection,
   };
   const displayDiagnostics = selectConnectionDiagnostics(effectiveSnapshot);

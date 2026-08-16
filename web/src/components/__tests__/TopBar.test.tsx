@@ -98,7 +98,7 @@ describe("TopBar", () => {
     const { getByLabelText, getByText } = renderTopBar();
     fireEvent.click(getByLabelText("Show connection status"));
     expect(getByText("Server check")).toBeTruthy();
-    expect(getByText("Current")).toBeTruthy();
+    expect(getByText("Active")).toBeTruthy();
   });
 
   it("exposes a Tips entry in the overflow menu that fires onOpenTips", () => {
