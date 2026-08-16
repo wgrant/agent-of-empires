@@ -41,6 +41,7 @@ export interface SessionDiagnosticEvidence {
   workerIdleStopped: boolean;
   agentUnresponsive: boolean;
   agentOrphaned: boolean;
+  canSteer: boolean;
 }
 
 export interface SessionDiagnostics {
@@ -119,6 +120,7 @@ export function deriveSessionDiagnostics(input: SessionDiagnosticsInput): Sessio
       workerIdleStopped: state.workerIdleStopped,
       agentUnresponsive: state.agentUnresponsive,
       agentOrphaned: state.agentOrphaned,
+      canSteer: state.promptCapabilities?.steering ?? false,
     },
   };
 }

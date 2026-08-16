@@ -35,7 +35,7 @@ describe("conversation diagnostics selectors", () => {
       [snapshot({ trashedAt: "2026-08-16T10:00:00Z" }), "trashed", "read_only"],
       [snapshot({ archivedAt: "2026-08-16T10:00:00Z" }), "archived", "resume_then_send"],
       [snapshot({ state: { ...emptyAcpState(), startupError: "binary missing" } }), "failed", "blocked"],
-      [snapshot({ state: { ...emptyAcpState(), workerStopped: true } }), "stopped", "resume_then_send"],
+      [snapshot({ state: { ...emptyAcpState(), workerStopped: true } }), "stopped", "queue_for_recovery"],
       [snapshot({ workerState: "stopping" }), "stopping", "queue_for_recovery"],
       [
         snapshot({
@@ -55,6 +55,18 @@ describe("conversation diagnostics selectors", () => {
         "wake_agent",
       ],
       [snapshot({ state: { ...emptyAcpState(), turnActive: true, compacting: true } }), null, "queue_after_turn"],
+      [snapshot({ state: { ...emptyAcpState(), turnActive: true } }), null, "queue_after_turn"],
+      [
+        snapshot({
+          state: {
+            ...emptyAcpState(),
+            turnActive: true,
+            promptCapabilities: { image: false, audio: false, embeddedContext: false, steering: true },
+          },
+        }),
+        null,
+        "steer_now",
+      ],
     ] as const;
 
     for (const [current, incident, composer] of cases) {
