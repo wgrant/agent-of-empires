@@ -296,9 +296,16 @@ export async function openStructuredSession(page: Page, mock: AcpSessionMock) {
   await expect(page.locator("header")).toBeVisible();
 }
 
-/** The Send button reads "Send message" only once the WS is open; earlier sends queue instead. */
+/** Wait until the structured view WebSocket is open. Reveal the compact
+ * mobile composer first because earlier sends queue instead of posting. */
 export async function waitForComposerConnected(page: Page) {
-  await expect(page.getByRole("button", { name: "Send message" })).toBeVisible({ timeout: 10_000 });
+  const openComposer = page.getByRole("button", { name: /^Open message composer/ });
+  const sendMessage = page.getByRole("button", { name: "Send message" });
+  await expect
+    .poll(async () => (await openComposer.isVisible()) || (await sendMessage.isVisible()), { timeout: 10_000 })
+    .toBe(true);
+  if (await openComposer.isVisible()) await openComposer.click();
+  await expect(sendMessage).toBeVisible({ timeout: 10_000 });
 }
 
 /* ── AcpEvent builders (externally-tagged serde shapes) ──────────── */

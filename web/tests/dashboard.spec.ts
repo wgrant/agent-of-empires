@@ -12,9 +12,12 @@ test.describe("Dashboard layout", () => {
     await expect(page.getByText("Docs")).toBeVisible();
   });
 
-  test("shows offline indicator when API unreachable", async ({ page }) => {
+  test("exposes an unavailable connection status when the API is unreachable", async ({ page }) => {
     await page.goto("/");
-    await expect(page.getByText("offline")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Show connection status" })).toHaveAttribute(
+      "aria-description",
+      "Connection to AoE is unavailable.",
+    );
   });
 });
 
