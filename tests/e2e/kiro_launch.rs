@@ -125,22 +125,28 @@ fn launch_kiro_and_read_command(
     (cmd, guard)
 }
 
-/// Poll (up to 10s) for the recording stub to write the argv the launch ran it
-/// with. Returns the recorded command line.
+/// Poll (up to 10s) for the recording stub to write the interactive launch
+/// argv. Kiro's hook installation also invokes `kiro-cli agent set-default`,
+/// so the first recorder write is not necessarily the pane command we want to
+/// assert.
 fn wait_for_recorded_argv(path: &std::path::Path) -> String {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    let mut last_command = None;
     loop {
         if let Ok(content) = std::fs::read_to_string(path) {
-            // Hook installation invokes the same stub with "agent set-default"
-            // before the pane launches. Wait for the interactive invocation.
-            if content.contains("kiro-cli chat") {
-                return content.trim().to_string();
+            let command = content.trim();
+            if command.contains("kiro-cli chat") {
+                return command.to_string();
+            }
+            if !command.is_empty() {
+                last_command = Some(command.to_string());
             }
         }
         if std::time::Instant::now() >= deadline {
             panic!(
-                "kiro-cli stub never recorded its argv at {} (launch did not exec it)",
-                path.display()
+                "kiro-cli stub never recorded the chat launch at {} (last command: {:?})",
+                path.display(),
+                last_command
             );
         }
         std::thread::sleep(std::time::Duration::from_millis(100));
