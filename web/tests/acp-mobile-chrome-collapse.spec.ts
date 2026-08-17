@@ -27,6 +27,13 @@ test.describe("mobile conversation chrome collapse", () => {
     const draft = page.getByRole("textbox").first();
     await draft.fill("half-written prompt");
 
+    // The compact mobile composer returns to its status row on blur. The
+    // chrome-collapse assertions below deliberately measure that stable
+    // unfocused state, so a focus transition does not masquerade as layout
+    // height released by a chrome handle.
+    await headerToggle.focus();
+    await expect(page.getByRole("button", { name: /^Open message composer/ })).toBeVisible();
+
     const headerHeight = await heightOf("conversation-header");
     const composerHeight = await heightOf("conversation-composer");
     expect(headerHeight).toBeGreaterThan(0);
@@ -64,6 +71,7 @@ test.describe("mobile conversation chrome collapse", () => {
     await expect.poll(() => heightOf("conversation-header")).toBe(headerHeight);
     expect(await viewportHeight()).toBeCloseTo(bothExpanded, 0);
 
+    await page.getByRole("button", { name: /^Open message composer/ }).click();
     await expect(draft).toHaveValue("half-written prompt");
     await draft.fill("still typing");
     await page.getByRole("button", { name: "Send message" }).click();
