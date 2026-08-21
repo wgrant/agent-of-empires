@@ -17,6 +17,8 @@ export interface AutoLoadInput {
    *  mount sample establishes scroll state but must not be mistaken for an
    *  arrival at the top. */
   hasScrolled: boolean;
+  /** Whether this scroll moved toward the transcript's top boundary. */
+  movingTowardTop: boolean;
   now: number;
   lastLoadAt: number;
 }
@@ -28,11 +30,19 @@ export interface AutoLoadDecision {
 
 /** Fires only when the transcript overflows, once per arming and cooldown window. */
 export function autoLoadDecision(i: AutoLoadInput): AutoLoadDecision {
-  if (!i.hasScrolled) return { armed: true, fire: false };
+  // The controller deliberately survives an assistant-ui runtime remount.
+  // Observing a fresh viewport is not a reader moving away from the top, so
+  // it must not re-arm a request that just consumed the current arming. A
+  // later real scroll beyond the preload boundary performs that re-arm.
+  if (!i.hasScrolled) return { armed: i.armed, fire: false };
   const overflowing = i.scrollHeight > i.clientHeight + HISTORY_PRELOAD_PX;
   if (!overflowing || i.scrollTop > HISTORY_PRELOAD_PX) {
     return { armed: true, fire: false };
   }
+  // A reader leaving the top of a newly revealed range can still be within
+  // the preload zone for a few pixels. Only an upward arrival asks for older
+  // history; a downward scroll must be allowed to enter the newer range.
+  if (!i.movingTowardTop) return { armed: i.armed, fire: false };
   if (i.armed && i.canLoadEarlier && i.now - i.lastLoadAt > HISTORY_AUTOLOAD_COOLDOWN_MS) {
     return { armed: false, fire: true };
   }

@@ -56,6 +56,11 @@ describe("historyWindowStart", () => {
     rows[35] = row("user_diff_comments", 35);
     return rows;
   };
+  const longGoalTurn = () => [
+    row("user_prompt", 0),
+    ...Array.from({ length: 300 }, (_, i) => row("tool_complete", i)),
+    row("user_prompt", 999),
+  ];
 
   it.each<[string, () => ActivityRow[], number, number]>([
     ["everything fits", () => transcript(2, 3), DEFAULT_HISTORY_WINDOW, 0],
@@ -63,9 +68,10 @@ describe("historyWindowStart", () => {
     ["the window exceeds the transcript", () => transcript(5, 5), 1000, 0],
     ["a zero window", () => transcript(10, 10), 0, 0],
     ["a negative window", () => transcript(10, 10), -5, 0],
-    ["snaps forward to a user turn", () => transcript(10, 10), 30, 88],
+    ["cuts after a completed visual block", () => transcript(10, 10), 30, 80],
     ["hard-cuts one huge turn", hugeTurn, 150, 351],
-    ["treats diff comments as a boundary", diffTurn, 10, 35],
+    ["does not skip ahead to diff comments", diffTurn, 10, 30],
+    ["pages through a long goal turn", longGoalTurn, DEFAULT_HISTORY_WINDOW, 152],
     ["pulls back to a Task parent (#2313)", () => subagentTranscript(100, 50), 40, 101],
     ["keeps a cut on the Task parent", () => subagentTranscript(100, 50), 51, 101],
     ["walks a nested parent chain", () => subagentTranscript(100, 49, ["task1", "task2"]), 40, 101],

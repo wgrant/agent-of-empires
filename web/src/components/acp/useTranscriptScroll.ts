@@ -8,6 +8,8 @@ import { promptRepinDecision } from "../../lib/promptRepin";
 import { repinOnResize } from "../../lib/repinOnResize";
 import { resampleToolAnchors, sampleToolAnchors, toolAnchorDelta, type ToolAnchor } from "../../lib/toolAnchor";
 
+const HISTORY_AUTOPAGING_SETTLE_MS = 600;
+
 /** Stick-to-bottom, earlier-history auto-load, and PWA-reopen scroll restore
  *  for the transcript viewport. These observers own bottom-following; the
  *  viewport primitive's own auto-scroll must stay disabled. */
@@ -91,6 +93,9 @@ export function useTranscriptScroll({
   // when older rows land above it.
   const pendingScrollAnchorRef = useRef<number | null>(null);
   const lastAutoLoadAtRef = useRef(0);
+  const lastSampledScrollTopRef = useRef<number | null>(null);
+  const userScrollInputRef = useRef(false);
+  const autoPagingEligibleAtRef = useRef(0);
 
   const requestEarlierHistory = useCallback(() => {
     const vp = viewportRef.current;
@@ -123,6 +128,9 @@ export function useTranscriptScroll({
     const below = belowViewportRef.current;
     const content = messagesContentRef.current;
     if (!vp || !below) return;
+    userScrollInputRef.current = false;
+    autoPagingEligibleAtRef.current = performance.now() + HISTORY_AUTOPAGING_SETTLE_MS;
+    lastSampledScrollTopRef.current = vp.scrollTop;
     // On coarse pointers the browser fires "scroll" for programmatic and
     // resize-driven scrolls too, so the stick intent is only re-sampled during
     // a real touch/wheel gesture there.
@@ -136,9 +144,13 @@ export function useTranscriptScroll({
     };
     const markGesture = () => {
       gestureActive = true;
+      userScrollInputRef.current = true;
       scheduleGestureClear();
     };
     const sample = (force = false) => {
+      const previousScrollTop = lastSampledScrollTopRef.current;
+      const movingTowardTop = previousScrollTop !== null && vp.scrollTop < previousScrollTop;
+      lastSampledScrollTopRef.current = vp.scrollTop;
       if (force || !isCoarse || gestureActive) {
         const pinned = isPinnedToBottom(vp.scrollTop, vp.clientHeight, vp.scrollHeight);
         const prevStuck = wasAtBottomRef.current;
@@ -159,12 +171,16 @@ export function useTranscriptScroll({
         scrollHeight: vp.scrollHeight,
         armed: autoLoadArmedRef.current,
         canLoadEarlier: canLoadEarlierRef.current,
-        hasScrolled: !force,
+        hasScrolled: !force && userScrollInputRef.current && performance.now() >= autoPagingEligibleAtRef.current,
+        movingTowardTop,
         now: performance.now(),
         lastLoadAt: lastAutoLoadAtRef.current,
       });
       autoLoadArmedRef.current = decision.armed;
-      if (decision.fire) requestEarlierHistory();
+      if (decision.fire) {
+        userScrollInputRef.current = false;
+        requestEarlierHistory();
+      }
     };
     const onScroll = () => {
       sample();
@@ -172,10 +188,18 @@ export function useTranscriptScroll({
       toolAnchorsRef.current = resampleToolAnchors(vp, previous);
       if (toolAnchorsRef.current !== previous) anchorIntentRef.current = wasAtBottomRef.current;
     };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(event.key)) {
+        userScrollInputRef.current = true;
+      }
+    };
     sample(true);
     vp.addEventListener("scroll", onScroll, { passive: true });
     vp.addEventListener("wheel", markGesture, { passive: true });
+    vp.addEventListener("pointerdown", markGesture, { passive: true });
+    vp.addEventListener("touchstart", markGesture, { passive: true });
     vp.addEventListener("touchmove", markGesture, { passive: true });
+    window.addEventListener("keydown", onKeyDown);
     // Pin on every visualViewport resize frame so the transcript tracks the
     // soft keyboard animation in lockstep.
     const vv = typeof window !== "undefined" ? window.visualViewport : null;
@@ -255,7 +279,10 @@ export function useTranscriptScroll({
       contentRo.disconnect();
       vp.removeEventListener("scroll", onScroll);
       vp.removeEventListener("wheel", markGesture);
+      vp.removeEventListener("pointerdown", markGesture);
+      vp.removeEventListener("touchstart", markGesture);
       vp.removeEventListener("touchmove", markGesture);
+      window.removeEventListener("keydown", onKeyDown);
       vv?.removeEventListener("resize", onVvResize);
       window.removeEventListener("pagehide", saveScroll);
       document.removeEventListener("visibilitychange", onVisibility);
