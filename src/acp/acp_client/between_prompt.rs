@@ -28,6 +28,21 @@ pub(super) struct BetweenPromptUpdate {
     pub(super) wake_at: i64,
 }
 
+/// Whether an inbound lifecycle signal proves an agent-initiated turn has
+/// actually begun. `TerminalUsage` only closes a turn and a wakeup is merely
+/// a promise of later work, so neither should make clients show active work.
+pub(super) fn starts_agent_initiated_turn(signal: Option<&LifecycleSignal>) -> bool {
+    matches!(
+        signal,
+        Some(
+            LifecycleSignal::Progress
+                | LifecycleSignal::ToolStarted { .. }
+                | LifecycleSignal::ToolCompleted { .. }
+                | LifecycleSignal::CompactionStarted
+        )
+    )
+}
+
 pub(super) fn between_prompt_signal_update(
     lifecycle: Option<&LifecycleSignal>,
     wakeup: Option<&LifecycleSignal>,
@@ -108,6 +123,7 @@ pub(super) fn between_prompt_stop_reason(adopted: bool, cost_seen: bool) -> &'st
 #[derive(Debug, Default)]
 struct TrackerState {
     active: bool,
+    announced: bool,
     cost_seen: bool,
     last_lifecycle_at: i64,
     wake_at: i64,
@@ -145,7 +161,8 @@ impl BetweenPromptTracker {
     }
 
     /// Fold one notification's signals while no aoe prompt is in flight.
-    /// Returns true when this arms a new agent-initiated turn.
+    /// Returns true once per agent-initiated turn when concrete activity first
+    /// proves that it has started.
     pub(super) fn observe(
         &self,
         lifecycle: Option<&LifecycleSignal>,
@@ -155,12 +172,10 @@ impl BetweenPromptTracker {
         terminal_claim: &TerminalClaim,
     ) -> bool {
         let mut state = self.state();
-        let mut armed = false;
         if let Some(u) = between_prompt_signal_update(lifecycle, wakeup, now_ms, state.wake_at) {
             if !state.active {
                 state.active = true;
                 terminal_claim.begin_turn();
-                armed = true;
             }
             state.cost_seen = u.cost_seen;
             state.last_lifecycle_at = u.last_lifecycle_at;
@@ -191,7 +206,9 @@ impl BetweenPromptTracker {
             }
             _ => {}
         }
-        armed
+        let announce = starts_agent_initiated_turn(lifecycle) && !state.announced;
+        state.announced |= announce;
+        announce
     }
 
     pub(super) fn work_state(&self) -> BetweenPromptWorkState {
@@ -206,7 +223,9 @@ impl BetweenPromptTracker {
     }
 
     pub(super) fn deactivate(&self) {
-        self.state().active = false;
+        let mut state = self.state();
+        state.active = false;
+        state.announced = false;
     }
 
     /// A real prompt supersedes any tracked agent-initiated turn.
@@ -468,6 +487,35 @@ mod tests {
                 ),
                 want,
                 "{lifecycle:?} {wakeup:?}"
+            );
+        }
+
+        let starts = [
+            (Some(LifecycleSignal::Progress), true),
+            (
+                Some(LifecycleSignal::ToolStarted {
+                    id: "tool-1".into(),
+                    is_background_task: false,
+                }),
+                true,
+            ),
+            (
+                Some(LifecycleSignal::ToolCompleted {
+                    id: "tool-1".into(),
+                    succeeded: true,
+                    off_protocol_work: None,
+                }),
+                true,
+            ),
+            (Some(LifecycleSignal::CompactionStarted), true),
+            (Some(LifecycleSignal::TerminalUsage), false),
+            (None, false),
+        ];
+        for (signal, expected) in starts {
+            assert_eq!(
+                starts_agent_initiated_turn(signal.as_ref()),
+                expected,
+                "{signal:?}"
             );
         }
     }

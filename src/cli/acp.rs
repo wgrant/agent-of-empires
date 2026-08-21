@@ -1090,6 +1090,7 @@ fn event_kind(event: &crate::acp::Event) -> &'static str {
         Event::AgentStartupError { .. } => "agent_startup_error",
         Event::IncompatibleAgent { .. } => "incompatible_agent",
         Event::UserPromptSent { .. } => "user_prompt_sent",
+        Event::AgentTurnStarted => "agent_turn_started",
         Event::UserDiffCommentsPrompt { .. } => "user_diff_comments_prompt",
         Event::PromptCapabilities { .. } => "prompt_capabilities",
         Event::AcpSessionAssigned { .. } => "acp_session_assigned",

@@ -100,6 +100,7 @@ impl EventStore {
                     "SELECT event_json FROM acp_events
                      WHERE session_id = ?1
                        AND (json_extract(event_json, '$.UserPromptSent') IS NOT NULL
+                         OR event_json = '\"AgentTurnStarted\"'
                          OR json_extract(event_json, '$.ApprovalRequested') IS NOT NULL
                          OR json_extract(event_json, '$.ApprovalResolved') IS NOT NULL
                          OR json_extract(event_json, '$.ElicitationRequested') IS NOT NULL
@@ -687,6 +688,11 @@ mod tests {
         assert!(matches!(
             store.latest_seed_status_event("s-3"),
             Some(Event::ThinkingStarted)
+        ));
+        store.record("s-4", 1, &Event::AgentTurnStarted).unwrap();
+        assert!(matches!(
+            store.latest_seed_status_event("s-4"),
+            Some(Event::AgentTurnStarted)
         ));
     }
 

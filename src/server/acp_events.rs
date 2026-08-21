@@ -787,6 +787,7 @@ pub(crate) fn derive_acp_status(
     use crate::acp::Event;
     match event {
         Event::UserPromptSent { .. }
+        | Event::AgentTurnStarted
         | Event::ApprovalResolved { .. }
         | Event::ElicitationResolved { .. } => Some(StatusIntent::Set(Status::Running)),
         // Agent transcript output means a turn is live even when no UserPromptSent preceded

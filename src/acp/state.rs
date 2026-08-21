@@ -496,6 +496,9 @@ pub enum Event {
     AgentThoughtChunk {
         text: String,
     },
+    /// The agent began work without an AoE-issued prompt, such as after a
+    /// scheduled wake or native goal continuation.
+    AgentTurnStarted,
     ThinkingStarted,
     ThinkingEnded,
     RateLimit {
@@ -772,7 +775,7 @@ impl AcpState {
                     .saturating_sub(Self::MAX_RECENT_DIFFS);
                 self.recent_diffs.drain(..excess);
             }
-            Event::AgentThoughtChunk { .. } | Event::ThinkingStarted => {
+            Event::AgentTurnStarted | Event::AgentThoughtChunk { .. } | Event::ThinkingStarted => {
                 self.thinking = Some(ThinkingSignal {
                     started_at: Utc::now(),
                 });

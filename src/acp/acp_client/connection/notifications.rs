@@ -197,15 +197,15 @@ impl Shared {
             self.first_event_after_attach.store(true, Ordering::Relaxed);
         }
         let prompt_active = self.prompt_in_flight.load(Ordering::Relaxed);
-        if !prompt_active
+        let agent_turn_started = !prompt_active
             && self.between_prompt.observe(
                 lifecycle.as_ref(),
                 wakeup.as_ref(),
                 now_ms(),
                 self.adopted_turn_active.load(Ordering::Relaxed),
                 &self.terminal_claim,
-            )
-        {
+            );
+        if agent_turn_started {
             debug!(
                 target: "acp.protocol",
                 session = %self.session_label,
@@ -226,6 +226,9 @@ impl Shared {
             &self.session_label,
         )
         .await;
+        if agent_turn_started && self.event_tx.send(Event::AgentTurnStarted).await.is_err() {
+            return;
+        }
         for event in events {
             if let Event::BackgroundAgentLaunched {
                 agent_id,
