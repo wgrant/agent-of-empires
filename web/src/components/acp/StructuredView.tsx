@@ -349,7 +349,10 @@ function AcpChrome({
         {connectionNotice}
         <div className="relative flex min-h-0 flex-1 flex-col">
           <ThreadPrimitive.Viewport
-            autoScroll={false}
+            autoScroll={!ctx.suppressHistoryInitializeScroll}
+            scrollToBottomOnInitialize={!ctx.suppressHistoryInitializeScroll}
+            scrollToBottomOnRunStart={!ctx.suppressHistoryInitializeScroll}
+            scrollToBottomOnThreadSwitch={!ctx.suppressHistoryInitializeScroll}
             ref={viewportRef}
             data-testid="acp-viewport"
             className="flex-1 overflow-x-hidden overflow-y-auto [overflow-anchor:none]"

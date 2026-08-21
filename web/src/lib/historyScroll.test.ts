@@ -21,6 +21,7 @@ const base = {
   armed: true,
   canLoadEarlier: true,
   hasScrolled: true,
+  movingTowardTop: true,
   now: 10_000,
   lastLoadAt: 0,
 };
@@ -30,8 +31,9 @@ describe("autoLoadDecision", () => {
     expect(autoLoadDecision(base)).toEqual({ armed: false, fire: true });
   });
 
-  it("does not treat the initial mount sample as a scroll to the top", () => {
+  it("does not treat the initial mount sample as a scroll or re-arm a consumed request", () => {
     expect(autoLoadDecision({ ...base, hasScrolled: false })).toEqual({ armed: true, fire: false });
+    expect(autoLoadDecision({ ...base, hasScrolled: false, armed: false })).toEqual({ armed: false, fire: false });
   });
 
   it("re-arms and does not fire away from the top", () => {
@@ -50,6 +52,10 @@ describe("autoLoadDecision", () => {
 
   it("does not fire while disarmed (one load per arming)", () => {
     expect(autoLoadDecision({ ...base, armed: false })).toEqual({ armed: false, fire: false });
+  });
+
+  it("does not treat a downward scroll near the top as a request for older history", () => {
+    expect(autoLoadDecision({ ...base, movingTowardTop: false })).toEqual({ armed: true, fire: false });
   });
 
   it("holds fire within the cooldown window", () => {

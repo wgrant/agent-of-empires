@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { ActivityRow } from "../lib/acpTypes";
 import {
@@ -54,6 +54,20 @@ export interface HistoryWindowState {
   generation: number;
 }
 
+export interface HistoryWindowDebugSnapshot {
+  sessionId: string;
+  activityRows: number;
+  visibleRows: number;
+  windowEnd: number;
+  start: number;
+  pinnedStart: number | null;
+  generation: number;
+  canLoadEarlier: boolean;
+  canLoadNewer: boolean;
+  firstRenderedRowId: string | null;
+  lastRenderedRowId: string | null;
+}
+
 /** An explicitly expanded transcript stays useful without mounting an
  * unbounded number of rich message cards. Each navigator move overlaps the
  * preceding range by one normal history step. */
@@ -85,6 +99,10 @@ export function useHistoryWindow(
 ): HistoryWindowState {
   const [visibleRows, setVisibleRows] = useState(() => rememberedHistoryWindow(sessionId));
   const [windowEnd, setWindowEnd] = useState(() => activity.length);
+  // The normal row budget is re-cut at a user-turn boundary. Preserve the
+  // actual cut while this range follows a live tail, otherwise a huge prior
+  // turn can make the first new prompt hide the rows already on screen.
+  const [pinnedStart, setPinnedStart] = useState<number | null>(null);
   const [windowSessionId, setWindowSessionId] = useState(sessionId);
   const [generation, setGeneration] = useState(0);
   const [previousRows, setPreviousRows] = useState(() => ({
@@ -96,6 +114,7 @@ export function useHistoryWindow(
     setWindowSessionId(sessionId);
     setVisibleRows(rememberedHistoryWindow(sessionId));
     setWindowEnd(activity.length);
+    setPinnedStart(null);
     setGeneration(0);
     setPreviousRows({ length: activity.length, firstId: activity[0]?.id ?? null, lastId: activity.at(-1)?.id ?? null });
   } else if (
@@ -112,9 +131,11 @@ export function useHistoryWindow(
       // React render. There is no prior row identity to classify that change
       // as an append, but the new transcript is still tail-anchored.
       setWindowEnd(activity.length);
+      setPinnedStart(null);
     } else if (prepended) {
       // Keep the reader on the same rows when an older server page is added.
       setWindowEnd((end) => Math.min(activity.length, end + growth));
+      if (pinnedStart !== null) setPinnedStart(pinnedStart + growth);
       // This replaces the external runtime's bounded source range. Live tail
       // appends deliberately do not advance this generation. See #2236.
       setGeneration((current) => current + 1);
@@ -124,7 +145,13 @@ export function useHistoryWindow(
       // that, the bottom navigator makes newer rows explicit instead of
       // silently mounting an unbounded transcript.
       setWindowEnd(activity.length);
-      if (preserveStartOnGrowth) setVisibleRows((rows) => Math.min(MAX_HISTORY_WINDOW, rows + growth));
+      if (preserveStartOnGrowth) {
+        const priorEnd = Math.min(windowEnd, previousRows.length);
+        setPinnedStart(pinnedStart ?? historyWindowStart(activity, visibleRows, priorEnd));
+        setVisibleRows((rows) => Math.min(MAX_HISTORY_WINDOW, rows + growth));
+      } else {
+        setPinnedStart(null);
+      }
     } else if (growth < 0) {
       setWindowEnd((end) => Math.min(end, activity.length));
     }
@@ -132,12 +159,54 @@ export function useHistoryWindow(
   }
   const boundedEnd = Math.min(windowEnd, activity.length);
   const { start, canLoadEarlier } = useMemo(
-    () => historyWindow(activity, visibleRows, showClearedTurns, boundedEnd),
-    [activity, boundedEnd, visibleRows, showClearedTurns],
+    () => historyWindow(activity, visibleRows, showClearedTurns, boundedEnd, pinnedStart),
+    [activity, boundedEnd, visibleRows, showClearedTurns, pinnedStart],
   );
   const windowedActivity = useMemo(() => activity.slice(start, boundedEnd), [activity, boundedEnd, start]);
+  const canLoadNewer = boundedEnd < activity.length;
+  // Read-only browser-console aid for diagnosing a production history jump.
+  // The transcript cache tells us whether rows exist; this adds the separate
+  // question of which bounded range the hook intended to mount.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const debugWindow = window as typeof window & {
+      __aoeDebug?: { historyWindow?: () => HistoryWindowDebugSnapshot };
+    };
+    const historyWindow = () => ({
+      sessionId,
+      activityRows: activity.length,
+      visibleRows,
+      windowEnd: boundedEnd,
+      start,
+      pinnedStart,
+      generation,
+      canLoadEarlier,
+      canLoadNewer,
+      firstRenderedRowId: windowedActivity[0]?.id ?? null,
+      lastRenderedRowId: windowedActivity.at(-1)?.id ?? null,
+    });
+    debugWindow.__aoeDebug = {
+      ...debugWindow.__aoeDebug,
+      historyWindow,
+    };
+    return () => {
+      if (debugWindow.__aoeDebug?.historyWindow === historyWindow) delete debugWindow.__aoeDebug.historyWindow;
+    };
+  }, [
+    activity.length,
+    boundedEnd,
+    canLoadEarlier,
+    canLoadNewer,
+    generation,
+    pinnedStart,
+    sessionId,
+    start,
+    visibleRows,
+    windowedActivity,
+  ]);
   const loadEarlier = useCallback(() => {
     setGeneration((current) => current + 1);
+    setPinnedStart(null);
     if (visibleRows < MAX_HISTORY_WINDOW) {
       const next = nextHistoryWindowSize(activity, visibleRows, boundedEnd);
       if (next <= MAX_HISTORY_WINDOW) {
@@ -148,36 +217,29 @@ export function useHistoryWindow(
         return;
       }
     }
-    const currentStart = historyWindowStart(activity, visibleRows, boundedEnd);
-    let previousTurnStart = -1;
-    for (let index = Math.max(0, currentStart - DEFAULT_HISTORY_WINDOW); index >= 0; index -= 1) {
-      const kind = activity[index]?.kind;
-      if (kind === "user_prompt" || kind === "user_diff_comments") {
-        previousTurnStart = index;
-        break;
-      }
-    }
+    // Once the local range reaches its bounded maximum, page the range
+    // itself backward by one overlapping step. Do not jump to the previous
+    // user prompt: a `/goal` can contain thousands of visual blocks beneath
+    // one prompt, and that old boundary would skip a large middle span.
     setVisibleRows(MAX_HISTORY_WINDOW);
-    setWindowEnd(() =>
-      previousTurnStart >= 0
-        ? Math.min(activity.length, previousTurnStart + MAX_HISTORY_WINDOW)
-        : Math.max(0, boundedEnd - DEFAULT_HISTORY_WINDOW),
-    );
+    setWindowEnd(() => Math.max(0, boundedEnd - DEFAULT_HISTORY_WINDOW));
   }, [activity, boundedEnd, sessionId, visibleRows]);
   const loadNewer = useCallback(() => {
     setGeneration((current) => current + 1);
+    setPinnedStart(null);
     setVisibleRows(MAX_HISTORY_WINDOW);
     setWindowEnd((end) => Math.min(activity.length, end + DEFAULT_HISTORY_WINDOW));
   }, [activity.length]);
   const jumpToLatest = useCallback(() => {
     setGeneration((current) => current + 1);
+    setPinnedStart(null);
     setVisibleRows(MAX_HISTORY_WINDOW);
     setWindowEnd(activity.length);
   }, [activity.length]);
   return {
     windowedActivity,
     canLoadEarlier,
-    canLoadNewer: boundedEnd < activity.length,
+    canLoadNewer,
     loadEarlier,
     loadNewer,
     jumpToLatest,

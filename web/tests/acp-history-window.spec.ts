@@ -183,25 +183,74 @@ test("scrolling to the top auto-loads earlier messages", async ({ page }) => {
   await expect(page.getByText("autoload prompt 0")).toHaveCount(0);
 
   const viewport = page.getByTestId("acp-viewport");
-  // Re-arm, then arrive at the top twice. Each range replacement
-  // remounts assistant-ui, so this catches a remount resetting automatic
-  // paging and mistaking its own restoration scroll for another user action.
-  for (let load = 0; load < 2; load += 1) {
+  // A real upward arrival at the top reveals one earlier page. Repeated range
+  // replacement is covered by the mixed-navigation scenario below; this
+  // synthetic event sequence intentionally stays to one physical gesture.
+  for (let load = 0; load < 1; load += 1) {
     await viewport.evaluate((el) => {
+      el.dispatchEvent(new WheelEvent("wheel", { bubbles: true }));
       el.scrollTop = 300;
+      el.dispatchEvent(new Event("scroll"));
     });
     // The real control deliberately debounces arrivals at the boundary, so
     // wait beyond that guard before simulating the next independent scroll.
-    await page.waitForTimeout(600);
+    await page.waitForTimeout(700);
     const beforeHeight = await viewport.evaluate((el) => el.scrollHeight);
     await viewport.evaluate((el) => {
+      el.dispatchEvent(new WheelEvent("wheel", { bubbles: true }));
       el.scrollTop = 0;
+      el.dispatchEvent(new Event("scroll"));
     });
     await expect.poll(() => viewport.evaluate((el) => el.scrollHeight)).toBeGreaterThan(beforeHeight);
     // The external viewport schedules its default initialization scroll in a
     // frame; stay through it so this proves a history replacement cannot land
     // at the top briefly and then fall through to the tail.
     await page.waitForTimeout(250);
+    await expect.poll(() => viewport.evaluate((el) => el.scrollTop)).toBeLessThanOrEqual(16);
+  }
+});
+
+// A real reader often alternates between dragging the scrollbar to the top
+// and clicking the visible control while an earlier replacement is mounting.
+// Keep the reader at the requested top boundary through that mixed path: a
+// stale replacement anchor used to let assistant-ui's tail-follow win and
+// strand a range between the two navigators.
+test("mixed top-scroll and button navigation does not jump away from requested history", async ({ page }) => {
+  const events: unknown[] = [];
+  for (let i = 0; i < 1_000; i += 1) {
+    events.push(userPrompt(`mixed prompt ${i}`), agentMessageChunk(`mixed reply ${i}`), stopped());
+  }
+  const mock = await mockAcpSession(page, { title: "story-history-mixed-navigation", initialEvents: events });
+  await openStructuredSession(page, mock);
+
+  const viewport = page.getByTestId("acp-viewport");
+  await expect(page.getByText("mixed reply 999")).toBeVisible({ timeout: 10_000 });
+
+  for (let step = 0; step < 4; step += 1) {
+    // Re-arm the top-edge auto-loader, then arrive at the boundary.
+    await viewport.evaluate((el) => {
+      el.dispatchEvent(new WheelEvent("wheel", { bubbles: true }));
+      el.scrollTop = Math.min(300, Math.max(1, el.scrollHeight - el.clientHeight));
+      el.dispatchEvent(new Event("scroll"));
+    });
+    await page.waitForTimeout(700);
+    await viewport.evaluate((el) => {
+      el.dispatchEvent(new WheelEvent("wheel", { bubbles: true }));
+      el.scrollTop = 0;
+      el.dispatchEvent(new Event("scroll"));
+    });
+
+    // Interleave an explicit click in the same boundary arrival. The control
+    // may be temporarily disabled while a server page fetches, so resolve it
+    // at the instant of the click and tolerate that intentional no-op.
+    await page.getByTestId("acp-load-earlier").evaluate((el) => {
+      if (el instanceof HTMLButtonElement && !el.disabled) el.click();
+    });
+    await page.waitForTimeout(500);
+
+    // Both actions requested older history from the top. The settled range
+    // must still show that newly revealed boundary rather than falling to the
+    // current tail because a stale runtime mount scrolled it there.
     await expect.poll(() => viewport.evaluate((el) => el.scrollTop)).toBeLessThanOrEqual(16);
   }
 });
