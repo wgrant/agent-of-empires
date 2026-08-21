@@ -341,6 +341,7 @@ export type AcpEvent =
   | "ConversationCompacted"
   | { ConversationCompactionSummary: { compaction_id: string; text: string } }
   | { DiffEmitted: { diff: DiffPreview } }
+  | "AgentTurnStarted"
   | "ThinkingStarted"
   | "ThinkingEnded"
   | { RateLimit: { info: RateLimitInfo } }
@@ -938,7 +939,7 @@ export function applyEvent(state: AcpState, frame: AcpFrame): AcpState {
   const event = frame.event;
   if (typeof event === "string") {
     // The agent reports lifetime cost, so each context boundary snapshots a baseline.
-    if (event === "ThinkingStarted") {
+    if (event === "AgentTurnStarted" || event === "ThinkingStarted") {
       // Agent-initiated work still opens a turn, mirroring `AcpState::apply_event`.
       next.serverTurnActive = true;
       next.turnActive = true;
