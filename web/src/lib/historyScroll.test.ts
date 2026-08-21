@@ -21,6 +21,7 @@ const base = {
   armed: true,
   canLoadEarlier: true,
   hasScrolled: true,
+  movingTowardTop: true,
   now: 10_000,
   lastLoadAt: 0,
 };
@@ -38,6 +39,12 @@ it("autoLoadDecision fires once per arming at the top of an overflowing transcri
     ],
     ["no older history", { canLoadEarlier: false }, { armed: true, fire: false }],
     ["the initial mount sample", { hasScrolled: false }, { armed: true, fire: false }],
+    [
+      "the initial mount sample after a consumed request",
+      { hasScrolled: false, armed: false },
+      { armed: false, fire: false },
+    ],
+    ["a downward scroll near the top", { movingTowardTop: false }, { armed: true, fire: false }],
   ];
   for (const [name, over, expected] of cases) expect(autoLoadDecision({ ...base, ...over }), name).toEqual(expected);
 });
