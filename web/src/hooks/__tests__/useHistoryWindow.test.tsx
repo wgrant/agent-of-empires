@@ -112,7 +112,7 @@ describe("useHistoryWindow", () => {
     expect(result.current.generation).toBe(afterTailJump + 1);
   });
 
-  it("loadEarlier crosses a tool-heavy turn instead of leaving the boundary unchanged", () => {
+  it("loadEarlier pages progressively through a tool-heavy turn", () => {
     const activity: ActivityRow[] = [{ id: "old-user", kind: "user_prompt", text: "old prompt" }];
     for (let i = 0; i < 400; i += 1) {
       activity.push({ id: `old-tool-${i}`, kind: "tool_complete", text: `tool ${i}` });
@@ -122,11 +122,19 @@ describe("useHistoryWindow", () => {
       activity.push({ id: `new-message-${i}`, kind: "message", text: `message ${i}` });
     }
     const { result } = renderHook(() => useHistoryWindow("s1", activity, false));
-    expect(result.current.windowedActivity[0]!.id).toBe("new-user");
+    expect(result.current.windowedActivity[0]!.id).toBe("old-tool-351");
 
     act(() => result.current.loadEarlier());
 
-    expect(result.current.windowedActivity[0]!.id).toBe("old-user");
+    expect(result.current.windowedActivity[0]!.id).toBe("old-tool-201");
+
+    // At the 300-row maximum, the next action moves the bounded range back
+    // by one overlapping step. It must not leap all the way to old-user,
+    // which would skip most of this one long goal turn.
+    act(() => result.current.loadEarlier());
+
+    expect(result.current.windowedActivity[0]!.id).toBe("old-tool-51");
+    expect(result.current.windowedActivity.at(-1)!.id).toBe("old-tool-350");
   });
 
   it("keeps earlier rows on screen when new turns append (no re-fold)", () => {
@@ -218,6 +226,28 @@ describe("useHistoryWindow", () => {
     const trimmed = activity.filter((r) => r.id !== topBefore).slice(60);
     rerender({ a: trimmed });
     expect(result.current.windowedActivity[0]!.id).toBe(trimmed[0]!.id);
+  });
+
+  it("does not collapse a tool-heavy tail to the first newly-sent prompt", () => {
+    // The forward user-boundary snap normally keeps a render window from
+    // beginning inside a turn. When this single huge turn is followed by a
+    // new prompt, though, re-running that snap finds only the new prompt and
+    // hides the complete tail that was visible before the user hit Enter.
+    const activity: ActivityRow[] = [{ id: "old-user", kind: "user_prompt", text: "old prompt" }];
+    for (let i = 0; i < 200; i += 1) {
+      activity.push({ id: `old-tool-${i}`, kind: "tool_complete", text: `tool ${i}` });
+    }
+    const { result, rerender } = renderHook(({ rows }) => useHistoryWindow("s1", rows, false), {
+      initialProps: { rows: activity },
+    });
+    const topBefore = result.current.windowedActivity[0]!.id;
+
+    rerender({ rows: activity.concat({ id: "new-user", kind: "user_prompt", text: "new prompt" }) });
+
+    const ids = result.current.windowedActivity.map((row) => row.id);
+    expect(ids).toContain(topBefore);
+    expect(ids).toContain("new-user");
+    expect(result.current.windowedActivity).toHaveLength(DEFAULT_HISTORY_WINDOW + 1);
   });
 
   it("re-anchors initial catch-up at the tail, then preserves live appends", () => {
