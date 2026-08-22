@@ -46,7 +46,7 @@ import {
   type ConversationDiagnosticsSnapshot,
 } from "./status/conversationDiagnostics";
 import { deriveConversationSyncStatus } from "./status/conversationSyncStatus";
-import { deriveConversationNextStep, deriveConversationStatus } from "./status/conversationStatus";
+import { deriveConversationNextStep } from "./status/conversationStatus";
 import { deriveSessionDiagnostics } from "./status/sessionDiagnostics";
 import { AssistantMessage, UserMessage } from "./ThreadMessages";
 import { ToolDensityToggle, ToolDisplayModeProvider, useToolDensityPref } from "./ToolDisplayMode";
@@ -240,17 +240,9 @@ function AcpChrome({
     loadingEarlier: ctx.loadingEarlierHistory,
     connectionStarting: status === "connecting",
   });
-  const conversationStatus = deriveConversationStatus({
-    agentSession: connectionDiagnostics.session,
-    sync: conversationSync,
-    turnActive: state.turnActive,
-    nextWakeupAt: state.nextWakeupAt,
-    monitorArmed: state.monitorArmed,
-  });
   const conversationNextStep = deriveConversationNextStep({
     sync: conversationSync,
-    status: conversationStatus,
-    turn: sessionDiagnostics.turn,
+    diagnostics: sessionDiagnostics,
   });
   const connectionIncidentVisible = useConnectionIncidentVisibility(sessionId, displayConnectionDiagnostics);
   const connectionInset = connectionIncidentVisible ? 44 : 0;
@@ -468,7 +460,7 @@ function AcpChrome({
               collapsed={composerCollapsed}
               onToggleCollapsed={() => setComposerCollapsed((v) => !v)}
               availability={composerAvailability}
-              conversationStatus={conversationStatus}
+              conversationSync={conversationSync}
             />
           )}
         </div>
@@ -488,7 +480,7 @@ function ComposerDock({
   collapsed,
   onToggleCollapsed,
   availability,
-  conversationStatus,
+  conversationSync,
 }: {
   view: Props;
   ctx: AcpContext;
@@ -498,7 +490,7 @@ function ComposerDock({
   collapsed: boolean;
   onToggleCollapsed: () => void;
   availability: Exclude<ComposerAvailability, { kind: "read_only" }>;
-  conversationStatus: ReturnType<typeof deriveConversationStatus>;
+  conversationSync: ReturnType<typeof deriveConversationSyncStatus>;
 }) {
   const { sessionId, acpWorkerState, acpAgent, acpProvider } = view;
   const { state, status } = ctx;
@@ -512,7 +504,7 @@ function ComposerDock({
     <>
       <ComposerActionRail>
         <SessionNoticesStrip notices={visibleSessionNotices(state)} onDismiss={ctx.dismissSessionNotice} />
-        <ComposerAvailabilityNotice availability={availability} conversationStatus={conversationStatus} />
+        <ComposerAvailabilityNotice availability={availability} conversationSync={conversationSync} />
         <PromptOutboxPanel
           outbox={promptOutbox}
           onRetry={ctx.sendPrompt}
@@ -606,9 +598,9 @@ function ConversationAvailabilityNotice({ label }: { label: string }) {
 
 export function composerAvailabilityNoticeLabel(
   availability: ComposerAvailability,
-  conversationStatus: ReturnType<typeof deriveConversationStatus>,
+  conversationSync: ReturnType<typeof deriveConversationSyncStatus>,
 ): string | null {
-  if (conversationStatus.kind === "updating" && conversationStatus.cause === "reconnect") {
+  if (conversationSync === "reconnect") {
     return "Updating conversation…";
   }
   if (availability.kind === "queue_for_recovery") {
@@ -619,12 +611,12 @@ export function composerAvailabilityNoticeLabel(
 
 function ComposerAvailabilityNotice({
   availability,
-  conversationStatus,
+  conversationSync,
 }: {
   availability: ComposerAvailability;
-  conversationStatus: ReturnType<typeof deriveConversationStatus>;
+  conversationSync: ReturnType<typeof deriveConversationSyncStatus>;
 }) {
-  const label = composerAvailabilityNoticeLabel(availability, conversationStatus);
+  const label = composerAvailabilityNoticeLabel(availability, conversationSync);
   return label ? <ConversationAvailabilityNotice label={label} /> : null;
 }
 
