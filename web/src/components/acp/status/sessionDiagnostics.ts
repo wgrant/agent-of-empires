@@ -68,6 +68,7 @@ export type AgentState =
       since: string | null;
       condition: OnlineAgentCondition;
       turn: TurnExecution;
+      canSteer: boolean;
     };
 
 export type SessionOperationalState =
@@ -166,6 +167,7 @@ function deriveAgent(input: SessionDiagnosticsInput): AgentState {
         ? { kind: "rate_limited", resetsAt: state.rateLimit.resets_at, message: null }
         : { kind: "normal" },
       turn: deriveTurn(state),
+      canSteer: state.promptCapabilities?.steering ?? false,
     };
   }
   if (workerState === "resuming") {

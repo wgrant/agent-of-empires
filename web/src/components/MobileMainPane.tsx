@@ -16,6 +16,7 @@ import { isPluginPaneId, type PluginPane } from "../lib/pluginPanes";
 import type { RepoBase, RichDiffFile, SessionResponse } from "../lib/types";
 import type { useDiffComments } from "../hooks/useDiffComments";
 import type { FileRef } from "../lib/fileRef";
+import type { PendingAgentOperation } from "./acp/status/sessionDiagnostics";
 
 const StructuredView = lazy(() => import("./acp/StructuredView").then((m) => ({ default: m.StructuredView })));
 
@@ -27,6 +28,7 @@ interface Props {
   pairedMounted: boolean;
   activeSession: SessionResponse | null;
   activeSessionId: string | null;
+  pendingAgentOperation: PendingAgentOperation | null;
   sessions: SessionResponse[];
   webSettings: { persistentTerminals: boolean; maxPersistentTerminals: number };
   selectedFilePath: string | null;
@@ -69,6 +71,7 @@ export function MobileMainPane({
   pairedMounted,
   activeSession,
   activeSessionId,
+  pendingAgentOperation,
   sessions,
   webSettings,
   selectedFilePath,
@@ -132,6 +135,7 @@ export function MobileMainPane({
                 rateLimitAutoResume={activeSession.rate_limit_auto_resume}
                 sessionStatus={activeSession.status}
                 lastError={activeSession.last_error}
+                pendingOperation={pendingAgentOperation}
                 dormant={activeSession.dormant}
                 tool={activeSession.tool}
                 acpAgent={activeSession.acp_agent ?? null}

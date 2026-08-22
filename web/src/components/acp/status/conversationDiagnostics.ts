@@ -3,7 +3,6 @@ import {
   type ConnectionDiagnostics,
   type ConnectionStatusSnapshot,
 } from "./connectionStatus";
-import { derivePromptDispatchPolicy } from "../../../lib/acpPromptDispatchPolicy";
 import type { SessionDiagnostics } from "./sessionDiagnostics";
 
 export interface SelectedSessionDiagnostics {
@@ -47,8 +46,12 @@ export type SessionIncident =
       category: "startup" | "compatibility";
     })
   | (SessionIncidentBase & { kind: "stopped"; action: "reconnect" })
-  | (SessionIncidentBase & { kind: "stopping"; action: "wait" })
   | (SessionIncidentBase & { kind: "blocked"; action: "switch_agent"; reason: "rate_limited" })
+  | (SessionIncidentBase & {
+      kind: "transitioning";
+      action: "wait";
+      operation: "start" | "wake" | "stop";
+    })
   | (SessionIncidentBase & {
       kind: "restarting";
       action: "wait";
@@ -63,6 +66,23 @@ function restartDetail(reason: Extract<SessionDiagnostics["runtime"], { kind: "r
       return "Agent stopped responding to cancel. Restarting worker; your transcript will be preserved.";
     case "manual_restart":
       return "Restarting structured view worker… the daemon will respawn the agent with your existing transcript shortly.";
+  }
+}
+
+function transitionPresentation(operation: "start" | "wake" | "stop") {
+  switch (operation) {
+    case "start":
+      return { title: "Starting agent", detail: "The agent is starting. Messages will be delivered when it is ready." };
+    case "wake":
+      return {
+        title: "Waking agent",
+        detail: "The idle agent is waking. Messages will be delivered when it is ready.",
+      };
+    case "stop":
+      return {
+        title: "Stopping agent",
+        detail: "The agent is stopping. New messages will wait until it is started again.",
+      };
   }
 }
 
@@ -91,8 +111,8 @@ export function deriveSessionIncident(snapshot: ConversationDiagnosticsSnapshot)
   const connection = selectConversationConnection(snapshot);
   if (connection.route !== "connected") return null;
 
-  const { disposition, runtime } = session.lifecycle;
-  if (disposition.kind === "trashed") {
+  const { operational } = session.lifecycle;
+  if (operational.kind === "trashed") {
     return {
       kind: "trashed",
       action: "restore",
@@ -100,7 +120,7 @@ export function deriveSessionIncident(snapshot: ConversationDiagnosticsSnapshot)
       detail: "Restore this session before it can run an agent again.",
     };
   }
-  if (disposition.kind === "archived") {
+  if (operational.kind === "archived") {
     return {
       kind: "archived",
       action: "unarchive",
@@ -108,23 +128,25 @@ export function deriveSessionIncident(snapshot: ConversationDiagnosticsSnapshot)
       detail: "Unarchive this session before it can run an agent again.",
     };
   }
-  if (disposition.kind === "snoozed") {
+  if (operational.kind === "snoozed") {
     return {
       kind: "snoozed",
       action: "unsnooze",
       title: "Session snoozed",
       detail: "This session will resume when its snooze expires, or you can wake it sooner.",
-      snoozedUntil: disposition.until,
+      snoozedUntil: operational.until,
     };
   }
-  switch (runtime.kind) {
+  if (operational.kind !== "active") return null;
+  const { agent } = operational;
+  switch (agent.kind) {
     case "failed":
       return {
         kind: "failed",
         action: "retry_start",
         title: "Agent could not start",
-        detail: runtime.message,
-        category: runtime.category,
+        detail: agent.message,
+        category: agent.category === "compatibility" ? "compatibility" : "startup",
       };
     case "stopped":
       return {
@@ -133,28 +155,34 @@ export function deriveSessionIncident(snapshot: ConversationDiagnosticsSnapshot)
         title: "Agent stopped",
         detail: "Reconnect to start the agent again.",
       };
-    case "stopping":
-      return {
-        kind: "stopping",
-        action: "wait",
-        title: "Stopping agent",
-        detail: "AoE is waiting for the agent process to exit.",
-      };
-    case "blocked":
+    case "transitioning":
+      if (agent.operation === "restart" || agent.operation === "recover") {
+        const reason = agent.reason ?? "manual_restart";
+        return {
+          kind: "restarting",
+          action: "wait",
+          title: agent.operation === "recover" ? "Recovering agent" : "Restarting agent",
+          detail: restartDetail(reason),
+          reason,
+        };
+      }
+      if (agent.operation === "start" || agent.operation === "wake" || agent.operation === "stop") {
+        return {
+          kind: "transitioning",
+          action: "wait",
+          operation: agent.operation,
+          ...transitionPresentation(agent.operation),
+        };
+      }
+      return null;
+    case "online":
+      if (agent.condition.kind !== "rate_limited") return null;
       return {
         kind: "blocked",
         action: "switch_agent",
         title: "Agent is rate limited",
         detail: "The provider is not accepting work for this session.",
-        reason: runtime.reason,
-      };
-    case "restarting":
-      return {
-        kind: "restarting",
-        action: "wait",
-        title: "Restarting agent",
-        detail: restartDetail(runtime.reason),
-        reason: runtime.reason,
+        reason: "rate_limited",
       };
     case "dormant":
       return null;
@@ -173,32 +201,27 @@ export function deriveComposerAvailability(snapshot: ConversationDiagnosticsSnap
   const session = snapshot.session;
   if (!session) return { kind: "blocked", reason: "failed" };
   const connection = selectConversationConnection(snapshot);
-  const { disposition, runtime, turn } = session.lifecycle;
+  const { operational } = session.lifecycle;
 
-  if (disposition.kind === "trashed") return { kind: "read_only", reason: "trashed", action: "restore" };
-  if (runtime.kind === "failed") return { kind: "blocked", reason: "failed", action: "retry_start" };
-  if (runtime.kind === "blocked") return { kind: "blocked", reason: "rate_limited", action: "switch_agent" };
-  if (disposition.kind === "archived") return { kind: "resume_then_send", reason: "archived" };
-  if (disposition.kind === "snoozed") return { kind: "resume_then_send", reason: "snoozed" };
-  const promptPolicy = derivePromptDispatchPolicy({
-    transportOpen: connection.route === "connected",
-    workerState: session.lifecycle.evidence.workerState,
-    workerStopped: session.lifecycle.evidence.workerStopped,
-    workerRestarting: session.lifecycle.evidence.workerRestarting,
-    workerIdleStopped: session.lifecycle.evidence.workerIdleStopped,
-    turnActive:
-      turn.kind === "running" ||
-      turn.kind === "awaiting_user" ||
-      turn.kind === "cancelling" ||
-      turn.kind === "compacting",
-    canSteer: session.lifecycle.evidence.canSteer,
-    cancelling: turn.kind === "cancelling",
-    compacting: turn.kind === "compacting",
-  });
-  if (promptPolicy.kind === "queue") {
-    return promptPolicy.reason === "turn" ? { kind: "queue_after_turn" } : { kind: "queue_for_recovery" };
+  if (operational.kind === "trashed") return { kind: "read_only", reason: "trashed", action: "restore" };
+  if (operational.kind === "archived") return { kind: "resume_then_send", reason: "archived" };
+  if (operational.kind === "snoozed") return { kind: "resume_then_send", reason: "snoozed" };
+  if (operational.kind === "creating" || operational.kind === "deleting") {
+    return { kind: "blocked", reason: "failed" };
   }
-  if (promptPolicy.kind === "dispatch_wake") return { kind: "wake_agent" };
-  if (turn.kind === "running" && session.lifecycle.evidence.canSteer) return { kind: "steer_now" };
+
+  const { agent } = operational;
+  if (agent.kind === "failed") return { kind: "blocked", reason: "failed", action: "retry_start" };
+  if (agent.kind === "stopped") return { kind: "resume_then_send", reason: "stopped" };
+  if (agent.kind === "dormant") return { kind: "wake_agent" };
+  if (agent.kind === "unknown" || agent.kind === "transitioning") return { kind: "queue_for_recovery" };
+  if (agent.condition.kind === "rate_limited") {
+    return { kind: "blocked", reason: "rate_limited", action: "switch_agent" };
+  }
+  if (connection.route !== "connected") return { kind: "queue_for_recovery" };
+  if (agent.turn.kind === "cancelling" || agent.turn.kind === "compacting") return { kind: "queue_after_turn" };
+  if (agent.turn.kind === "running" || agent.turn.kind === "awaiting_user") {
+    return agent.canSteer ? { kind: "steer_now" } : { kind: "queue_after_turn" };
+  }
   return { kind: "send_now" };
 }
