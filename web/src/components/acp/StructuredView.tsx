@@ -255,6 +255,7 @@ function AcpChrome({
       promptSeq: state.promptSeq,
       hasEverOpened: ctx.hasEverOpened,
       localInflight: state.inflightPromptIds.length > 0,
+      liveTailRow: state.activity.at(-1),
     });
   const requestLatest = () => {
     if (ctx.canLoadNewerHistory) {
