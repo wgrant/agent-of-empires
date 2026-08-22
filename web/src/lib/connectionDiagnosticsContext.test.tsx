@@ -15,6 +15,16 @@ function connection(sessionId: string, kind: "structured" | "terminal"): Session
   return {
     kind,
     sessionId,
+    operational: {
+      kind: "active",
+      agent: {
+        kind: "online",
+        since: null,
+        condition: { kind: "normal" },
+        turn: { kind: "idle" },
+        canSteer: false,
+      },
+    },
     diagnostics: {
       route: "connected",
       continuity: "healthy",

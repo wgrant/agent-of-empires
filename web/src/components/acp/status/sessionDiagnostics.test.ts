@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import { emptyAcpState } from "../../../lib/acpTypes";
-import { deriveSessionDiagnostics, type SessionDiagnosticsInput } from "./sessionDiagnostics";
+import {
+  deriveSessionDiagnostics,
+  deriveTerminalOperationalState,
+  type SessionDiagnosticsInput,
+} from "./sessionDiagnostics";
 
 function input(changes: Partial<SessionDiagnosticsInput> = {}): SessionDiagnosticsInput {
   return {
@@ -233,6 +237,35 @@ describe("ACP session diagnostics", () => {
 
     for (const { name, changes, expected } of cases) {
       expect(deriveSessionDiagnostics(input(changes)), name).toMatchObject(expected);
+    }
+
+    const terminalBase = {
+      sessionStatus: "Idle" as const,
+      lastError: null,
+      archivedAt: null,
+      snoozedUntil: null,
+      trashedAt: null,
+      ensureState: "ready" as const,
+      ensureError: null,
+      connected: false,
+    };
+    const terminalCases = [
+      [
+        "ensure in progress",
+        { ensureState: "pending" as const },
+        { kind: "active", agent: { kind: "transitioning", operation: "start" } },
+      ],
+      [
+        "ensure failure",
+        { ensureState: "error" as const, ensureError: "tmux unavailable" },
+        { kind: "active", agent: { kind: "failed", message: "tmux unavailable" } },
+      ],
+      ["connected terminal", { connected: true }, { kind: "active", agent: { kind: "online" } }],
+      ["stopped terminal", { sessionStatus: "Stopped" as const }, { kind: "active", agent: { kind: "stopped" } }],
+      ["unobserved terminal", {}, { kind: "active", agent: { kind: "unknown" } }],
+    ] as const;
+    for (const [name, changes, expected] of terminalCases) {
+      expect(deriveTerminalOperationalState({ ...terminalBase, ...changes }), name).toMatchObject(expected);
     }
   });
 });

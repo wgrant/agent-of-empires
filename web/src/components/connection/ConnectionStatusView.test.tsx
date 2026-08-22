@@ -30,6 +30,16 @@ const snapshot = (diagnostics: ConnectionDiagnostics) => ({
   session: {
     kind: "structured" as const,
     sessionId: "session",
+    operational: {
+      kind: "active" as const,
+      agent: {
+        kind: "online" as const,
+        since: null,
+        condition: { kind: "normal" as const },
+        turn: { kind: "idle" as const },
+        canSteer: false,
+      },
+    },
     diagnostics,
     transport: {
       route: diagnostics.route,

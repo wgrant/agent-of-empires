@@ -43,8 +43,6 @@ export interface HistoryNavigationController {
 
 interface Props {
   sessionId: string;
-  /** Parks the queue drain while the reconciler resumes the worker. */
-  acpWorkerState?: "absent" | "resuming" | "running" | "stopping";
   /** Snoozed sessions auto-wake on send; archived ones refuse it. */
   archivedAt?: string | null;
   snoozedUntil?: string | null;
@@ -84,8 +82,6 @@ export interface AcpContext {
   editQueuedPrompt: (id: string, text: string) => void;
   clearQueue: () => void;
   sendQueuedNow: Session["sendQueuedNow"];
-  canSendQueuedNow: boolean;
-  sendNowInterruptsTurn: boolean;
   dismissRejectedPrompt: (id: string) => void;
   dismissModeSwitchFailed: () => void;
   dismissSessionNotice: (id: string) => void;
@@ -143,13 +139,12 @@ function usePendingAttachments(sessionId: string) {
 
 export function AcpRuntime({
   sessionId,
-  acpWorkerState = "running",
   archivedAt = null,
   snoozedUntil = null,
   showClearedTurns = false,
   children,
 }: Props) {
-  const acp = useAcpSession(sessionId, acpWorkerState, archivedAt, snoozedUntil);
+  const acp = useAcpSession(sessionId, archivedAt, snoozedUntil);
   const agentProfile = useAgentProfile();
   const { pendingAttachments, setPendingAttachments, pendingAttachmentsRef } = usePendingAttachments(sessionId);
   const onCancel = useCancelEscalation(
@@ -280,8 +275,6 @@ export function AcpRuntime({
         editQueuedPrompt: acp.editQueuedPrompt,
         clearQueue: acp.clearQueue,
         sendQueuedNow: acp.sendQueuedNow,
-        canSendQueuedNow: acp.canSendQueuedNow,
-        sendNowInterruptsTurn: acp.sendNowInterruptsTurn,
         dismissRejectedPrompt: acp.dismissRejectedPrompt,
         dismissModeSwitchFailed: acp.dismissModeSwitchFailed,
         dismissSessionNotice: acp.dismissSessionNotice,
