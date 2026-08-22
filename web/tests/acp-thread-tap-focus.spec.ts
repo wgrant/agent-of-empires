@@ -37,7 +37,7 @@ test.describe("Structured-view transcript tap does not open the keyboard", () =>
     await expect(page.getByPlaceholder(/Send a message/)).not.toBeFocused();
   });
 
-  test("tapping the transcript does not focus the composer; tapping the input does", async ({ page }) => {
+  test("tapping the transcript does not focus the composer; tapping the composer does", async ({ page }) => {
     await setup(page);
     await openStructuredSession(page);
 
@@ -57,9 +57,11 @@ test.describe("Structured-view transcript tap does not open the keyboard", () =>
     await page.getByTestId("acp-viewport").click({ position: { x: 8, y: 8 } });
     await expect(composer).not.toBeFocused();
 
-    // Tapping the input itself is the only thing that focuses it (opens the
-    // keyboard).
-    await composer.click();
+    // Losing focus returns mobile to the compact composer. Tapping that explicit
+    // composer affordance expands it and focuses the input (opening the keyboard).
+    await expect(page.getByTestId("composer-mobile-status")).toBeVisible();
+    await page.getByRole("button", { name: /Open message composer/ }).click();
+    await expect(composer).toBeVisible();
     await expect(composer).toBeFocused();
   });
 });
