@@ -199,42 +199,12 @@ export function AcpRuntime({
   // assistant-ui resources retain indexes into their message store. Replace
   // the provider whenever bounded history navigation moves to a different
   // index space, while ordinary live updates keep the existing runtime.
-  const [publishedTranscript, setPublishedTranscript] = useState(() => ({
-    activity: displayActivity,
-    turnActive: acp.state.turnActive,
-    visiblyBusy: isVisiblyBusy(acp.state),
-    generation: 0,
-    historyGeneration,
-    suppressInitializeScroll: false,
-  }));
   const historyScrollAnchorRef = useRef<HistoryScrollAnchor | null>(null);
   const historyNavigationControllerRef = useRef<HistoryNavigationController>({
     autoLoadArmed: true,
     lastLoadAt: 0,
     restoringScroll: false,
   });
-  useEffect(() => {
-    setPublishedTranscript((current) => {
-      const movedHistoryWindow = current.historyGeneration !== historyGeneration;
-      if (
-        current.activity === displayActivity &&
-        current.turnActive === acp.state.turnActive &&
-        current.visiblyBusy === visiblyBusy &&
-        current.historyGeneration === historyGeneration
-      ) {
-        return current;
-      }
-      return {
-        activity: displayActivity,
-        turnActive: acp.state.turnActive,
-        visiblyBusy,
-        generation: movedHistoryWindow ? current.generation + 1 : current.generation,
-        historyGeneration,
-        suppressInitializeScroll: movedHistoryWindow,
-      };
-    });
-  }, [acp.state.turnActive, displayActivity, historyGeneration, visiblyBusy]);
-
   // Memoise the activity → ThreadMessageLike conversion. The function
   // walks the activity array, allocates a new AssistantBuilder
   // per turn, and produces brand-new message objects. Without
@@ -243,17 +213,17 @@ export function AcpRuntime({
   const messages = useMemo(
     () =>
       activityToThreadMessages(
-        publishedTranscript.activity,
-        publishedTranscript.visiblyBusy,
+        displayActivity,
+        visiblyBusy,
         showClearedTurns,
         agentProfile.capabilities.todos,
         agentProfile,
       ),
-    [publishedTranscript.activity, publishedTranscript.visiblyBusy, showClearedTurns, agentProfile],
+    [displayActivity, visiblyBusy, showClearedTurns, agentProfile],
   );
   const foldGeneration = useMemo(
-    () => clearFoldGeneration(publishedTranscript.activity, showClearedTurns),
-    [publishedTranscript.activity, showClearedTurns],
+    () => clearFoldGeneration(displayActivity, showClearedTurns),
+    [displayActivity, showClearedTurns],
   );
 
   const adapter: ExternalStoreAdapter<ThreadMessageLike> = {
@@ -264,7 +234,7 @@ export function AcpRuntime({
     // has to track only the main turn, exactly like Composer.tsx's turnActive
     // gate, or a background sub-agent with an idle main turn silently eats
     // every keystroke.
-    isRunning: publishedTranscript.turnActive,
+    isRunning: acp.state.turnActive,
     convertMessage: (m) => m,
     // The idle Enter path: text comes from the message, attachments from our staging.
     onNew: async (msg) => {
@@ -285,7 +255,7 @@ export function AcpRuntime({
   };
 
   return (
-    <RuntimeHost key={`${foldGeneration}:${publishedTranscript.generation}`} adapter={adapter}>
+    <RuntimeHost key={`${foldGeneration}:${historyGeneration}`} adapter={adapter}>
       {children({
         state: acp.state,
         status: acp.status,
@@ -326,9 +296,9 @@ export function AcpRuntime({
         canLoadNewerHistory: canLoadNewer,
         loadNewerHistory: loadNewer,
         jumpToLatestHistory: jumpToLatest,
-        publishedTailId: publishedTranscript.activity.at(-1)?.id ?? null,
-        publishedTranscriptGeneration: publishedTranscript.generation,
-        suppressHistoryInitializeScroll: publishedTranscript.suppressInitializeScroll,
+        publishedTailId: displayActivity.at(-1)?.id ?? null,
+        publishedTranscriptGeneration: historyGeneration,
+        suppressHistoryInitializeScroll: historyGeneration > 0,
         historyScrollAnchorRef,
         historyNavigationControllerRef,
         loadingEarlierHistory: loadingOlder,
