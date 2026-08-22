@@ -34,6 +34,8 @@ describe("StructuredView fileRef plumbing (#2143)", () => {
       <StructuredView
         sessionId="s1"
         acpWorkerState="running"
+        sessionStatus="Running"
+        dormant={false}
         tool="claude"
         archivedAt={null}
         snoozedUntil={null}

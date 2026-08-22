@@ -22,11 +22,7 @@ const base = {
   retryCountdown: 0,
   maxRetries: 7,
   rateLimitText: () => "Rate limited",
-  startupError: false,
-  workerStopped: false,
-  workerRestarting: false,
-  agentUnresponsive: false,
-  agentOrphaned: false,
+  agentRuntime: { kind: "ready" } as const,
   lastWebSocketOpenAt: null,
   lastServerMessageAt: null,
   lastTransportDiagnostic: null,
@@ -65,13 +61,24 @@ describe("useConnectionIncidentVisibility", () => {
   it("places only route and continuity failures in the floating incident", () => {
     const cases = [
       ["healthy", diagnostics(), false],
-      ["startup failure", diagnostics({ startupError: true }), false],
-      ["stopped agent", diagnostics({ workerStopped: true }), false],
-      ["restarting agent", diagnostics({ workerRestarting: true }), false],
-      ["unresponsive agent", diagnostics({ agentUnresponsive: true }), false],
+      [
+        "startup failure",
+        diagnostics({ agentRuntime: { kind: "failed", category: "startup", message: "failed" } }),
+        false,
+      ],
+      ["stopped agent", diagnostics({ agentRuntime: { kind: "stopped", reason: "user_stopped" } }), false],
+      ["restarting agent", diagnostics({ agentRuntime: { kind: "restarting", reason: "manual_restart" } }), false],
+      [
+        "unresponsive agent",
+        diagnostics({ agentRuntime: { kind: "restarting", reason: "cancel_unresponsive" } }),
+        false,
+      ],
       [
         "rate-limited provider",
-        diagnostics({ rateLimit: { kind: "rate_limit", status: "limited", resets_at: null } }),
+        diagnostics({
+          rateLimit: { kind: "rate_limit", status: "limited", resets_at: null },
+          agentRuntime: { kind: "blocked", reason: "rate_limited" },
+        }),
         false,
       ],
       ["connecting route", diagnostics({ status: "connecting", hasEverOpened: false }), true],
