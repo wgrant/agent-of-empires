@@ -40,6 +40,36 @@ test("desktop: re-selecting the active structured view session refocuses the com
   await expect(composer(page)).toBeFocused({ timeout: 10_000 });
 });
 
+test("coarse pointer: selecting a structured view session leaves the composer unfocused", async ({
+  page,
+  spawnServe,
+}) => {
+  // Force a touch-only profile. Mount autofocus and navigation focus dispatch must both stay suppressed.
+  await page.addInitScript(() => {
+    const orig = window.matchMedia.bind(window);
+    const forced: Record<string, boolean> = { "(pointer: coarse)": true, "(any-pointer: fine)": false };
+    window.matchMedia = (query: string) =>
+      query in forced
+        ? ({
+            matches: forced[query],
+            media: query,
+            onchange: null,
+            addEventListener: () => {},
+            removeEventListener: () => {},
+            addListener: () => {},
+            removeListener: () => {},
+            dispatchEvent: () => false,
+          } as MediaQueryList)
+        : orig(query);
+  });
+  const { serve } = await startAcpSession(spawnServe, { title: "story-focus-composer-coarse" });
+  const row = await firstSidebarRow(page, serve.baseUrl);
+
+  await row.click();
+  await waitForStructuredView(page);
+  await expect(composer(page)).not.toBeFocused();
+});
+
 test("command palette switches sessions", async ({ page, spawnServe }) => {
   const serve = await spawnServe({
     seedFn: ({ home, env }) => {
