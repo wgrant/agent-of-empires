@@ -16,6 +16,7 @@ import { derivePromptOutbox } from "../../lib/acpPromptOutbox";
 import { AgentProfileProvider } from "../../lib/agentProfileContext";
 import { conversationFontSizeRem } from "../../lib/conversationFontSize";
 import type { FileRef, FileRefSession } from "../../lib/fileRef";
+import type { SessionStatus } from "../../lib/types";
 import { topInsetScrollAdjustment } from "../../lib/historyScroll";
 import { ChromeCollapseHandle, CollapsibleRegion } from "../CollapsibleChrome";
 import { AcpFileRefContext } from "./AcpFileRefContext";
@@ -61,6 +62,10 @@ interface Props {
   acpWorkerState: WorkerState;
   /** Whether rate-limit auto-resume is on for this session's profile. */
   rateLimitAutoResume?: boolean;
+  /** Current server-owned session lifecycle, including restart reconciliation. */
+  sessionStatus: SessionStatus;
+  /** An absent worker intentionally reaped for inactivity wakes on the next prompt. */
+  dormant: boolean;
   /** Session `tool` registry key; selects the AgentProfile. */
   tool: string | null | undefined;
   /** Resolved ACP agent key; the switch-agent modal's fallback before any `AgentSwitched`. */
@@ -178,6 +183,15 @@ function AcpChrome({
   // Rows before the latest `/clear` divider are the hidden history.
   const hiddenCount = lastClearIndex(state.activity);
   const [primerPrefill, setPrimerPrefill] = useState<Prefill>(null);
+  const sessionDiagnostics = deriveSessionDiagnostics({
+    state,
+    workerState: acpWorkerState,
+    sessionStatus: view.sessionStatus,
+    dormant: view.dormant,
+    trashedAt: view.trashedAt,
+    archivedAt: view.archivedAt,
+    snoozedUntil: view.snoozedUntil,
+  });
   const connectionDiagnostics = deriveStructuredConnectionDiagnostics({
     status,
     serverReachability: ctx.serverReachability,
@@ -189,11 +203,7 @@ function AcpChrome({
     retryCount: ctx.retryCount,
     retryCountdown: ctx.retryCountdown,
     maxRetries: ctx.maxRetries,
-    startupError: state.startupError !== null,
-    workerStopped: state.workerStopped,
-    workerRestarting: state.workerRestarting || acpWorkerState === "resuming",
-    agentUnresponsive: state.agentUnresponsive,
-    agentOrphaned: state.agentOrphaned,
+    agentRuntime: sessionDiagnostics.runtime,
     lastWebSocketOpenAt: ctx.lastWebSocketOpenAt,
     lastServerMessageAt: ctx.lastServerMessageAt,
     lastTransportDiagnostic: ctx.lastTransportDiagnostic,
@@ -218,13 +228,6 @@ function AcpChrome({
   };
   const dashboardConnection = useDashboardConnectionDiagnostics();
   const connectionSnapshot: ConnectionStatusSnapshot = { dashboard: dashboardConnection, session: sessionConnection };
-  const sessionDiagnostics = deriveSessionDiagnostics({
-    state,
-    workerState: acpWorkerState,
-    trashedAt: view.trashedAt,
-    archivedAt: view.archivedAt,
-    snoozedUntil: view.snoozedUntil,
-  });
   const conversationDiagnostics: ConversationDiagnosticsSnapshot = {
     connection: connectionSnapshot,
     session: { sessionId, kind: "structured", lifecycle: sessionDiagnostics },
@@ -313,6 +316,8 @@ function AcpChrome({
         trashedAt={view.trashedAt}
         archivedAt={view.archivedAt}
         snoozedUntil={view.snoozedUntil}
+        sessionStatus={view.sessionStatus}
+        dormant={view.dormant}
         currentAgent={state.agent ?? acpAgent}
         rateLimitAutoResume={view.rateLimitAutoResume}
         onRecoveryPrefill={(text) => setPrimerPrefill({ id: `rate-limit-recovery-${Date.now()}`, text })}

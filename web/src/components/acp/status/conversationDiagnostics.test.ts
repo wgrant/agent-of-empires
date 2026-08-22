@@ -21,6 +21,8 @@ function snapshot(
   const lifecycle = deriveSessionDiagnostics({
     state: emptyAcpState(),
     workerState: "running",
+    sessionStatus: "Running",
+    dormant: false,
     archivedAt: null,
     snoozedUntil: null,
     trashedAt: null,

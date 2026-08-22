@@ -23,11 +23,7 @@ const base = {
   retryCountdown: 0,
   maxRetries: 7,
   rateLimitText: () => "Rate-limited (provider); resets at 10:42:00.",
-  startupError: false,
-  workerStopped: false,
-  workerRestarting: false,
-  agentUnresponsive: false,
-  agentOrphaned: false,
+  agentRuntime: { kind: "ready" } as const,
   lastWebSocketOpenAt: null,
   lastServerMessageAt: null,
   lastTransportDiagnostic: null,
@@ -39,29 +35,71 @@ describe("connection status model", () => {
   it("derives primary status from route, session, and continuity in priority order", () => {
     const cases = [
       [{}, "connected", "connected", "ready", "current"],
-      [{ workerStopped: true }, "agent_stopped", "connected", "stopped", "current"],
-      [{ startupError: true }, "agent_failed", "connected", "failed", "current"],
-      [{ agentUnresponsive: true }, "agent_unresponsive", "connected", "unresponsive", "current"],
       [
-        { rateLimit: { kind: "provider", status: "later", resets_at: null } },
+        { agentRuntime: { kind: "stopped", reason: "user_stopped" } as const },
+        "agent_stopped",
+        "connected",
+        "stopped",
+        "current",
+      ],
+      [
+        { agentRuntime: { kind: "failed", category: "startup", message: "failed" } as const },
+        "agent_failed",
+        "connected",
+        "failed",
+        "current",
+      ],
+      [
+        { agentRuntime: { kind: "restarting", reason: "cancel_unresponsive" } as const },
+        "agent_unresponsive",
+        "connected",
+        "unresponsive",
+        "current",
+      ],
+      [
+        {
+          rateLimit: { kind: "provider", status: "later", resets_at: null },
+          agentRuntime: { kind: "blocked", reason: "rate_limited" } as const,
+        },
         "rate_limited",
         "connected",
         "rate_limited",
         "current",
       ],
-      [{ workerRestarting: true }, "agent_restarting", "connected", "restarting", "current"],
+      [
+        { agentRuntime: { kind: "restarting", reason: "manual_restart" } as const },
+        "agent_restarting",
+        "connected",
+        "restarting",
+        "current",
+      ],
+      [
+        { agentRuntime: { kind: "dormant", reason: "idle_auto_stop" } as const },
+        "connected",
+        "connected",
+        "dormant",
+        "current",
+      ],
       [{ lagged: true }, "updates_missed", "connected", "ready", "missed"],
       [{ liveUpdatesStale: true }, "updates_delayed", "connected", "ready", "delayed"],
       [{ serverReachability: "unreachable" as const }, "updates_unavailable", "connected", "ready", "unavailable"],
       [
-        { status: "closed" as const, reconnecting: true, workerStopped: true },
+        {
+          status: "closed" as const,
+          reconnecting: true,
+          agentRuntime: { kind: "stopped", reason: "user_stopped" } as const,
+        },
         "reconnecting",
         "reconnecting",
         "stopped",
         "unavailable",
       ],
       [
-        { status: "closed" as const, retryCount: 7, workerStopped: true },
+        {
+          status: "closed" as const,
+          retryCount: 7,
+          agentRuntime: { kind: "stopped", reason: "user_stopped" } as const,
+        },
         "disconnected",
         "disconnected",
         "stopped",
@@ -82,7 +120,7 @@ describe("connection status model", () => {
       reconnecting: true,
       retryCount: 1,
       serverReachability: "reachable",
-      workerStopped: true,
+      agentRuntime: { kind: "stopped", reason: "user_stopped" },
     });
     expect(diagnostics).toMatchObject({
       primary: "reconnecting",
@@ -97,7 +135,10 @@ describe("connection status model", () => {
   });
 
   it("uses one presentation mapping for headline, tone, and compact text", () => {
-    const stopped = deriveConnectionDiagnostics({ ...base, workerStopped: true });
+    const stopped = deriveConnectionDiagnostics({
+      ...base,
+      agentRuntime: { kind: "stopped", reason: "user_stopped" },
+    });
     expect(connectionStatusPresentation(stopped.primary)).toMatchObject({ headline: "Agent stopped", tone: "error" });
     expect(connectionStatusCompactLabel(stopped)).toBe("Agent stopped");
 
@@ -151,7 +192,10 @@ describe("connection status model", () => {
     const session = {
       kind: "structured" as const,
       sessionId: "session",
-      diagnostics: deriveConnectionDiagnostics({ ...base, workerStopped: true }),
+      diagnostics: deriveConnectionDiagnostics({
+        ...base,
+        agentRuntime: { kind: "stopped", reason: "user_stopped" },
+      }),
       transport: {
         route: "connected" as const,
         connectedAt: 100,

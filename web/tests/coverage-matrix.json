@@ -2013,6 +2013,7 @@
       "specs": [
         "src/hooks/useConnectionIncidentVisibility.test.tsx",
         "src/components/acp/status/connectionStatus.test.ts",
+        "src/components/acp/status/sessionDiagnostics.test.ts",
         "src/components/connection/ConnectionStatusView.test.tsx"
       ],
       "components": [

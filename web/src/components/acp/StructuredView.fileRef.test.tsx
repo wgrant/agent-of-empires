@@ -34,6 +34,8 @@ describe("StructuredView fileRef plumbing (#2143)", () => {
       <StructuredView
         sessionId="s1"
         acpWorkerState="running"
+        sessionStatus="Running"
+        dormant={false}
         tool="claude"
         archivedAt={null}
         snoozedUntil={null}
@@ -45,7 +47,15 @@ describe("StructuredView fileRef plumbing (#2143)", () => {
 
   it("provides no session when none is passed", () => {
     const { getByTestId } = render(
-      <StructuredView sessionId="s1" acpWorkerState="absent" tool="claude" archivedAt={null} snoozedUntil={null} />,
+      <StructuredView
+        sessionId="s1"
+        acpWorkerState="absent"
+        sessionStatus="Stopped"
+        dormant={false}
+        tool="claude"
+        archivedAt={null}
+        snoozedUntil={null}
+      />,
     );
     expect(getByTestId("probe").textContent).toBe("none");
   });
