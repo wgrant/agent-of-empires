@@ -1016,11 +1016,7 @@ impl SessionService {
             let Some(inst) = instances.iter().find(|i| i.id == id) else {
                 return;
             };
-            if !inst.is_structured()
-                || inst.is_archived()
-                || inst.is_snoozed()
-                || inst.is_trashed()
-                || inst.status != crate::session::Status::Idle
+            if !inst.is_structured() || inst.is_archived() || inst.is_snoozed() || inst.is_trashed()
             {
                 return;
             }
@@ -1039,9 +1035,8 @@ impl SessionService {
             (caller, agent_key, queue)
         };
 
-        // `Status::Idle` above is a mirror the broadcast listener applies one serial task
-        // behind every session's events, so it still reads Idle for as long as that task is
-        // behind.
+        // The persisted status is a lagging projection. Fold the ACP events before
+        // delivering so a queued prompt cannot enter an active turn.
         if self.fold_control_state(id).await.turn_active {
             return;
         }
@@ -1784,7 +1779,9 @@ mod tests {
         let mut inst = Instance::new("queue", "/tmp/aoe-queue-husk");
         inst.id = "sess-husk".to_string();
         inst.view = crate::session::View::Structured;
-        inst.status = crate::session::Status::Idle;
+        // The persisted projection may still say Running after the folded ACP
+        // turn has ended. The reconciler owns that authoritative gate.
+        inst.status = crate::session::Status::Running;
         let service = service_for(vec![inst]);
 
         // An attachment-only prompt.
