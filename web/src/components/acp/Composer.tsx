@@ -60,6 +60,7 @@ import {
   type ComposerClient,
 } from "./useComposerHooks";
 import { useDictationBurstGuard } from "./useDictationBurstGuard";
+import type { ComposerAvailability } from "./status/conversationDiagnostics";
 
 interface Props {
   sessionId: string;
@@ -74,8 +75,8 @@ interface Props {
   setConfigOption: (configId: string, value: string) => void | Promise<void>;
   sessionUsage: AcpState["sessionUsage"];
   availableCommands: AcpState["availableCommands"];
-  /** WS open and worker healthy. Sends still work when false; they queue until resume. */
-  connected: boolean;
+  /** Shared policy for what submitting the current draft means. */
+  availability: Exclude<ComposerAvailability, { kind: "read_only" }>;
   /** Mid-turn the textarea stays editable and sends go through the queue. */
   turnActive: boolean;
   /** Queue path used by the custom send buttons and mid-turn Enter, which the primitive blocks. */
@@ -95,7 +96,7 @@ const POPOVER_CLASS =
   "absolute bottom-full left-0 right-0 mb-2 z-30 overflow-hidden rounded-lg border border-surface-700 bg-surface-850 shadow-xl";
 
 export function Composer(props: Props) {
-  const { sessionId, turnActive, connected, promptCapabilities, queuedPrompts } = props;
+  const { sessionId, turnActive, availability, promptCapabilities, queuedPrompts } = props;
   const taRef = useRef<HTMLTextAreaElement | null>(null);
   const rootRef = useRef<HTMLFormElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -111,8 +112,10 @@ export function Composer(props: Props) {
   const iosPwa = useMemo(() => isIOS() && isStandalone(), []);
   const recall = useQueueRecall(queuedPrompts, client, loadText);
   const canSend = composerText.trim().length > 0 || attachments.supported.length > 0;
+  const submissionBlocked = availability.kind === "blocked";
 
   const submitComposer = useCallback(() => {
+    if (submissionBlocked) return;
     if (attachments.preparingRef.current > 0) return;
     const cur = recall.recallRef.current;
     if (cur) {
@@ -129,7 +132,7 @@ export function Composer(props: Props) {
     sendFromTextarea(taRef, client, props.enqueuePrompt, sessionId, attachments.supported, () =>
       props.setPendingAttachments([]),
     );
-  }, [client, props, sessionId, attachments, queuedPrompts, recall]);
+  }, [client, props, sessionId, attachments, queuedPrompts, recall, submissionBlocked]);
 
   usePluginDraftOperations(sessionId, client, taRef);
   usePrimerPrefill(props.primerPrefill, loadText);
@@ -172,6 +175,19 @@ export function Composer(props: Props) {
       e.preventDefault();
       e.stopPropagation();
       recall.recall(recallAction);
+      return;
+    }
+    if (
+      submissionBlocked &&
+      !isMobile &&
+      e.key === "Enter" &&
+      !e.shiftKey &&
+      !e.ctrlKey &&
+      !e.metaKey &&
+      !e.nativeEvent.isComposing
+    ) {
+      e.preventDefault();
+      e.stopPropagation();
       return;
     }
     if (decideEnterAction(keys, { isMobile, turnActive }) === "default") return;
@@ -311,10 +327,12 @@ export function Composer(props: Props) {
               cancelOnEscape={false}
               placeholder={
                 turnActive
-                  ? connected && promptCapabilities?.steering
+                  ? availability.kind === "steer_now"
                     ? "Add to the current turn… (the agent picks it up mid-work)"
                     : "Queue a follow-up… (sent when current turn ends)"
-                  : "Send a message…  Type @ for files, / for commands"
+                  : availability.kind === "blocked"
+                    ? "Sending is unavailable; your draft will be preserved"
+                    : "Send a message…  Type @ for files, / for commands"
               }
               onInput={(e) => fitTextarea(e.currentTarget)}
               onFocus={() => {
@@ -434,17 +452,16 @@ export function Composer(props: Props) {
                   <>
                     <StopButton />
                     <QueueSendButton
-                      connected={connected}
-                      steering={!!promptCapabilities?.steering}
-                      disabled={!canSend || attachments.preparing}
+                      availability={availability}
+                      disabled={submissionBlocked || !canSend || attachments.preparing}
                       preparing={attachments.preparing}
                       onSend={submitComposer}
                     />
                   </>
                 ) : (
                   <SendButton
-                    connected={connected}
-                    disabled={!canSend || attachments.preparing}
+                    availability={availability}
+                    disabled={submissionBlocked || !canSend || attachments.preparing}
                     preparing={attachments.preparing}
                     onSend={submitComposer}
                   />
