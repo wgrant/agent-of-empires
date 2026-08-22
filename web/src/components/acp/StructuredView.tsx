@@ -29,7 +29,7 @@ import { CompactionReminderBanner } from "./CompactionReminderBanner";
 import { Composer } from "./Composer";
 import { ContextPrimerBanner } from "./ContextPrimerBanner";
 import { PlanStrip } from "./PlanStrip";
-import { ModeSwitchFailedNotice, QueuedPromptsStrip, RejectedPromptsStrip } from "./PromptStrips";
+import { ModeSwitchFailedNotice, PromptOutboxPanel } from "./PromptStrips";
 import { MonitoringBanner, ScheduledWakeupBanner, SessionBanners } from "./SessionBanners";
 import { ConfigOptionSwitchFailedNotice } from "./SessionConfigControls";
 import { StartupErrorScreen } from "./StartupErrorScreen";
@@ -536,27 +536,23 @@ function ComposerDock({
           <ConversationRefreshNotice />
         )}
         {!composerConnected && <ComposerConnectionNotice diagnostics={connectionDiagnostics} />}
-        <RejectedPromptsStrip
-          rejected={promptOutbox.legacy.rejected}
+        <PromptOutboxPanel
+          outbox={promptOutbox}
           onRetry={ctx.sendPrompt}
-          onDismiss={ctx.dismissRejectedPrompt}
-          disabled={state.workerRestarting || state.workerStopped || Boolean(state.startupError)}
+          onDismissRejected={ctx.dismissRejectedPrompt}
+          retryDisabled={state.workerRestarting || state.workerStopped || Boolean(state.startupError)}
+          onRemoveQueued={ctx.removeQueuedPrompt}
+          onEditQueued={ctx.editQueuedPrompt}
+          onClearQueued={ctx.clearQueue}
+          onSendQueuedNow={ctx.sendQueuedNow}
+          canSendQueuedNow={ctx.canSendQueuedNow}
+          sendQueuedNowInterrupts={ctx.sendNowInterruptsTurn}
         />
         <ModeSwitchFailedNotice failure={state.modeSwitchFailed} onDismiss={ctx.dismissModeSwitchFailed} />
         <ConfigOptionSwitchFailedNotice
           failure={state.configOptionSwitchFailed}
           configOptions={state.configOptions}
           onDismiss={ctx.dismissConfigOptionSwitchFailed}
-        />
-        <QueuedPromptsStrip
-          queued={promptOutbox.legacy.queued}
-          onRemove={ctx.removeQueuedPrompt}
-          onEdit={ctx.editQueuedPrompt}
-          onClear={ctx.clearQueue}
-          onSendNow={ctx.sendQueuedNow}
-          canSendNow={ctx.canSendQueuedNow}
-          sendNowInterrupts={ctx.sendNowInterruptsTurn}
-          pendingResume={promptOutbox.legacy.queuedDelivery === "waiting_for_recovery"}
         />
         <ContextPrimerBanner
           sessionId={sessionId}

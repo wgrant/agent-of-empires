@@ -3,8 +3,9 @@ import { cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { AgentProfileProvider } from "../../lib/agentProfileContext";
-import type { QueuedPrompt } from "../../lib/acpTypes";
-import { QueuedPromptsStrip } from "./PromptStrips";
+import type { QueuedPrompt, RejectedPrompt } from "../../lib/acpTypes";
+import { derivePromptOutbox } from "../../lib/acpPromptOutbox";
+import { PromptOutboxPanel } from "./PromptStrips";
 
 afterEach(() => {
   cleanup();
@@ -24,19 +25,32 @@ const SERVER_CLEAR_ALIASES: Record<string, string[]> = {
 function renderWithProfile(
   toolKey: string,
   queued: QueuedPrompt[],
-  opts: { onSendNow?: (prompt: QueuedPrompt) => void; canSendNow?: boolean; sendNowInterrupts?: boolean } = {},
+  opts: {
+    rejected?: RejectedPrompt[];
+    waitingForRecovery?: boolean;
+    onSendNow?: (prompt: QueuedPrompt) => void;
+    canSendNow?: boolean;
+    sendNowInterrupts?: boolean;
+  } = {},
 ) {
+  const outbox = derivePromptOutbox({
+    queued,
+    rejected: opts.rejected ?? [],
+    waitingForRecovery: opts.waitingForRecovery ?? false,
+  });
   return render(
     <AgentProfileProvider toolKey={toolKey} clearAliases={SERVER_CLEAR_ALIASES[toolKey] ?? []}>
-      <QueuedPromptsStrip
-        queued={queued}
-        onRemove={() => {}}
-        onEdit={() => {}}
-        onClear={() => {}}
-        onSendNow={opts.onSendNow ?? (() => {})}
-        canSendNow={opts.canSendNow ?? true}
-        sendNowInterrupts={opts.sendNowInterrupts ?? false}
-        pendingResume={false}
+      <PromptOutboxPanel
+        outbox={outbox}
+        onRetry={() => {}}
+        onDismissRejected={() => {}}
+        retryDisabled={false}
+        onRemoveQueued={() => {}}
+        onEditQueued={() => {}}
+        onClearQueued={() => {}}
+        onSendQueuedNow={opts.onSendNow ?? (() => {})}
+        canSendQueuedNow={opts.canSendNow ?? true}
+        sendQueuedNowInterrupts={opts.sendNowInterrupts ?? false}
       />
     </AgentProfileProvider>,
   );
@@ -62,6 +76,19 @@ describe("QueuedPromptsStrip", () => {
 
   it("renders nothing when the queue is empty", () => {
     expect(renderWithProfile("claude", []).container.firstChild).toBeNull();
+  });
+
+  it("combines queued and rejected delivery feedback", () => {
+    const rejected: RejectedPrompt = {
+      id: "r1",
+      text: "not sent",
+      reason: "Another prompt is already in flight.",
+      rejectedAt: "2026-05-21T00:00:00.000Z",
+    };
+    const view = renderWithProfile("claude", [mk("q1", "queued")], { rejected: [rejected] });
+    expect(view.getByText("1 queued · 1 not sent")).toBeTruthy();
+    expect(view.getByText("The agent is finishing the current turn.")).toBeTruthy();
+    expect(view.getByText("Another prompt is already in flight.")).toBeTruthy();
   });
 
   it.each([
