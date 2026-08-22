@@ -45,7 +45,7 @@ import {
   type StreamTransportDiagnostics,
 } from "./status/connectionStatus";
 import { deriveConversationSyncStatus } from "./status/conversationSyncStatus";
-import { deriveConversationStatus } from "./status/conversationStatus";
+import { deriveConversationNextStep, deriveConversationStatus } from "./status/conversationStatus";
 import { AssistantMessage, UserMessage } from "./ThreadMessages";
 import { ToolDensityToggle, ToolDisplayModeProvider, useToolDensityPref } from "./ToolDisplayMode";
 import { useTranscriptScroll } from "./useTranscriptScroll";
@@ -235,6 +235,11 @@ function AcpChrome({
     nextWakeupAt: state.nextWakeupAt,
     monitorArmed: state.monitorArmed,
   });
+  const conversationNextStep = deriveConversationNextStep({
+    sync: conversationSync,
+    status: conversationStatus,
+    turn: sessionDiagnostics.turn,
+  });
   const connectionIncidentVisible = useConnectionIncidentVisibility(sessionId, displayConnectionDiagnostics);
   const connectionInset = connectionIncidentVisible ? 44 : 0;
   const previousConnectionInsetRef = useRef(0);
@@ -412,35 +417,27 @@ function AcpChrome({
                 </div>
               )}
 
-              {conversationStatus.kind === "active" && conversationStatus.cause === "working" && (
-                <>
-                  {/* A turn parked on an approval or question is waiting on the user, not stalled. */}
-                  {state.pendingElicitations.length === 0 && state.pendingApprovals.length === 0 ? (
-                    <div className="mt-3 ml-1">
-                      <WorkingSpinner
-                        thinking={state.thinking}
-                        tool={state.inFlightTool?.name ?? null}
-                        cancelling={state.cancelling}
-                        cancelEscalatesAt={state.cancelEscalatesAt}
-                        compacting={state.compacting}
-                        lastActivityRef={ctx.lastActivityRef}
-                        onForceEndTurn={ctx.forceEndTurn}
-                      />
-                    </div>
-                  ) : null}
-                </>
+              {conversationNextStep?.kind === "working" && (
+                <div className="mt-3 ml-1">
+                  <WorkingSpinner
+                    thinking={conversationNextStep.thinking}
+                    tool={conversationNextStep.tool}
+                    cancelling={conversationNextStep.cancelling}
+                    cancelEscalatesAt={conversationNextStep.cancelEscalatesAt}
+                    compacting={conversationNextStep.compacting}
+                    lastActivityRef={ctx.lastActivityRef}
+                    onForceEndTurn={ctx.forceEndTurn}
+                  />
+                </div>
               )}
-
-              {conversationStatus.kind === "waiting" &&
-                conversationStatus.cause === "scheduled_wakeup" &&
-                state.nextWakeupAt && (
-                  <div className="mt-3">
-                    <ScheduledWakeupBanner wakeAt={state.nextWakeupAt} reason={state.nextWakeupReason} />
-                  </div>
-                )}
-              {conversationStatus.kind === "waiting" && conversationStatus.cause === "monitoring" && (
+              {conversationNextStep?.kind === "scheduled_wakeup" && (
                 <div className="mt-3">
-                  <MonitoringBanner description={state.monitorDescription} />
+                  <ScheduledWakeupBanner wakeAt={conversationNextStep.wakeAt} reason={conversationNextStep.reason} />
+                </div>
+              )}
+              {conversationNextStep?.kind === "monitoring" && (
+                <div className="mt-3">
+                  <MonitoringBanner description={conversationNextStep.description} />
                 </div>
               )}
 

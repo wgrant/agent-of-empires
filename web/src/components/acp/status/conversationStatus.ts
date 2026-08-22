@@ -1,5 +1,6 @@
 import type { AgentSessionStatus } from "./connectionStatus";
 import type { ConversationSyncStatus } from "./conversationSyncStatus";
+import type { TurnExecution } from "./sessionDiagnostics";
 
 export type ConversationStatusTone = "neutral" | "progress" | "warning" | "error";
 export type ConversationStatusPlacement = "session" | "transcript_tail" | "composer";
@@ -104,35 +105,68 @@ export function deriveConversationStatus(input: ConversationStatusInput): Conver
   return { kind: "idle", tone: "neutral", placement: null, composer: "available" };
 }
 
-/** Compatibility projection for callers that only render the transcript-tail
- * activity state. New status consumers should use deriveConversationStatus. */
+/** View model for the transcript's single next-step slot. Turn details come
+ * from SessionDiagnostics, while ConversationStatus owns recovery precedence. */
 export type ConversationNextStep =
   | { kind: "catching_up" }
-  | { kind: "working" }
-  | { kind: "scheduled_wakeup" }
-  | { kind: "monitoring" }
+  | {
+      kind: "working";
+      thinking: boolean;
+      tool: string | null;
+      cancelling: boolean;
+      cancelEscalatesAt: string | null;
+      compacting: boolean;
+    }
+  | { kind: "scheduled_wakeup"; wakeAt: string; reason: string | null }
+  | { kind: "monitoring"; description: string | null }
   | null;
 
 export function deriveConversationNextStep({
-  initialCatchup,
-  turnActive,
-  nextWakeupAt,
-  monitorArmed,
+  sync,
+  status,
+  turn,
 }: {
-  initialCatchup: boolean;
-  turnActive: boolean;
-  nextWakeupAt: string | null;
-  monitorArmed: boolean;
+  sync: ConversationSyncStatus;
+  status: ConversationStatus;
+  turn: TurnExecution;
 }): ConversationNextStep {
-  const status = deriveConversationStatus({
-    agentSession: "ready",
-    sync: initialCatchup ? "initial" : "idle",
-    turnActive,
-    nextWakeupAt,
-    monitorArmed,
-  });
-  if (status.kind === "updating" && status.cause === "initial") return { kind: "catching_up" };
-  if (status.kind === "active") return { kind: "working" };
-  if (status.kind === "waiting") return { kind: status.cause };
-  return null;
+  if (sync === "initial" || sync === "history") return { kind: "catching_up" };
+  if (status.kind === "blocked" || status.kind === "updating") return null;
+
+  switch (turn.kind) {
+    case "awaiting_user":
+    case "idle":
+      return null;
+    case "cancelling":
+      return {
+        kind: "working",
+        thinking: false,
+        tool: null,
+        cancelling: true,
+        cancelEscalatesAt: turn.escalatesAt,
+        compacting: false,
+      };
+    case "compacting":
+      return {
+        kind: "working",
+        thinking: false,
+        tool: null,
+        cancelling: false,
+        cancelEscalatesAt: null,
+        compacting: true,
+      };
+    case "running":
+      return {
+        kind: "working",
+        thinking: turn.activity === "thinking",
+        tool: turn.tool,
+        cancelling: false,
+        cancelEscalatesAt: null,
+        compacting: false,
+      };
+    case "scheduled":
+      return { kind: "scheduled_wakeup", wakeAt: turn.wakeAt, reason: turn.reason };
+    case "monitoring":
+      return { kind: "monitoring", description: turn.description };
+  }
 }

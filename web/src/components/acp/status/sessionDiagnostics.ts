@@ -24,7 +24,7 @@ export type AgentRuntime =
 
 export type TurnExecution =
   | { kind: "idle" }
-  | { kind: "running"; activity: "thinking" | "tool" | "streaming" | "waiting" }
+  | { kind: "running"; activity: "thinking" | "tool" | "streaming" | "waiting"; tool: string | null }
   | { kind: "awaiting_user"; request: "approval" | "elicitation" }
   | { kind: "cancelling"; escalatesAt: string | null }
   | { kind: "compacting" }
@@ -89,10 +89,12 @@ function deriveTurn(state: AcpState): TurnExecution {
   if (state.cancelling) return { kind: "cancelling", escalatesAt: state.cancelEscalatesAt };
   if (state.compacting) return { kind: "compacting" };
   if (state.turnActive) {
-    if (state.inFlightTool) return { kind: "running", activity: "tool" };
-    if (state.thinking) return { kind: "running", activity: "thinking" };
-    if (state.activity.at(-1)?.kind === "message") return { kind: "running", activity: "streaming" };
-    return { kind: "running", activity: "waiting" };
+    if (state.inFlightTool) return { kind: "running", activity: "tool", tool: state.inFlightTool.name };
+    if (state.thinking) return { kind: "running", activity: "thinking", tool: null };
+    if (state.activity.at(-1)?.kind === "message") {
+      return { kind: "running", activity: "streaming", tool: null };
+    }
+    return { kind: "running", activity: "waiting", tool: null };
   }
   if (state.nextWakeupAt) return { kind: "scheduled", wakeAt: state.nextWakeupAt, reason: state.nextWakeupReason };
   if (state.monitorArmed) return { kind: "monitoring", description: state.monitorDescription };
