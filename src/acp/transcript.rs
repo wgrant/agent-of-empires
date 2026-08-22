@@ -94,8 +94,8 @@ pub struct TranscriptModel {
     tool_outputs: HashMap<String, String>,
     /// Tool calls surfaced as an elicitation (AskUserQuestion); their cards are suppressed.
     elicitation_tool_ids: HashSet<String>,
-    /// Group of the still-open run of consecutive message chunks.
-    open_message_group: Option<String>,
+    /// The row receiving the current consecutive message or thought stream.
+    open_text_run: Option<(TranscriptRowKind, usize)>,
     group_counter: u64,
     /// Frames at or below this seq are dropped, so replay overlap is harmless.
     last_seq: u64,
@@ -125,59 +125,61 @@ impl TranscriptModel {
             return Vec::new();
         }
         self.last_seq = seq;
-        if !matches!(
-            event,
-            Event::AgentMessageChunk { .. } | Event::AgentMessageSnapshot { .. }
-        ) {
-            self.open_message_group = None;
+        let incoming_text_kind = match event {
+            Event::AgentMessageChunk { .. } | Event::AgentMessageSnapshot { .. } => {
+                Some(TranscriptRowKind::Message)
+            }
+            Event::AgentThoughtChunk { .. } | Event::AgentThoughtSnapshot { .. } => {
+                Some(TranscriptRowKind::Thinking)
+            }
+            _ => None,
+        };
+        if self.open_text_run.map(|(kind, _)| kind) != incoming_text_kind {
+            self.open_text_run = None;
         }
 
         match event {
             Event::AgentMessageChunk { text } => {
-                let group_id = self.message_group();
                 self.turn_has_output = true;
-                vec![self.append(TranscriptRow::new(
-                    format!("msg-{seq}"),
-                    group_id,
+                self.apply_stream_text(
                     TranscriptRowKind::Message,
-                    text.clone(),
-                ))]
+                    format!("msg-{seq}"),
+                    text,
+                    false,
+                )
             }
             Event::AgentMessageSnapshot {
                 block_start_seq,
                 text,
             } => {
-                let group_id = self.message_group();
                 self.turn_has_output = true;
-                vec![self.append(TranscriptRow::new(
-                    format!("msg-{block_start_seq}"),
-                    group_id,
+                self.apply_stream_text(
                     TranscriptRowKind::Message,
-                    text.clone(),
-                ))]
+                    format!("msg-{block_start_seq}"),
+                    text,
+                    true,
+                )
             }
             Event::AgentThoughtChunk { text } => {
                 self.turn_has_output = true;
-                let group_id = self.fresh_group();
-                vec![self.append(TranscriptRow::new(
-                    format!("thinking-{seq}"),
-                    group_id,
+                self.apply_stream_text(
                     TranscriptRowKind::Thinking,
-                    text.clone(),
-                ))]
+                    format!("thinking-{seq}"),
+                    text,
+                    false,
+                )
             }
             Event::AgentThoughtSnapshot {
                 block_start_seq,
                 text,
             } => {
                 self.turn_has_output = true;
-                let group_id = self.fresh_group();
-                vec![self.append(TranscriptRow::new(
-                    format!("thinking-{block_start_seq}"),
-                    group_id,
+                self.apply_stream_text(
                     TranscriptRowKind::Thinking,
-                    text.clone(),
-                ))]
+                    format!("thinking-{block_start_seq}"),
+                    text,
+                    true,
+                )
             }
             Event::UserPromptSent {
                 text,
@@ -578,13 +580,40 @@ impl TranscriptModel {
         self.push(format!("notice-{seq}"), TranscriptRowKind::Notice, text)
     }
 
-    fn message_group(&mut self) -> String {
-        if let Some(group) = &self.open_message_group {
-            return group.clone();
+    fn apply_stream_text(
+        &mut self,
+        kind: TranscriptRowKind,
+        canonical_id: String,
+        text: &str,
+        replacement: bool,
+    ) -> Vec<TranscriptDelta> {
+        if let Some((open_kind, index)) = self.open_text_run {
+            if open_kind == kind {
+                let row = &mut self.rows[index];
+                if !replacement || row.id == canonical_id {
+                    if replacement {
+                        row.text = text.to_owned();
+                    } else {
+                        row.text.push_str(text);
+                    }
+                    return vec![TranscriptDelta::Patch {
+                        id: row.id.clone(),
+                        row: row.clone(),
+                    }];
+                }
+            }
         }
+
         let group = self.fresh_group();
-        self.open_message_group = Some(group.clone());
-        group
+        let index = self.rows.len();
+        let delta = self.append(TranscriptRow::new(
+            canonical_id,
+            group,
+            kind,
+            text.to_owned(),
+        ));
+        self.open_text_run = Some((kind, index));
+        vec![delta]
     }
 
     fn fresh_group(&mut self) -> String {
@@ -989,22 +1018,39 @@ mod tests {
     }
 
     #[test]
-    fn message_chunks_share_a_group_until_another_event_breaks_it() {
-        let m = fold([
-            chunk("Hello"),
-            chunk(", world"),
-            Event::ThinkingStarted,
-            chunk("second"),
-        ]);
-        let msgs: Vec<&TranscriptRow> = m
-            .rows()
-            .iter()
-            .filter(|r| r.kind == TranscriptRowKind::Message)
-            .collect();
-        assert_eq!(msgs.len(), 3);
-        assert_eq!(msgs[0].text, "Hello");
-        assert_eq!(msgs[0].group_id, msgs[1].group_id);
-        assert_ne!(msgs[1].group_id, msgs[2].group_id);
+    fn adjacent_stream_chunks_patch_one_stable_row_until_broken() {
+        let mut m = TranscriptModel::new();
+        let first = m.apply_event(1, &chunk("Hello"));
+        let second = m.apply_event(2, &chunk(", world"));
+        let thought = m.apply_event(
+            3,
+            &Event::AgentThoughtChunk {
+                text: "checking".into(),
+            },
+        );
+        let thought_tail = m.apply_event(
+            4,
+            &Event::AgentThoughtChunk {
+                text: " this".into(),
+            },
+        );
+        let third = m.apply_event(5, &chunk("second"));
+
+        assert!(matches!(first.as_slice(), [TranscriptDelta::Append(_)]));
+        assert!(matches!(
+            second.as_slice(),
+            [TranscriptDelta::Patch { id, .. }] if id == "msg-1"
+        ));
+        assert!(matches!(thought.as_slice(), [TranscriptDelta::Append(_)]));
+        assert!(matches!(
+            thought_tail.as_slice(),
+            [TranscriptDelta::Patch { id, .. }] if id == "thinking-3"
+        ));
+        assert!(matches!(third.as_slice(), [TranscriptDelta::Append(_)]));
+        assert_eq!(m.rows().len(), 3);
+        assert_eq!(m.rows()[0].text, "Hello, world");
+        assert_eq!(m.rows()[1].text, "checking this");
+        assert_eq!(m.rows()[2].text, "second");
     }
 
     #[test]
