@@ -49,6 +49,13 @@ impl EventStore {
         // Prefix "acp" maps to the existing acp_events / acp_attachments tables.
         let schema = events::Schema::new("acp")?;
         let conn = events::open(db_path, &schema)?;
+        if let Err(error) = stream_compaction::run_legacy_compaction(&conn, &schema) {
+            warn!(
+                target: "acp.event_store",
+                %error,
+                "historical event compaction failed; will retry next startup"
+            );
+        }
         let search_conn = Connection::open_with_flags(
             db_path,
             rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_URI,
