@@ -68,6 +68,13 @@ export function scrollRestoreDelta(prevScrollHeight: number, nextScrollHeight: n
   return delta > 0 ? delta : 0;
 }
 
+/** A pending height anchor is stale when loading has settled but the
+ * transcript never grew. Keeping it would apply an unrelated later append as
+ * though it were older history. */
+export function anchorIsStale(loading: boolean, anchor: number | null, scrollHeight: number): boolean {
+  return !loading && anchor != null && anchor === scrollHeight;
+}
+
 /** Restore an explicit older-history request after the replacement window has
  * mounted. Unlike a live append, the reader asked to reveal content above the
  * current view, so retain the same prior row even if the runtime briefly
