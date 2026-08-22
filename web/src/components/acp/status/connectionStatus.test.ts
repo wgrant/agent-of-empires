@@ -173,10 +173,11 @@ describe("connection status model", () => {
         retryCount: 2,
         retryCountdown: 3,
         maxRetries: 7,
+        agentRuntime: { kind: "starting" },
       }),
     ).toMatchObject({
       targetLabel: "Terminal",
-      primary: "reconnecting",
+      primary: "agent_starting",
       route: "reconnecting",
       hasIncident: true,
     });
@@ -192,6 +193,7 @@ describe("connection status model", () => {
     const session = {
       kind: "structured" as const,
       sessionId: "session",
+      operational: { kind: "active" as const, agent: { kind: "stopped" as const, cause: "user" as const } },
       diagnostics: deriveConnectionDiagnostics({
         ...base,
         agentRuntime: { kind: "stopped", reason: "user_stopped" },

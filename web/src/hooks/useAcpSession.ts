@@ -102,8 +102,6 @@ function optimisticPromptId(): string {
 
 export function useAcpSession(
   sessionId: string | null,
-  /** Queued prompts can be sent immediately only while the worker is running. */
-  workerState: "absent" | "resuming" | "running" | "stopping" = "running",
   archivedAt: string | null = null,
   snoozedUntil: string | null = null,
 ) {
@@ -427,18 +425,6 @@ export function useAcpSession(
     editQueuedPrompt,
     clearQueue,
     sendQueuedNow,
-    canSendQueuedNow:
-      status === "open" &&
-      !state.workerStopped &&
-      !state.workerRestarting &&
-      // Same mirror: "Send now" is offered wherever a prompt can start a worker, which is what
-      // lets a row queued before the park drain without waiting out the reset window.
-      (workerState === "running" ||
-        state.workerIdleStopped ||
-        state.rateLimitRetriesExhausted ||
-        state.rateLimitParked),
-    /** Send now would cancel a running, non-steerable turn rather than send immediately. */
-    sendNowInterruptsTurn: state.turnActive && !steerable,
     setConfigOption,
   };
 }

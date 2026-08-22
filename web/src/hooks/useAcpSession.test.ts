@@ -258,7 +258,7 @@ describe("sendPrompt outcomes", () => {
 
     it("wakes a snoozed session before sending", async () => {
       calls = installAcpFakes(queuedPrompt);
-      const { result } = render("sess-wake", "absent", null, "2099-01-01T00:00:00Z");
+      const { result } = render("sess-wake", null, "2099-01-01T00:00:00Z");
       await flushAsync();
       await act(() => result.current.sendPrompt("wake me up"));
       await flushAsync();
@@ -272,7 +272,7 @@ describe("sendPrompt outcomes", () => {
       ["archived and snoozed", "2099-01-01T00:00:00Z"],
     ])("refuses to send to an %s session", async (_label, snoozed) => {
       calls = installAcpFakes(queuedPrompt);
-      const { result } = render("sess-archived", "absent", "2026-01-01T00:00:00Z", snoozed);
+      const { result } = render("sess-archived", "2026-01-01T00:00:00Z", snoozed);
       await flushAsync();
       await act(() => result.current.sendPrompt("wake me up"));
       await flushAsync();
@@ -283,7 +283,7 @@ describe("sendPrompt outcomes", () => {
 
     it("does not call wake endpoints for a live session", async () => {
       calls = installAcpFakes(queuedPrompt);
-      const { result } = render("sess-live", "absent", null, null);
+      const { result } = render("sess-live", null, null);
       await flushAsync();
       await act(() => result.current.sendPrompt("just a prompt"));
       await flushAsync();
@@ -293,7 +293,7 @@ describe("sendPrompt outcomes", () => {
 
     it("sends nothing when the snooze wake fails", async () => {
       calls = installAcpFakes(failingWake("/snooze"));
-      const { result } = render("sess-wake-fail", "absent", null, "2099-01-01T00:00:00Z");
+      const { result } = render("sess-wake-fail", null, "2099-01-01T00:00:00Z");
       await flushAsync();
       await act(() => result.current.sendPrompt("wake me up"));
       await flushAsync();
@@ -312,7 +312,7 @@ describe("sendPrompt outcomes", () => {
       if (url.includes("/queue") && method === "GET") return json([]);
       return undefined;
     });
-    const { result } = render("sess-capacity", "running", null, null);
+    const { result } = render("sess-capacity", null, null);
     await flushAsync();
     await act(() => result.current.sendPrompt("no room at the inn"));
     await flushAsync();
@@ -340,24 +340,17 @@ describe("sendPrompt outcomes", () => {
       };
 
     // The re-queue keys on the daemon's `worker_not_ready`, not on this flag: a park the client
-    // has not learned about yet must not cost the prompt, so BOTH rows re-enqueue. The flag is
-    // still asserted because `canSendQueuedNow` reads it.
+    // has not learned about yet must not cost the prompt, so BOTH rows re-enqueue. The flag still
+    // feeds the shared session diagnostics.
     it.each([[true], [false]])("parked=%s re-enqueues a 503'd prompt", async (isParked) => {
       calls = installAcpFakes(parked(isParked));
-      const { result } = render(`sess-${tag}`, "running", null, null);
+      const { result } = render(`sess-${tag}`, null, null);
       await flushAsync();
       expect(result.current.state[flag]).toBe(isParked);
       await act(() => result.current.sendPrompt("try again after the park"));
       await flushAsync();
       expect(posts("/queue")).toHaveLength(1);
       expect(result.current.state.queuedPrompts.map((q) => q.text)).toEqual(["try again after the park"]);
-    });
-
-    it("offers Send now on a row stranded behind the park", async () => {
-      installAcpFakes(parked(true));
-      const { result } = await openSession(`sess-${tag}-send`, "absent", null, null);
-      expect(result.current.status).toBe("open");
-      expect(result.current.canSendQueuedNow).toBe(true);
     });
   });
 });
