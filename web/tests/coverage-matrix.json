@@ -2686,6 +2686,23 @@
       "components": ["web/src/components/acp/StructuredView.tsx"]
     },
     {
+      "id": "acp.mobile-prompt-outbox",
+      "kind": "mocked-playwright",
+      "risk": "medium",
+      "specs": ["tests/acp-mobile-prompt-outbox.spec.ts"],
+      "components": [
+        "web/src/components/acp/StructuredView.tsx",
+        "web/src/components/acp/status/ComposerActionRail.tsx"
+      ]
+    },
+    {
+      "id": "acp.composer-action-feedback",
+      "kind": "vitest",
+      "risk": "low",
+      "specs": ["src/components/acp/status/ActionFeedbackNotice.test.tsx"],
+      "components": ["web/src/components/acp/status/ActionFeedbackNotice.tsx"]
+    },
+    {
       "id": "acp.mobile-jump-to-bottom",
       "kind": "mocked-playwright",
       "risk": "medium",
