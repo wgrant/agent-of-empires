@@ -71,22 +71,10 @@ describe("TrashedWorkerStoppedBanner", () => {
 });
 
 describe("WorkerRestartingBanner", () => {
-  const GENERIC = "Restarting structured view worker";
-  const UNRESPONSIVE = "Agent stopped responding to cancel";
-  const ORPHANED = "Agent finished but didn't notify the daemon";
-  it.each([
-    [false, false, GENERIC],
-    [true, false, UNRESPONSIVE],
-    [false, true, ORPHANED],
-    // Both can briefly be set during a cancel-escalation race; orphaned wins.
-    [true, true, ORPHANED],
-  ])("unresponsive=%s orphaned=%s renders %s", (agentUnresponsive, agentOrphaned, expected) => {
-    const { container } = render(
-      <WorkerRestartingBanner agentUnresponsive={agentUnresponsive} agentOrphaned={agentOrphaned} />,
-    );
-    for (const copy of [GENERIC, UNRESPONSIVE, ORPHANED]) {
-      expect(container.textContent?.includes(copy)).toBe(copy === expected);
-    }
+  it("renders the incident-selected message", () => {
+    const message = "Agent finished but didn't notify the daemon. Restarting worker.";
+    const { container } = render(<WorkerRestartingBanner message={message} />);
+    expect(container.textContent).toContain(message);
   });
 });
 

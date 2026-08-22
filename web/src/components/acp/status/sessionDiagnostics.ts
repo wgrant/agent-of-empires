@@ -75,8 +75,8 @@ function deriveRuntime(input: SessionDiagnosticsInput): AgentRuntime {
   if (state.rateLimit) return { kind: "blocked", reason: "rate_limited" };
   if (workerState === "stopping") return { kind: "stopping" };
   if (state.workerStopped) return { kind: "stopped", reason: "user_stopped" };
-  if (state.agentUnresponsive) return { kind: "restarting", reason: "cancel_unresponsive" };
   if (state.agentOrphaned) return { kind: "restarting", reason: "prompt_orphaned" };
+  if (state.agentUnresponsive) return { kind: "restarting", reason: "cancel_unresponsive" };
   if (state.workerRestarting || workerState === "resuming") return { kind: "restarting", reason: "manual_restart" };
   if (state.workerIdleStopped) return { kind: "dormant", reason: "idle_auto_stop" };
   if (workerState === "running") return { kind: "ready" };

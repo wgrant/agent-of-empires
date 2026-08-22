@@ -8,7 +8,7 @@ import {
   type ConversationDiagnosticsSnapshot,
   type SessionIncident,
 } from "./status/conversationDiagnostics";
-import { deriveSessionDiagnostics, type SessionDiagnostics } from "./status/sessionDiagnostics";
+import { deriveSessionDiagnostics } from "./status/sessionDiagnostics";
 import { ActionFeedbackNotice } from "./status/ActionFeedbackNotice";
 import { StartupErrorBanner } from "./StartupErrorBanner";
 
@@ -49,12 +49,7 @@ export function SessionBanners({
 
   return (
     <>
-      <ConversationLifecycleNotice
-        sessionId={sessionId}
-        diagnostics={diagnostics}
-        incident={incident}
-        onRestore={onRestore}
-      />
+      <ConversationLifecycleNotice sessionId={sessionId} incident={incident} onRestore={onRestore} />
       {state.lastError && (
         <ActionFeedbackNotice
           title="Action did not complete"
@@ -70,30 +65,21 @@ export function SessionBanners({
 
 export function ConversationLifecycleNotice({
   sessionId,
-  diagnostics,
   incident,
   onRestore,
 }: {
   sessionId: string;
-  diagnostics: SessionDiagnostics;
   incident: SessionIncident | null;
   onRestore?: () => Promise<boolean> | void;
 }) {
   if (!incident) return null;
   if (incident.kind === "failed") return <StartupErrorBanner sessionId={sessionId} message={incident.detail} />;
-  if (incident.kind === "restarting") {
-    return (
-      <WorkerRestartingBanner
-        agentUnresponsive={diagnostics.evidence.agentUnresponsive}
-        agentOrphaned={diagnostics.evidence.agentOrphaned}
-      />
-    );
-  }
+  if (incident.kind === "restarting") return <WorkerRestartingBanner message={incident.detail} />;
   if (incident.kind === "stopping") return <WorkerStoppingBanner />;
   if (incident.kind === "trashed") return <TrashedWorkerStoppedBanner sessionId={sessionId} onRestore={onRestore} />;
   if (incident.kind === "archived") return <ArchivedWorkerStoppedBanner sessionId={sessionId} />;
-  if (incident.kind === "snoozed" && diagnostics.disposition.kind === "snoozed") {
-    return <SnoozedWorkerStoppedBanner sessionId={sessionId} snoozedUntil={diagnostics.disposition.until} />;
+  if (incident.kind === "snoozed") {
+    return <SnoozedWorkerStoppedBanner sessionId={sessionId} snoozedUntil={incident.snoozedUntil} />;
   }
   if (incident.kind === "stopped") return <WorkerStoppedBanner sessionId={sessionId} />;
   return null;
@@ -152,23 +138,8 @@ function ChipBanner({
   );
 }
 
-/** Orphaned (turn finished, no PromptResponse) wins over unresponsive (ignored cancel). */
-export function WorkerRestartingBanner({
-  agentUnresponsive,
-  agentOrphaned,
-}: {
-  agentUnresponsive: boolean;
-  agentOrphaned: boolean;
-}) {
-  return (
-    <PulseBanner tone="sky">
-      {agentOrphaned
-        ? "Agent finished but didn't notify the daemon. Restarting worker; your transcript will be preserved."
-        : agentUnresponsive
-          ? "Agent stopped responding to cancel. Restarting worker; your transcript will be preserved."
-          : "Restarting structured view worker… the daemon will respawn the agent with your existing transcript shortly."}
-    </PulseBanner>
-  );
+export function WorkerRestartingBanner({ message }: { message: string }) {
+  return <PulseBanner tone="sky">{message}</PulseBanner>;
 }
 
 function WorkerStoppingBanner() {

@@ -31,11 +31,40 @@ export type SessionAction =
   | "switch_agent"
   | "wait";
 
-export interface SessionIncident {
-  kind: "trashed" | "archived" | "snoozed" | "failed" | "stopped" | "stopping" | "blocked" | "restarting" | "dormant";
+interface SessionIncidentBase {
   action: SessionAction;
   title: string;
   detail: string;
+}
+
+export type SessionIncident =
+  | (SessionIncidentBase & { kind: "trashed"; action: "restore" })
+  | (SessionIncidentBase & { kind: "archived"; action: "unarchive" })
+  | (SessionIncidentBase & { kind: "snoozed"; action: "unsnooze"; snoozedUntil: string })
+  | (SessionIncidentBase & {
+      kind: "failed";
+      action: "retry_start";
+      category: "startup" | "compatibility";
+    })
+  | (SessionIncidentBase & { kind: "stopped"; action: "reconnect" })
+  | (SessionIncidentBase & { kind: "stopping"; action: "wait" })
+  | (SessionIncidentBase & { kind: "blocked"; action: "switch_agent"; reason: "rate_limited" })
+  | (SessionIncidentBase & {
+      kind: "restarting";
+      action: "wait";
+      reason: "manual_restart" | "cancel_unresponsive" | "prompt_orphaned";
+    })
+  | (SessionIncidentBase & { kind: "dormant"; action: "wait"; reason: "idle_auto_stop" });
+
+function restartDetail(reason: Extract<SessionDiagnostics["runtime"], { kind: "restarting" }>["reason"]): string {
+  switch (reason) {
+    case "prompt_orphaned":
+      return "Agent finished but didn't notify the daemon. Restarting worker; your transcript will be preserved.";
+    case "cancel_unresponsive":
+      return "Agent stopped responding to cancel. Restarting worker; your transcript will be preserved.";
+    case "manual_restart":
+      return "Restarting structured view worker… the daemon will respawn the agent with your existing transcript shortly.";
+  }
 }
 
 export type ComposerAvailability =
@@ -86,6 +115,7 @@ export function deriveSessionIncident(snapshot: ConversationDiagnosticsSnapshot)
       action: "unsnooze",
       title: "Session snoozed",
       detail: "This session will resume when its snooze expires, or you can wake it sooner.",
+      snoozedUntil: disposition.until,
     };
   }
   switch (runtime.kind) {
@@ -95,6 +125,7 @@ export function deriveSessionIncident(snapshot: ConversationDiagnosticsSnapshot)
         action: "retry_start",
         title: "Agent could not start",
         detail: runtime.message,
+        category: runtime.category,
       };
     case "stopped":
       return {
@@ -116,13 +147,15 @@ export function deriveSessionIncident(snapshot: ConversationDiagnosticsSnapshot)
         action: "switch_agent",
         title: "Agent is rate limited",
         detail: "The provider is not accepting work for this session.",
+        reason: runtime.reason,
       };
     case "restarting":
       return {
         kind: "restarting",
         action: "wait",
         title: "Restarting agent",
-        detail: "AoE is restoring the agent session.",
+        detail: restartDetail(runtime.reason),
+        reason: runtime.reason,
       };
     case "dormant":
       return {
@@ -130,6 +163,7 @@ export function deriveSessionIncident(snapshot: ConversationDiagnosticsSnapshot)
         action: "wait",
         title: "Agent paused while idle",
         detail: "The next message wakes this session automatically.",
+        reason: runtime.reason,
       };
     default:
       return null;
