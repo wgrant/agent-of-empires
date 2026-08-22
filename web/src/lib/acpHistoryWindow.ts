@@ -32,6 +32,7 @@ function endsVisualBlock(row: ActivityRow): boolean {
     case "summary":
       return true;
     case "tool_start":
+    case "notice":
       return false;
   }
 }
