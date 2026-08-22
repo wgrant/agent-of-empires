@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 import type { ConnectionDiagnostics } from "../components/acp/status/connectionStatus";
 
@@ -28,29 +28,21 @@ function initialVisibility(diagnostics: ConnectionDiagnostics): boolean {
  */
 export function useConnectionIncidentVisibility(sessionId: string, diagnostics: ConnectionDiagnostics): boolean {
   const initial = initialVisibility(diagnostics);
-  const [visibility, setVisibility] = useState(() => ({ sessionId, visible: initial }));
-  const currentSessionIdRef = useRef(sessionId);
-
-  if (currentSessionIdRef.current !== sessionId) {
-    currentSessionIdRef.current = sessionId;
-    setVisibility({ sessionId, visible: initial });
-  }
-
   const delayed = shouldDelayConnectionIncident(diagnostics);
+  const delayKey = `${sessionId}:${diagnostics.route}:${diagnostics.session}`;
+  const [delay, setDelay] = useState(() => ({ key: delayKey, elapsed: false }));
+  if (delay.key !== delayKey) {
+    setDelay({ key: delayKey, elapsed: false });
+  }
   useEffect(() => {
-    if (!diagnostics.hasIncident) {
-      setVisibility({ sessionId, visible: false });
-      return;
-    }
-    if (!delayed) {
-      setVisibility({ sessionId, visible: true });
-      return;
-    }
-
-    setVisibility({ sessionId, visible: false });
-    const timer = window.setTimeout(() => setVisibility({ sessionId, visible: true }), CONNECTION_INCIDENT_DELAY_MS);
+    if (!delayed) return;
+    const timer = window.setTimeout(
+      () => setDelay((current) => (current.key === delayKey ? { ...current, elapsed: true } : current)),
+      CONNECTION_INCIDENT_DELAY_MS,
+    );
     return () => window.clearTimeout(timer);
-  }, [delayed, diagnostics.hasIncident, sessionId]);
+  }, [delayKey, delayed]);
 
-  return visibility.sessionId === sessionId ? visibility.visible : initial;
+  if (!diagnostics.hasIncident || !delayed) return initial;
+  return delay.key === delayKey && delay.elapsed;
 }
