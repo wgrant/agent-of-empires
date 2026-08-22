@@ -119,6 +119,22 @@ function toPersistedState(state: AcpState): AcpState {
   return { ...base, queuedPrompts: base.queuedPrompts.filter((q) => !q.attachments?.length) };
 }
 
+function coalescePersistedStreamRows(rows: AcpState["activity"]): AcpState["activity"] {
+  let out: AcpState["activity"] | null = null;
+  for (let index = 1; index < rows.length; index += 1) {
+    const row = rows[index]!;
+    const previous = out ? out[out.length - 1]! : rows[index - 1]!;
+    const streamed = row.kind === "message" || row.kind === "thinking";
+    if (!streamed || previous.kind !== row.kind) {
+      if (out) out.push(row);
+      continue;
+    }
+    if (!out) out = rows.slice(0, index);
+    out[out.length - 1] = { ...previous, text: previous.text + row.text };
+  }
+  return out ?? rows;
+}
+
 export function coldResumeState(state: AcpState): AcpState {
   return {
     ...emptyAcpState(),
@@ -157,7 +173,11 @@ export function loadPersistedState(sessionId: string): AcpState | undefined {
       return undefined;
     }
     // Merge over defaults so entries from an older bundle gain newly added fields.
-    return normaliseTurnState({ ...emptyAcpState(), ...(state as AcpState) });
+    return normaliseTurnState({
+      ...emptyAcpState(),
+      ...(state as AcpState),
+      activity: coalescePersistedStreamRows(state.activity),
+    });
   } catch {
     return undefined;
   }
