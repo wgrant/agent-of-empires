@@ -77,7 +77,9 @@ test("a queued follow-up drains while its chat is closed", async ({ page, spawnS
   const { serve, sessionId, queue } = await startHeldTurn(page, spawnServe, "queue-unmounted-a", turnTwoText);
   await queue(queuedText);
   // Also guarantees the queue reached localStorage before the reload.
-  await expect(page.getByText(/Queued \(1\)/i)).toBeVisible({ timeout: 5_000 });
+  await expect(page.getByTestId("prompt-outbox-panel").getByText("1 queued", { exact: true })).toBeVisible({
+    timeout: 5_000,
+  });
 
   await leaveForSettings(page, serve);
   releaseTurn(serve);
@@ -123,7 +125,7 @@ test("sidebar row shows the queued-prompt count badge", async ({ page, spawnServ
     expect(await response.json()).toMatchObject({ disposition: "queued" });
   }
   // Only confirmed rows are persisted; check the local projection before the hard navigation.
-  await expect(page.getByText("Queued (2)", { exact: true })).toBeVisible();
+  await expect(page.getByTestId("prompt-outbox-panel").getByText("2 queued", { exact: true })).toBeVisible();
 
   await page.goto(serve.baseUrl);
   await expect(page.getByTitle("2 queued prompts")).toBeVisible({ timeout: 15_000 });
