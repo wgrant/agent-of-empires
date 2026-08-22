@@ -53,8 +53,7 @@ export type SessionIncident =
       kind: "restarting";
       action: "wait";
       reason: "manual_restart" | "cancel_unresponsive" | "prompt_orphaned";
-    })
-  | (SessionIncidentBase & { kind: "dormant"; action: "wait"; reason: "idle_auto_stop" });
+    });
 
 function restartDetail(reason: Extract<SessionDiagnostics["runtime"], { kind: "restarting" }>["reason"]): string {
   switch (reason) {
@@ -158,13 +157,7 @@ export function deriveSessionIncident(snapshot: ConversationDiagnosticsSnapshot)
         reason: runtime.reason,
       };
     case "dormant":
-      return {
-        kind: "dormant",
-        action: "wait",
-        title: "Agent paused while idle",
-        detail: "The next message wakes this session automatically.",
-        reason: runtime.reason,
-      };
+      return null;
     default:
       return null;
   }

@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { RotateCcw } from "lucide-react";
 
-import type { RespawnState } from "../../hooks/useRespawnSession";
 import type { AcpState } from "../../lib/acpTypes";
 import { SwitchAgentModal } from "./SwitchAgentModal";
 import { useConnectionDiagnosticsPublisher } from "../../lib/connectionDiagnosticsContext";
@@ -53,43 +52,30 @@ function rateLimitWording(status: string): string {
   return text || "the agent did not report a reset time.";
 }
 
+export function rateLimitDetail(limit: NonNullable<AcpState["rateLimit"]>): string {
+  const reset = limit.resets_at === null ? null : new Date(limit.resets_at);
+  return reset && !Number.isNaN(reset.getTime())
+    ? `Rate-limited (${limit.kind}); resets at ${reset.toLocaleTimeString()}.`
+    : `Rate-limited (${limit.kind}); ${rateLimitWording(limit.status)}`;
+}
+
 export function deriveStructuredConnectionDiagnostics(input: Omit<ConnectionStatusInput, "rateLimitText">) {
   return deriveConnectionDiagnostics({
     ...input,
-    rateLimitText: (limit) => {
-      const reset = limit.resets_at === null ? null : new Date(limit.resets_at);
-      return reset && !Number.isNaN(reset.getTime())
-        ? `Rate-limited (${limit.kind}); resets at ${reset.toLocaleTimeString()}.`
-        : `Rate-limited (${limit.kind}); ${rateLimitWording(limit.status)}`;
-    },
+    rateLimitText: rateLimitDetail,
   });
 }
 
 export function SystemNotices({
   connectionSnapshot,
-  rateLimit,
-  rateLimitAutoResume,
-  rateLimitRetriesExhausted,
   conversationSync = "idle",
   manualReconnect,
   showConnectionIncident = true,
-  onSwitchAgent,
-  onResumeRateLimit,
-  rateLimitResumeState = "idle",
-  rateLimitResumeError = null,
 }: {
   connectionSnapshot: ConnectionStatusSnapshot & { session: SessionConnectionDiagnostics };
-  rateLimit: AcpState["rateLimit"];
-  /** Omitted when unknown, in which case nothing is claimed about auto-resume. */
-  rateLimitAutoResume?: boolean;
-  rateLimitRetriesExhausted: boolean;
   conversationSync?: ConversationSyncStatus;
   manualReconnect: () => void;
   showConnectionIncident?: boolean;
-  onSwitchAgent?: () => void;
-  onResumeRateLimit?: () => void;
-  rateLimitResumeState?: RespawnState;
-  rateLimitResumeError?: string | null;
 }) {
   const displayDiagnostics = selectConnectionDiagnostics(connectionSnapshot);
   const sessionConnection = connectionSnapshot.session;
@@ -111,64 +97,11 @@ export function SystemNotices({
       </>
     );
   }
-  const rateLimitIncident = rateLimit !== null && displayDiagnostics.session === "rate_limited";
-  const resumePending = rateLimitResumeState === "retrying" || rateLimitResumeState === "ok";
-  const actions =
-    rateLimitIncident || rateLimitRetriesExhausted ? (
-      <>
-        {rateLimit && onResumeRateLimit && (
-          <button
-            type="button"
-            onClick={onResumeRateLimit}
-            disabled={resumePending}
-            className="rounded-md border border-brand-700 bg-brand-900/40 px-2 py-1 text-[10px] font-mono uppercase tracking-wide text-brand-100 hover:bg-brand-900/60 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {rateLimitResumeState === "retrying"
-              ? "Resuming…"
-              : rateLimitResumeState === "ok"
-                ? "Resume requested"
-                : "Resume now"}
-          </button>
-        )}
-        {rateLimit && onSwitchAgent && (
-          <button
-            type="button"
-            onClick={onSwitchAgent}
-            className="rounded-md border border-brand-700 bg-brand-900/40 px-2 py-1 text-[10px] font-mono uppercase tracking-wide text-brand-100 hover:bg-brand-900/60"
-          >
-            Continue in another agent
-          </button>
-        )}
-        {rateLimitAutoResume === true && !rateLimitRetriesExhausted && (
-          <span className="basis-full text-xs text-text-muted">
-            Auto-resume is armed; the session resumes when the window clears.
-          </span>
-        )}
-        {rateLimitAutoResume === false && (
-          <span className="basis-full text-xs text-text-muted">
-            Auto-resume is off for this profile; use Resume now, or enable acp.rate_limit_auto_resume.
-          </span>
-        )}
-        {rateLimitRetriesExhausted && (
-          <span className="basis-full text-xs text-status-warning">
-            Auto-resume stopped after repeated attempts. Resume manually or send a new prompt.
-          </span>
-        )}
-        {rateLimitResumeState === "ok" && (
-          <span className="basis-full text-xs text-text-muted">
-            Resume requested. New events should start streaming shortly.
-          </span>
-        )}
-        {rateLimitResumeState === "failed" && rateLimitResumeError && (
-          <span className="basis-full text-xs text-status-error">Resume failed: {rateLimitResumeError}</span>
-        )}
-      </>
-    ) : undefined;
   return (
     <>
       {publication}
       {showConnectionIncident && displayDiagnostics.hasIncident && (
-        <ConnectionIncidentBubble snapshot={connectionSnapshot} onReconnect={manualReconnect} actions={actions} />
+        <ConnectionIncidentBubble snapshot={connectionSnapshot} onReconnect={manualReconnect} />
       )}
     </>
   );
