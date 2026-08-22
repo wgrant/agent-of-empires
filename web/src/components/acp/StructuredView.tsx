@@ -99,8 +99,7 @@ const STARTER_PROMPTS = [
 ];
 
 export function StructuredView(props: Props) {
-  const { sessionId, acpWorkerState, tool, clearAliases, archivedAt, snoozedUntil, onOpenFileRef, fileRefSession } =
-    props;
+  const { sessionId, tool, clearAliases, archivedAt, snoozedUntil, onOpenFileRef, fileRefSession } = props;
   const [showClearedTurns, setShowClearedTurns] = useState(false);
   const [toolDensity, toggleToolDensity] = useToolDensityPref();
   return (
@@ -214,7 +213,6 @@ function AcpChrome({
     serverReachability: ctx.serverReachability,
     lagged: state.lagged,
     rateLimit: state.rateLimit,
-    rateLimitRetriesExhausted: state.rateLimitRetriesExhausted,
     hasEverOpened: ctx.hasEverOpened,
     reconnecting: ctx.reconnecting,
     retryCount: ctx.retryCount,
@@ -245,7 +243,10 @@ function AcpChrome({
     transport: streamTransport,
   };
   const dashboardConnection = useDashboardConnectionDiagnostics();
-  const connectionSnapshot: ConnectionStatusSnapshot = { dashboard: dashboardConnection, session: sessionConnection };
+  const connectionSnapshot = {
+    dashboard: dashboardConnection,
+    session: sessionConnection,
+  } satisfies ConnectionStatusSnapshot;
   const conversationDiagnostics: ConversationDiagnosticsSnapshot = {
     connection: connectionSnapshot,
     session: { sessionId, kind: "structured", lifecycle: sessionDiagnostics },
@@ -483,6 +484,9 @@ function AcpChrome({
               onToggleCollapsed={() => setComposerCollapsed((v) => !v)}
               availability={composerAvailability}
               conversationSync={conversationSync}
+              waitingForRecovery={activeAgent?.kind !== "online" && activeAgent?.kind !== "dormant"}
+              canSendQueuedNow={canSendQueuedNow}
+              sendNowInterruptsTurn={sendNowInterruptsTurn}
             />
           )}
         </div>
@@ -503,6 +507,9 @@ function ComposerDock({
   onToggleCollapsed,
   availability,
   conversationSync,
+  waitingForRecovery,
+  canSendQueuedNow,
+  sendNowInterruptsTurn,
 }: {
   view: Props;
   ctx: AcpContext;
@@ -513,13 +520,16 @@ function ComposerDock({
   onToggleCollapsed: () => void;
   availability: Exclude<ComposerAvailability, { kind: "read_only" }>;
   conversationSync: ReturnType<typeof deriveConversationSyncStatus>;
+  waitingForRecovery: boolean;
+  canSendQueuedNow: boolean;
+  sendNowInterruptsTurn: boolean;
 }) {
-  const { sessionId, acpWorkerState, acpAgent } = view;
+  const { sessionId, acpAgent } = view;
   const { state, status } = ctx;
   const promptOutbox = derivePromptOutbox({
     queued: state.queuedPrompts,
     rejected: state.rejectedPrompts,
-    waitingForRecovery: status !== "open" || (activeAgent?.kind !== "online" && activeAgent?.kind !== "dormant"),
+    waitingForRecovery: status !== "open" || waitingForRecovery,
   });
   return (
     <>
