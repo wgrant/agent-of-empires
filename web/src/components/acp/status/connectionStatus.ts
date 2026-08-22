@@ -14,6 +14,7 @@ export type ConnectionRouteStatus = "connected" | "connecting" | "reconnecting" 
 export type AgentSessionStatus =
   | "ready"
   | "starting"
+  | "stopping"
   | "restarting"
   | "dormant"
   | "stopped"
@@ -32,6 +33,7 @@ export type PrimaryConnectionStatus =
   | "reconnecting"
   | "disconnected"
   | "agent_starting"
+  | "agent_stopping"
   | "agent_restarting"
   | "agent_stopped"
   | "agent_failed"
@@ -200,6 +202,8 @@ export function connectionStatusPresentation(primary: PrimaryConnectionStatus): 
       };
     case "agent_starting":
       return { headline: "Starting agent", description: "Agent session is starting.", tone: "warning", working: true };
+    case "agent_stopping":
+      return { headline: "Stopping agent", description: "Agent session is stopping.", tone: "warning", working: true };
     case "agent_restarting":
       return {
         headline: "Restarting agent",
@@ -274,6 +278,7 @@ function primaryStatus({
   if (session === "unresponsive") return "agent_unresponsive";
   if (session === "rate_limited") return "rate_limited";
   if (session === "starting") return "agent_starting";
+  if (session === "stopping") return "agent_stopping";
   if (session === "restarting") return "agent_restarting";
   if (continuity === "unavailable") return "updates_unavailable";
   if (continuity === "missed") return "updates_missed";
@@ -293,6 +298,8 @@ function sessionDescription(session: AgentSessionStatus): string {
       return "Provider is rate limiting requests";
     case "starting":
       return "Starting";
+    case "stopping":
+      return "Stopping";
     case "restarting":
       return "Restarting";
     case "dormant":
@@ -332,6 +339,8 @@ export function deriveConnectionDiagnostics(input: ConnectionStatusInput): Conne
         return input.agentRuntime.reason === "cancel_unresponsive" ? "unresponsive" : "restarting";
       case "starting":
         return "starting";
+      case "stopping":
+        return "stopping";
       case "dormant":
         return "dormant";
       case "ready":
@@ -370,7 +379,7 @@ export function deriveConnectionDiagnostics(input: ConnectionStatusInput): Conne
         ? "blocked"
         : session === "dormant"
           ? "unknown"
-          : session === "starting" || session === "restarting" || session === "unresponsive"
+          : session === "starting" || session === "stopping" || session === "restarting" || session === "unresponsive"
             ? "working"
             : "ready";
   const serverToAgent: ConnectionEdgeState =
@@ -566,6 +575,8 @@ export function deriveTerminalConnectionDiagnostics(input: {
     switch (input.agentRuntime.kind) {
       case "starting":
         return "starting";
+      case "stopping":
+        return "stopping";
       case "restarting":
         return "restarting";
       case "stopped":
@@ -587,7 +598,7 @@ export function deriveTerminalConnectionDiagnostics(input: {
       ? "failed"
       : session === "rate_limited"
         ? "blocked"
-        : session === "starting" || session === "restarting"
+        : session === "starting" || session === "stopping" || session === "restarting"
           ? "working"
           : input.connected
             ? "ready"
@@ -599,9 +610,11 @@ export function deriveTerminalConnectionDiagnostics(input: {
         ? "agent_stopped"
         : session === "starting"
           ? "agent_starting"
-          : session === "restarting"
-            ? "agent_restarting"
-            : primaryStatus({ route, session, continuity: input.connected ? "current" : "unavailable" });
+          : session === "stopping"
+            ? "agent_stopping"
+            : session === "restarting"
+              ? "agent_restarting"
+              : primaryStatus({ route, session, continuity: input.connected ? "current" : "unavailable" });
   return {
     device: "ready",
     deviceToServer,
