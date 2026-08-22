@@ -977,7 +977,7 @@ function AppContent({
         const picked = ws.sessions.find((s) => s.id === sessionId);
         transitionKeyboardProxy(sessionId, sessionId === activeSessionId && singlePane ? rightPanelView : "agent");
         navigate(path ?? `/session/${encodeURIComponent(sessionId)}`);
-        const keepComposerCollapsed = picked?.view === "structured";
+        const keepComposerCollapsed = isCoarse && picked?.view === "structured";
         if (keepComposerCollapsed) {
           closeKeyboardProxy();
           clearPendingTerminalFocus();
@@ -991,7 +991,7 @@ function AppContent({
           } else if (webSettings.autoOpenKeyboard) {
             focusKeyboardProxy();
           }
-        } else if (!keepComposerCollapsed) {
+        } else {
           focusKeyboardProxy();
           focusAgentInput(picked);
         }
@@ -1024,7 +1024,7 @@ function AppContent({
       if (picked) {
         transitionKeyboardProxy(picked.id, picked.id === activeSessionId && singlePane ? rightPanelView : "agent");
         navigate(`/session/${encodeURIComponent(picked.id)}`);
-        const keepComposerCollapsed = picked.view === "structured";
+        const keepComposerCollapsed = isCoarse && picked.view === "structured";
         if (keepComposerCollapsed) {
           closeKeyboardProxy();
           clearPendingTerminalFocus();
@@ -1034,7 +1034,7 @@ function AppContent({
           } else if (webSettings.autoOpenKeyboard) {
             focusKeyboardProxy();
           }
-        } else if (!keepComposerCollapsed) {
+        } else {
           focusKeyboardProxy();
           focusAgentInput(picked);
         }
