@@ -91,7 +91,7 @@ function deriveTurn(state: AcpState): TurnExecution {
   if (state.turnActive) {
     if (state.inFlightTool) return { kind: "running", activity: "tool" };
     if (state.thinking) return { kind: "running", activity: "thinking" };
-    if (state.assistantMessage) return { kind: "running", activity: "streaming" };
+    if (state.activity.at(-1)?.kind === "message") return { kind: "running", activity: "streaming" };
     return { kind: "running", activity: "waiting" };
   }
   if (state.nextWakeupAt) return { kind: "scheduled", wakeAt: state.nextWakeupAt, reason: state.nextWakeupReason };

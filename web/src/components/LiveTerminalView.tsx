@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useIsCoarsePointer } from "../hooks/useIsCoarsePointer";
 import { useLiveTerminal } from "../hooks/useLiveTerminal";
 import { useMobileKeyboard } from "../hooks/useMobileKeyboard";
@@ -79,29 +79,38 @@ export function LiveTerminalView({ session, active = true, surface = "agent", te
   const dashboardConnection = useDashboardConnectionDiagnostics();
   const { publish: publishConnectionDiagnostics, clear: clearConnectionDiagnostics } =
     useConnectionDiagnosticsPublisher();
-  const terminalDiagnostics = deriveTerminalConnectionDiagnostics({
-    connected: live.state.connected,
-    reconnecting: live.state.reconnecting,
-    retryCount: live.state.retryCount,
-    retryCountdown: live.state.retryCountdown,
-    maxRetries: live.maxRetries,
-  });
-  const streamTransport: StreamTransportDiagnostics = {
-    route: terminalDiagnostics.route,
-    connectedAt: null,
-    lastMessageAt: null,
-    reconnectingSince: null,
-    retryCount: live.state.retryCount,
-    retryCountdown: live.state.retryCountdown,
-    maxRetries: live.maxRetries,
-    lastFailure: null,
-  };
-  const sessionConnection: SessionConnectionDiagnostics = {
-    kind: "terminal",
-    sessionId: session.id,
-    diagnostics: terminalDiagnostics,
-    transport: streamTransport,
-  };
+  const sessionConnection: SessionConnectionDiagnostics = useMemo(() => {
+    const diagnostics = deriveTerminalConnectionDiagnostics({
+      connected: live.state.connected,
+      reconnecting: live.state.reconnecting,
+      retryCount: live.state.retryCount,
+      retryCountdown: live.state.retryCountdown,
+      maxRetries: live.maxRetries,
+    });
+    const transport: StreamTransportDiagnostics = {
+      route: diagnostics.route,
+      connectedAt: null,
+      lastMessageAt: null,
+      reconnectingSince: null,
+      retryCount: live.state.retryCount,
+      retryCountdown: live.state.retryCountdown,
+      maxRetries: live.maxRetries,
+      lastFailure: null,
+    };
+    return {
+      kind: "terminal",
+      sessionId: session.id,
+      diagnostics,
+      transport,
+    };
+  }, [
+    live.maxRetries,
+    live.state.connected,
+    live.state.reconnecting,
+    live.state.retryCount,
+    live.state.retryCountdown,
+    session.id,
+  ]);
   const connectionSnapshot = { dashboard: dashboardConnection, session: sessionConnection };
   useEffect(() => {
     publishConnectionDiagnostics({
@@ -118,7 +127,7 @@ export function LiveTerminalView({ session, active = true, surface = "agent", te
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const [ctrlActive, setCtrlActive] = useState(false);
   const ctrlActiveRef = useRef(false);
-  const clearCtrl = useCallback(() => setCtrlActive(false), []);
+  const clearCtrl = () => setCtrlActive(false);
   useEffect(() => {
     ctrlActiveRef.current = ctrlActive;
   }, [ctrlActive]);

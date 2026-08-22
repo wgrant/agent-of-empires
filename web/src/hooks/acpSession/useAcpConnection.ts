@@ -85,12 +85,8 @@ export function useAcpConnection(
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [hasEverOpened, setHasEverOpened] = useState(false);
   const dashboardConnection = useDashboardConnectionDiagnostics();
-  const [serverReachability, setServerReachability] = useState<"reachable" | "unreachable" | "unknown">(() =>
-    dashboardConnection.phase === "unavailable" ? "unreachable" : "reachable",
-  );
-  useEffect(() => {
-    setServerReachability(dashboardConnection.phase === "unavailable" ? "unreachable" : "reachable");
-  }, [dashboardConnection.phase]);
+  const serverReachability: "reachable" | "unreachable" =
+    dashboardConnection.phase === "unavailable" ? "unreachable" : "reachable";
   const [lastWebSocketOpenAt, setLastWebSocketOpenAt] = useState<number | null>(null);
   const [lastServerMessageAt, setLastServerMessageAt] = useState<number | null>(null);
   const [lastTransportDiagnostic, setLastTransportDiagnostic] = useState<TransportDiagnostic | null>(null);
@@ -223,7 +219,6 @@ export function useAcpConnection(
     setHasMoreOlder(false);
     setLoadingOlder(false);
     setHasEverOpened(false);
-    setServerReachability("unknown");
     setLastWebSocketOpenAt(null);
     setLastServerMessageAt(null);
     setLastTransportDiagnostic(null);
@@ -278,14 +273,7 @@ export function useAcpConnection(
       replaySyncCountRef.current += 1;
       setReplaySyncing(true);
       try {
-        await fetchReplay(
-          sessionId,
-          lastSeqRef,
-          dispatch,
-          setHasMoreOlder,
-          setServerReachability,
-          setLastTransportDiagnostic,
-        );
+        await fetchReplay(sessionId, lastSeqRef, dispatch, setHasMoreOlder, setLastTransportDiagnostic);
       } finally {
         replaySyncCountRef.current -= 1;
         if (replaySyncCountRef.current === 0) setReplaySyncing(false);
