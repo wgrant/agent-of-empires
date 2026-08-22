@@ -577,6 +577,10 @@ pub enum Event {
     AgentThoughtChunk {
         text: String,
     },
+    AgentThoughtSnapshot {
+        block_start_seq: u64,
+        text: String,
+    },
     /// The agent began work without an AoE-issued prompt, such as after a
     /// scheduled wake or native goal continuation.
     AgentTurnStarted,
@@ -686,6 +690,10 @@ pub enum Event {
         message: String,
     },
     AgentMessageChunk {
+        text: String,
+    },
+    AgentMessageSnapshot {
+        block_start_seq: u64,
         text: String,
     },
     /// aoe sent `session/cancel` and armed the escalation watchdog.
@@ -892,7 +900,10 @@ impl AcpState {
                     .saturating_sub(Self::MAX_RECENT_DIFFS);
                 self.recent_diffs.drain(..excess);
             }
-            Event::AgentTurnStarted | Event::AgentThoughtChunk { .. } | Event::ThinkingStarted => {
+            Event::AgentTurnStarted
+            | Event::AgentThoughtChunk { .. }
+            | Event::AgentThoughtSnapshot { .. }
+            | Event::ThinkingStarted => {
                 self.thinking = Some(ThinkingSignal {
                     started_at: Utc::now(),
                 });
@@ -1068,6 +1079,7 @@ impl AcpState {
             | Event::ModeSwitchFailed { .. }
             | Event::RawAgentUpdate { .. }
             | Event::AgentMessageChunk { .. }
+            | Event::AgentMessageSnapshot { .. }
             | Event::ConversationSummary { .. }
             | Event::ConversationCompactionSummary { .. }
             | Event::WakeupScheduled { .. }

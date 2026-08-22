@@ -120,7 +120,9 @@ fn escape_like(s: &str) -> String {
 /// The searchable prose of an event, with a short kind label.
 fn event_search_text(event: &Event) -> Option<(&'static str, String)> {
     let (kind, text) = match event {
-        Event::AgentMessageChunk { text, .. } => ("agent", text),
+        Event::AgentMessageChunk { text, .. } | Event::AgentMessageSnapshot { text, .. } => {
+            ("agent", text)
+        }
         Event::UserPromptSent { text, .. } => ("user", text),
         Event::UserDiffCommentsPrompt {
             assembled_markdown, ..
