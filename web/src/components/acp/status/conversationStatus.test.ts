@@ -1,31 +1,45 @@
 import { describe, expect, it } from "vitest";
 
-import { deriveConversationNextStep, deriveConversationStatus, type ConversationStatus } from "./conversationStatus";
-import type { ConversationSyncStatus } from "./conversationSyncStatus";
-import type { TurnExecution } from "./sessionDiagnostics";
+import { deriveConversationNextStep, runtimeAllowsConversationTail } from "./conversationStatus";
+import type { AgentRuntime, SessionDiagnostics, TurnExecution } from "./sessionDiagnostics";
+
+const evidence: SessionDiagnostics["evidence"] = {
+  workerState: "running",
+  startupError: null,
+  incompatibleAgent: null,
+  rateLimit: null,
+  workerStopped: false,
+  workerRestarting: false,
+  workerIdleStopped: false,
+  agentUnresponsive: false,
+  agentOrphaned: false,
+  canSteer: false,
+};
+
+function diagnostics(runtime: AgentRuntime, turn: TurnExecution): SessionDiagnostics {
+  return { disposition: { kind: "live" }, runtime, turn, evidence };
+}
 
 describe("deriveConversationNextStep", () => {
-  it("uses one priority order for history, recovery, and turn activity", () => {
-    const idleStatus: ConversationStatus = {
-      kind: "idle",
-      tone: "neutral",
-      placement: null,
-      composer: "available",
-    };
-    const activeStatus: ConversationStatus = {
-      kind: "active",
-      cause: "working",
-      tone: "neutral",
-      placement: "transcript_tail",
-      composer: "queue",
-    };
-    const recoveryStatus: ConversationStatus = {
-      kind: "updating",
-      cause: "agent_restarting",
-      tone: "progress",
-      placement: "session",
-      composer: "queue",
-    };
+  it("allows tail state only for a ready runtime", () => {
+    const runtimes: Array<[AgentRuntime, boolean]> = [
+      [{ kind: "unknown" }, false],
+      [{ kind: "starting" }, false],
+      [{ kind: "ready" }, true],
+      [{ kind: "dormant", reason: "idle_auto_stop" }, false],
+      [{ kind: "restarting", reason: "manual_restart" }, false],
+      [{ kind: "stopped", reason: "user_stopped" }, false],
+      [{ kind: "blocked", reason: "rate_limited" }, false],
+      [{ kind: "failed", category: "startup", message: "missing" }, false],
+    ];
+    for (const [runtime, expected] of runtimes) {
+      expect(runtimeAllowsConversationTail(runtime), runtime.kind).toBe(expected);
+    }
+  });
+
+  it("uses one priority order for catch-up, recovery, runtime, and turn activity", () => {
+    const ready: AgentRuntime = { kind: "ready" };
+    const restarting: AgentRuntime = { kind: "restarting", reason: "manual_restart" };
     const working = {
       kind: "working",
       thinking: false,
@@ -34,153 +48,78 @@ describe("deriveConversationNextStep", () => {
       cancelEscalatesAt: null,
       compacting: false,
     } as const;
-    const cases: Array<{
-      name: string;
-      sync: ConversationSyncStatus;
-      status: ConversationStatus;
-      turn: TurnExecution;
-      expected: ReturnType<typeof deriveConversationNextStep>;
-    }> = [
-      {
-        name: "initial catch-up outranks recovery",
-        sync: "initial",
-        status: recoveryStatus,
-        turn: { kind: "running", activity: "waiting", tool: null },
-        expected: { kind: "catching_up" },
-      },
-      {
-        name: "history loading suppresses cached work",
-        sync: "history",
-        status: activeStatus,
-        turn: { kind: "running", activity: "waiting", tool: null },
-        expected: { kind: "catching_up" },
-      },
-      {
-        name: "recovery suppresses stale work",
-        sync: "idle",
-        status: recoveryStatus,
-        turn: { kind: "running", activity: "thinking", tool: null },
-        expected: null,
-      },
-      {
-        name: "approval card stands alone",
-        sync: "idle",
-        status: activeStatus,
-        turn: { kind: "awaiting_user", request: "approval" },
-        expected: null,
-      },
-      {
-        name: "elicitation card stands alone",
-        sync: "idle",
-        status: activeStatus,
-        turn: { kind: "awaiting_user", request: "elicitation" },
-        expected: null,
-      },
-      {
-        name: "thinking annotates work",
-        sync: "idle",
-        status: activeStatus,
-        turn: { kind: "running", activity: "thinking", tool: null },
-        expected: { ...working, thinking: true },
-      },
-      {
-        name: "tool activity retains its label",
-        sync: "idle",
-        status: activeStatus,
-        turn: { kind: "running", activity: "tool", tool: "Read file" },
-        expected: { ...working, tool: "Read file" },
-      },
-      {
-        name: "cancellation retains escalation",
-        sync: "idle",
-        status: activeStatus,
-        turn: { kind: "cancelling", escalatesAt: "2026-08-22T04:00:00Z" },
-        expected: { ...working, cancelling: true, cancelEscalatesAt: "2026-08-22T04:00:00Z" },
-      },
-      {
-        name: "compaction owns work",
-        sync: "idle",
-        status: activeStatus,
-        turn: { kind: "compacting" },
-        expected: { ...working, compacting: true },
-      },
-      {
-        name: "scheduled wake carries its detail",
-        sync: "idle",
-        status: idleStatus,
-        turn: { kind: "scheduled", wakeAt: "2026-08-22T05:00:00Z", reason: "check build" },
-        expected: { kind: "scheduled_wakeup", wakeAt: "2026-08-22T05:00:00Z", reason: "check build" },
-      },
-      {
-        name: "monitor carries its detail",
-        sync: "idle",
-        status: idleStatus,
-        turn: { kind: "monitoring", description: "Waiting for CI" },
-        expected: { kind: "monitoring", description: "Waiting for CI" },
-      },
-      { name: "idle has no tail status", sync: "idle", status: idleStatus, turn: { kind: "idle" }, expected: null },
-    ];
-
-    for (const { name, expected, ...input } of cases) {
-      expect(deriveConversationNextStep(input), name).toEqual(expected);
-    }
-  });
-});
-
-describe("deriveConversationStatus", () => {
-  it("uses one priority order for lifecycle, synchronization, and agent activity", () => {
     const cases = [
       [
-        { agentSession: "failed", sync: "reconnect", turnActive: true, nextWakeupAt: "x", monitorArmed: true },
-        "blocked",
-        "agent_failed",
-        "session",
-      ],
-      [
-        { agentSession: "rate_limited", sync: "reconnect", turnActive: true, nextWakeupAt: null, monitorArmed: false },
-        "blocked",
-        "rate_limited",
-        "session",
-      ],
-      [
-        { agentSession: "restarting", sync: "reconnect", turnActive: true, nextWakeupAt: null, monitorArmed: false },
-        "updating",
-        "agent_restarting",
-        "session",
-      ],
-      [
-        { agentSession: "ready", sync: "initial", turnActive: true, nextWakeupAt: null, monitorArmed: false },
-        "updating",
+        "initial catch-up outranks recovery",
         "initial",
-        "session",
+        restarting,
+        { kind: "running", activity: "waiting", tool: null },
+        { kind: "catching_up" },
       ],
       [
-        { agentSession: "ready", sync: "reconnect", turnActive: true, nextWakeupAt: null, monitorArmed: false },
-        "updating",
+        "history loading suppresses cached work",
+        "history",
+        ready,
+        { kind: "running", activity: "waiting", tool: null },
+        { kind: "catching_up" },
+      ],
+      [
+        "reconnect suppresses ready work",
         "reconnect",
-        "composer",
+        ready,
+        { kind: "running", activity: "thinking", tool: null },
+        null,
       ],
       [
-        { agentSession: "ready", sync: "idle", turnActive: true, nextWakeupAt: "x", monitorArmed: true },
-        "active",
-        "working",
-        "transcript_tail",
+        "recovery suppresses stale work",
+        "idle",
+        restarting,
+        { kind: "running", activity: "thinking", tool: null },
+        null,
+      ],
+      ["approval card stands alone", "idle", ready, { kind: "awaiting_user", request: "approval" }, null],
+      ["elicitation card stands alone", "idle", ready, { kind: "awaiting_user", request: "elicitation" }, null],
+      [
+        "thinking annotates work",
+        "idle",
+        ready,
+        { kind: "running", activity: "thinking", tool: null },
+        { ...working, thinking: true },
       ],
       [
-        { agentSession: "ready", sync: "idle", turnActive: false, nextWakeupAt: "x", monitorArmed: true },
-        "waiting",
-        "scheduled_wakeup",
-        "transcript_tail",
+        "tool activity retains its label",
+        "idle",
+        ready,
+        { kind: "running", activity: "tool", tool: "Read file" },
+        { ...working, tool: "Read file" },
       ],
       [
-        { agentSession: "ready", sync: "history", turnActive: false, nextWakeupAt: null, monitorArmed: true },
-        "waiting",
-        "monitoring",
-        "transcript_tail",
+        "cancellation retains escalation",
+        "idle",
+        ready,
+        { kind: "cancelling", escalatesAt: "2026-08-22T04:00:00Z" },
+        { ...working, cancelling: true, cancelEscalatesAt: "2026-08-22T04:00:00Z" },
       ],
+      ["compaction owns work", "idle", ready, { kind: "compacting" }, { ...working, compacting: true }],
+      [
+        "scheduled wake carries its detail",
+        "idle",
+        ready,
+        { kind: "scheduled", wakeAt: "2026-08-22T05:00:00Z", reason: "check build" },
+        { kind: "scheduled_wakeup", wakeAt: "2026-08-22T05:00:00Z", reason: "check build" },
+      ],
+      [
+        "monitor carries its detail",
+        "idle",
+        ready,
+        { kind: "monitoring", description: "Waiting for CI" },
+        { kind: "monitoring", description: "Waiting for CI" },
+      ],
+      ["idle has no tail status", "idle", ready, { kind: "idle" }, null],
     ] as const;
-    for (const [input, kind, cause, placement] of cases) {
-      expect(deriveConversationStatus(input)).toMatchObject({ kind, cause, placement });
+
+    for (const [name, sync, runtime, turn, expected] of cases) {
+      expect(deriveConversationNextStep({ sync, diagnostics: diagnostics(runtime, turn) }), name).toEqual(expected);
     }
   });
 });
