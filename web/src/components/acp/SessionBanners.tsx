@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { useRespawnSession, type RespawnState } from "../../hooks/useRespawnSession";
 import type { AcpState } from "../../lib/acpTypes";
+import type { SessionStatus } from "../../lib/types";
 import type { ConnectionStatusSnapshot } from "./status/connectionStatus";
 import {
   deriveSessionIncident,
@@ -22,6 +23,8 @@ export function SessionBanners({
   trashedAt,
   archivedAt,
   snoozedUntil,
+  sessionStatus,
+  dormant,
   currentAgent,
   rateLimitAutoResume,
   onRecoveryPrefill,
@@ -35,6 +38,8 @@ export function SessionBanners({
   trashedAt: string | null;
   archivedAt: string | null;
   snoozedUntil: string | null;
+  sessionStatus: SessionStatus;
+  dormant: boolean;
   currentAgent: string | null;
   rateLimitAutoResume?: boolean;
   onRecoveryPrefill: (text: string) => void;
@@ -44,6 +49,8 @@ export function SessionBanners({
   const diagnostics = deriveSessionDiagnostics({
     state,
     workerState: acpWorkerState,
+    sessionStatus,
+    dormant,
     trashedAt,
     archivedAt,
     snoozedUntil,

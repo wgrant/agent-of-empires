@@ -7,6 +7,8 @@ function input(changes: Partial<SessionDiagnosticsInput> = {}): SessionDiagnosti
   return {
     state: emptyAcpState(),
     workerState: "running",
+    sessionStatus: "Running",
+    dormant: false,
     archivedAt: null,
     snoozedUntil: null,
     trashedAt: null,
@@ -32,8 +34,32 @@ describe("ACP session diagnostics", () => {
         expected: { runtime: { kind: "starting" } },
       },
       {
+        name: "persisted stop outranks stale idle-stop replay after restart",
+        changes: {
+          workerState: "absent",
+          sessionStatus: "Stopped",
+          state: { ...emptyAcpState(), workerIdleStopped: true },
+        },
+        expected: { runtime: { kind: "stopped", reason: "user_stopped" } },
+      },
+      {
+        name: "running supervisor outranks a lagging stopped REST poll",
+        changes: { workerState: "running", sessionStatus: "Stopped" },
+        expected: { runtime: { kind: "ready" } },
+      },
+      {
+        name: "resuming supervisor outranks a lagging stopped REST poll",
+        changes: { workerState: "resuming", sessionStatus: "Stopped" },
+        expected: { runtime: { kind: "restarting", reason: "manual_restart" } },
+      },
+      {
         name: "idle reaping is dormant rather than stopped",
         changes: { state: { ...emptyAcpState(), workerIdleStopped: true }, workerState: "absent" },
+        expected: { runtime: { kind: "dormant", reason: "idle_auto_stop" } },
+      },
+      {
+        name: "server-owned dormancy fills a missing replay observation",
+        changes: { workerState: "absent", dormant: true },
         expected: { runtime: { kind: "dormant", reason: "idle_auto_stop" } },
       },
       {
