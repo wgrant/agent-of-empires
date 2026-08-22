@@ -625,7 +625,14 @@ mod tests {
     #[test]
     fn fold_and_idle_outcome_track_transcript_progress() {
         // (lines, expected status, expected result, warning substring, case)
-        let cases = vec![
+        type Case<'a> = (
+            Vec<&'a str>,
+            BackgroundAgentStatus,
+            Option<&'a str>,
+            &'a str,
+            &'a str,
+        );
+        let cases: Vec<Case<'_>> = vec![
             (
                 vec![
                     r#"{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"Bash"}]}}"#,
