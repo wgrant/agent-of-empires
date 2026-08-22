@@ -166,7 +166,7 @@ export function RowTrailingBadges({ workspace, model }: { workspace: Workspace; 
       )}
       <ContextResumeBadge availability={model.navigationSession?.context_resume} />
       {worker === "resuming" && (
-        <Chip title="Structured view worker is resuming" label="Resuming" className={`${CHIP} gap-0.5 ${AMBER}`}>
+        <Chip title="Agent is starting" label="Starting" className={`${CHIP} gap-0.5 ${AMBER}`}>
           <Pulse />
           Resuming
         </Chip>

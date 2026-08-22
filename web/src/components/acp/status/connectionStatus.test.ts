@@ -42,6 +42,7 @@ describe("connection status model", () => {
         "stopped",
         "current",
       ],
+      [{ agentRuntime: { kind: "stopping" } as const }, "agent_stopping", "connected", "stopping", "current"],
       [
         { agentRuntime: { kind: "failed", category: "startup", message: "failed" } as const },
         "agent_failed",
