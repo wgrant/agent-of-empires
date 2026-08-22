@@ -116,6 +116,7 @@ import {
   deliverMobileKeyboardProxyInput,
 } from "./lib/mobileKeyboardProxy";
 import { ConnectionDiagnosticsProvider } from "./lib/connectionDiagnosticsContext";
+import type { PendingAgentOperation } from "./components/acp/status/sessionDiagnostics";
 import { hydrateWebUiStateFromServer, initWebUiSync } from "./lib/webUiSync";
 import { WorkspaceSidebar } from "./components/WorkspaceSidebar";
 import { SnoozeModal } from "./components/sidebar/SnoozeModal";
@@ -373,6 +374,22 @@ function AppContent({
     setSessionStatus,
     applySession,
   } = useSessions();
+  const [pendingAgentOperations, setPendingAgentOperations] = useState<Record<string, PendingAgentOperation>>({});
+  const effectivePendingAgentOperations = useMemo(() => {
+    const next = { ...pendingAgentOperations };
+    for (const session of sessions) {
+      const operation = next[session.id];
+      if (!operation) continue;
+      const completed =
+        operation.kind === "stop"
+          ? session.status === "Stopped" && session.acp_worker_state !== "running"
+          : session.view === "structured"
+            ? session.acp_worker_state === "running" || session.status === "Error"
+            : !["Starting", "Stopped"].includes(session.status);
+      if (completed) delete next[session.id];
+    }
+    return next;
+  }, [pendingAgentOperations, sessions]);
   const workspaces = useWorkspaces(sessions);
   // Creates whose outcome the wizard never learned keep reconciling here, past its unmount.
   useEffect(() => {
@@ -1293,16 +1310,32 @@ function AppContent({
     // Close the dialog and show "Stopped" immediately; the 2s status poller
     // reconciles the true state and corrects this if the request fails.
     setStoppingSessionId(null);
+    setPendingAgentOperations((current) => ({
+      ...current,
+      [sessionId]: {
+        kind: "stop",
+        stage: "requesting",
+        startedAt: new Date().toISOString(),
+        operationId: null,
+        error: null,
+      },
+    }));
     setSessionStatus(sessionId, "Stopped");
 
     const result = await stopSession(sessionId);
     if (!result) {
+      setPendingAgentOperations((current) => {
+        const next = { ...current };
+        delete next[sessionId];
+        return next;
+      });
       setSessionStatus(sessionId, "Error");
       toastBus.handler?.error("Failed to stop session");
       return;
     }
+    applySession(result);
     toastBus.handler?.info("Session stopped");
-  }, [stoppingSession, setSessionStatus]);
+  }, [applySession, stoppingSession, setSessionStatus]);
 
   const switchViewSession = switchViewTarget
     ? (workspaces.flatMap((w) => w.sessions).find((s) => s.id === switchViewTarget.sessionId) ?? null)
@@ -1337,18 +1370,42 @@ function AppContent({
 
   const handleStartSession = useCallback(
     async (sessionId: string) => {
+      const session = sessions.find((candidate) => candidate.id === sessionId);
+      if (!session) return;
       // Optimistic Starting; the status poller reconciles to the real state.
+      setPendingAgentOperations((current) => ({
+        ...current,
+        [sessionId]: {
+          kind: "start",
+          stage: "requesting",
+          startedAt: new Date().toISOString(),
+          operationId: null,
+          error: null,
+        },
+      }));
       setSessionStatus(sessionId, "Starting");
       const result = await startSession(sessionId);
       if (!result.ok) {
+        setPendingAgentOperations((current) => {
+          const next = { ...current };
+          delete next[sessionId];
+          return next;
+        });
         // A refused start (archived or trashed) left the session as it was.
         setSessionStatus(sessionId, result.refused ? "Stopped" : "Error");
         toastBus.handler?.error(result.message ?? "Failed to start session");
         return;
       }
+      applySession(result.session);
+      if (session.view === "structured") {
+        setPendingAgentOperations((current) => ({
+          ...current,
+          [sessionId]: { ...current[sessionId]!, stage: "accepted" },
+        }));
+      }
       toastBus.handler?.info(result.session.message ?? "Session started");
     },
-    [setSessionStatus],
+    [applySession, sessions, setSessionStatus],
   );
 
   const handleCreateSession = useCallback(
@@ -1932,6 +1989,7 @@ function AppContent({
           pairedMounted={pairedMounted}
           activeSession={activeSession ?? null}
           activeSessionId={activeSessionId}
+          pendingAgentOperation={activeSessionId ? (effectivePendingAgentOperations[activeSessionId] ?? null) : null}
           sessions={sessions}
           webSettings={webSettings}
           selectedFilePath={selectedFilePath}
@@ -2024,6 +2082,7 @@ function AppContent({
                         rateLimitAutoResume={activeSession.rate_limit_auto_resume}
                         sessionStatus={activeSession.status}
                         lastError={activeSession.last_error}
+                        pendingOperation={effectivePendingAgentOperations[activeSession.id] ?? null}
                         dormant={activeSession.dormant}
                         tool={activeSession.tool}
                         acpAgent={activeSession.acp_agent ?? null}
