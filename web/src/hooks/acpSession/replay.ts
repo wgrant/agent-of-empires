@@ -50,33 +50,22 @@ export async function fetchReplay(
   dispatch: Dispatch,
   setHasMoreOlder: (value: boolean) => void,
   signal: AbortSignal,
-  setServerReachability?: (value: "reachable" | "unreachable") => void,
   setLastTransportDiagnostic?: (value: TransportDiagnostic) => void,
 ): Promise<void> {
   try {
     if (lastSeq.current === 0) {
-      await fetchTail(
-        sid,
-        lastSeq,
-        dispatch,
-        setHasMoreOlder,
-        signal,
-        setServerReachability,
-        setLastTransportDiagnostic,
-      );
+      await fetchTail(sid, lastSeq, dispatch, setHasMoreOlder, signal, setLastTransportDiagnostic);
     } else {
       await fetchForward(
         sid,
         lastSeq.current,
         dispatch,
         signal,
-        setServerReachability,
         setLastTransportDiagnostic,
       );
     }
   } catch {
     if (signal.aborted) return;
-    setServerReachability?.("unreachable");
     setLastTransportDiagnostic?.({
       kind: "replay_network",
       text: "Replay request failed: network error.",
@@ -91,14 +80,12 @@ async function fetchTail(
   dispatch: Dispatch,
   setHasMoreOlder: (value: boolean) => void,
   signal: AbortSignal,
-  setServerReachability?: (value: "reachable" | "unreachable") => void,
   setLastTransportDiagnostic?: (value: TransportDiagnostic) => void,
 ): Promise<void> {
   const [tailRes, tailRowsRes] = await getReplayPair(sid, `before=${TAIL_BEFORE}&limit=${REPLAY_PAGE_SIZE}`, signal);
   signal.throwIfAborted();
   if (!tailRes.ok || !tailRowsRes.ok) {
     const failed = !tailRes.ok ? tailRes : tailRowsRes;
-    setServerReachability?.("reachable");
     setLastTransportDiagnostic?.({
       kind: "replay_http",
       text: `Replay request rejected: HTTP ${failed.status}${failed.statusText ? ` ${failed.statusText}` : ""}.`,
@@ -106,7 +93,6 @@ async function fetchTail(
     });
     return;
   }
-  setServerReachability?.("reachable");
   const tail = (await tailRes.json()) as ReplayPageResponse;
   signal.throwIfAborted();
   if (tail.lost) {
@@ -134,7 +120,6 @@ async function fetchForward(
   lastSeq: number,
   dispatch: Dispatch,
   signal: AbortSignal,
-  setServerReachability?: (value: "reachable" | "unreachable") => void,
   setLastTransportDiagnostic?: (value: TransportDiagnostic) => void,
 ): Promise<void> {
   const firstSince = Math.max(0, lastSeq - REPLAY_OVERLAP);
@@ -145,7 +130,6 @@ async function fetchForward(
     signal.throwIfAborted();
     if (!res.ok || !rowsRes.ok) {
       const failed = !res.ok ? res : rowsRes;
-      setServerReachability?.("reachable");
       setLastTransportDiagnostic?.({
         kind: "replay_http",
         text: `Replay request rejected: HTTP ${failed.status}${failed.statusText ? ` ${failed.statusText}` : ""}.`,
@@ -153,7 +137,6 @@ async function fetchForward(
       });
       return;
     }
-    setServerReachability?.("reachable");
     const data = (await res.json()) as ReplayPageResponse;
     const pageRows = await readRows(rowsRes);
     signal.throwIfAborted();
