@@ -9,7 +9,7 @@ import {
   type ConversationDiagnosticsSnapshot,
   type SessionIncident,
 } from "./status/conversationDiagnostics";
-import { deriveSessionDiagnostics } from "./status/sessionDiagnostics";
+import { deriveSessionDiagnostics, type PendingAgentOperation } from "./status/sessionDiagnostics";
 import { ActionFeedbackNotice } from "./status/ActionFeedbackNotice";
 import { StartupErrorBanner } from "./StartupErrorBanner";
 import { rateLimitDetail, RateLimitRecoverySection } from "./SystemNotices";
@@ -25,6 +25,7 @@ export function SessionBanners({
   snoozedUntil,
   sessionStatus,
   lastError,
+  pendingOperation,
   dormant,
   currentAgent,
   rateLimitAutoResume,
@@ -41,6 +42,7 @@ export function SessionBanners({
   snoozedUntil: string | null;
   sessionStatus: SessionStatus;
   lastError: string | null;
+  pendingOperation: PendingAgentOperation | null;
   dormant: boolean;
   currentAgent: string | null;
   rateLimitAutoResume?: boolean;
@@ -53,6 +55,7 @@ export function SessionBanners({
     workerState: acpWorkerState,
     sessionStatus,
     lastError,
+    pendingOperation,
     dormant,
     trashedAt,
     archivedAt,
@@ -124,8 +127,9 @@ export function ConversationLifecycleNotice({
 }) {
   if (!incident) return null;
   if (incident.kind === "failed") return <StartupErrorBanner sessionId={sessionId} message={incident.detail} />;
-  if (incident.kind === "restarting") return <WorkerRestartingBanner message={incident.detail} />;
-  if (incident.kind === "stopping") return <WorkerStoppingBanner />;
+  if (incident.kind === "restarting" || incident.kind === "transitioning") {
+    return <WorkerRestartingBanner message={incident.detail} />;
+  }
   if (incident.kind === "trashed") return <TrashedWorkerStoppedBanner sessionId={sessionId} onRestore={onRestore} />;
   if (incident.kind === "archived") return <ArchivedWorkerStoppedBanner sessionId={sessionId} />;
   if (incident.kind === "snoozed") {
@@ -280,14 +284,6 @@ function ChipBanner({
 
 export function WorkerRestartingBanner({ message }: { message: string }) {
   return <PulseBanner tone="sky">{message}</PulseBanner>;
-}
-
-function WorkerStoppingBanner() {
-  return (
-    <PulseBanner>
-      Stopping structured view worker… waiting for the agent process to exit before anything can resume.
-    </PulseBanner>
-  );
 }
 
 // A real wake flips `turnActive` within seconds, so this only clears a stale

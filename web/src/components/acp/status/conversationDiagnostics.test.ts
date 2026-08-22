@@ -91,9 +91,9 @@ describe("conversation diagnostics selectors", () => {
       [
         snapshot({ state: { ...emptyAcpState(), workerStopped: true }, workerState: "absent" }),
         "stopped",
-        "queue_for_recovery",
+        "resume_then_send",
       ],
-      [snapshot({ workerState: "stopping" }), "stopping", "queue_for_recovery"],
+      [snapshot({ workerState: "stopping" }), "transitioning", "queue_for_recovery"],
       [
         snapshot({
           state: { ...emptyAcpState(), rateLimit: { kind: "rate_limit", status: "later", resets_at: null } },
@@ -106,6 +106,7 @@ describe("conversation diagnostics selectors", () => {
         "restarting",
         "queue_for_recovery",
       ],
+      [snapshot({ workerState: "absent", sessionStatus: "Starting" }), "transitioning", "queue_for_recovery"],
       [snapshot({ state: { ...emptyAcpState(), workerIdleStopped: true }, workerState: "absent" }), null, "wake_agent"],
       [snapshot({ state: { ...emptyAcpState(), turnActive: true, compacting: true } }), null, "queue_after_turn"],
       [snapshot({ state: { ...emptyAcpState(), turnActive: true } }), null, "queue_after_turn"],
