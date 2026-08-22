@@ -269,7 +269,7 @@ describe("sendPrompt outcomes", () => {
       ],
     ] as const)("wakes a %s session before sending", async (_label, [archived, snoozed], suffix, body) => {
       calls = installAcpFakes(queuedPrompt);
-      const { result } = render("sess-wake", "absent", archived, snoozed);
+      const { result } = render("sess-wake", archived, snoozed);
       await flushAsync();
       await act(() => result.current.sendPrompt("wake me up"));
       await flushAsync();
@@ -280,7 +280,7 @@ describe("sendPrompt outcomes", () => {
 
     it("does not call wake endpoints for a live session", async () => {
       calls = installAcpFakes(queuedPrompt);
-      const { result } = render("sess-live", "absent", null, null);
+      const { result } = render("sess-live", null, null);
       await flushAsync();
       await act(() => result.current.sendPrompt("just a prompt"));
       await flushAsync();
@@ -293,7 +293,7 @@ describe("sendPrompt outcomes", () => {
       ["/snooze", null, "2099-01-01T00:00:00Z"],
     ])("sends nothing when the %s wake fails", async (suffix, archived, snoozed) => {
       calls = installAcpFakes(failingWake(suffix));
-      const { result } = render("sess-wake-fail", "absent", archived, snoozed);
+      const { result } = render("sess-wake-fail", archived, snoozed);
       await flushAsync();
       await act(() => result.current.sendPrompt("wake me up"));
       await flushAsync();
@@ -323,7 +323,7 @@ describe("sendPrompt outcomes", () => {
       [false, 0],
     ])("parked=%s re-enqueues a 503'd prompt %i time(s)", async (isParked, enqueued) => {
       calls = installAcpFakes(parked(isParked));
-      const { result } = render("sess-cap", "running", null, null);
+      const { result } = render("sess-cap", null, null);
       await flushAsync();
       expect(result.current.state.rateLimitRetriesExhausted).toBe(isParked);
       await act(() => result.current.sendPrompt("try again after the cap"));
@@ -332,13 +332,6 @@ describe("sendPrompt outcomes", () => {
       expect(result.current.state.queuedPrompts.map((q) => q.text)).toEqual(
         enqueued ? ["try again after the cap"] : [],
       );
-    });
-
-    it("offers Send now on a row stranded behind the park", async () => {
-      installAcpFakes(parked(true));
-      const { result } = await openSession("sess-cap-send", "absent", null, null);
-      expect(result.current.status).toBe("open");
-      expect(result.current.canSendQueuedNow).toBe(true);
     });
   });
 });

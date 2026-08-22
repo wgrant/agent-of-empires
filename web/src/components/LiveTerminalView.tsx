@@ -14,6 +14,7 @@ import {
 } from "./acp/status/connectionStatus";
 import { useConnectionDiagnosticsPublisher } from "../lib/connectionDiagnosticsContext";
 import { useDashboardConnectionDiagnostics } from "../lib/connectionState";
+import { deriveTerminalOperationalState, operationalAgentRuntime } from "./acp/status/sessionDiagnostics";
 import { ensureSession, ensureTerminal, pasteImage } from "../lib/api";
 import { armClipboardWrite, writeClipboard } from "../lib/clipboard";
 import type { ArmedClipboardWrite } from "../lib/clipboard";
@@ -79,6 +80,20 @@ export function LiveTerminalView({ session, active = true, surface = "agent", te
   const dashboardConnection = useDashboardConnectionDiagnostics();
   const { publish: publishConnectionDiagnostics, clear: clearConnectionDiagnostics } =
     useConnectionDiagnosticsPublisher();
+  const operational = useMemo(
+    () =>
+      deriveTerminalOperationalState({
+        sessionStatus: session.status,
+        lastError: session.last_error,
+        archivedAt: session.archived_at ?? null,
+        snoozedUntil: session.snoozed_until ?? null,
+        trashedAt: session.trashed_at ?? null,
+        ensureState,
+        ensureError,
+        connected: live.state.connected,
+      }),
+    [ensureError, ensureState, live.state.connected, session],
+  );
   const sessionConnection: SessionConnectionDiagnostics = useMemo(() => {
     const diagnostics = deriveTerminalConnectionDiagnostics({
       connected: live.state.connected,
@@ -86,6 +101,7 @@ export function LiveTerminalView({ session, active = true, surface = "agent", te
       retryCount: live.state.retryCount,
       retryCountdown: live.state.retryCountdown,
       maxRetries: live.maxRetries,
+      agentRuntime: operationalAgentRuntime(operational),
     });
     const transport: StreamTransportDiagnostics = {
       route: diagnostics.route,
@@ -100,6 +116,7 @@ export function LiveTerminalView({ session, active = true, surface = "agent", te
     return {
       kind: "terminal",
       sessionId: session.id,
+      operational,
       diagnostics,
       transport,
     };
@@ -109,6 +126,7 @@ export function LiveTerminalView({ session, active = true, surface = "agent", te
     live.state.reconnecting,
     live.state.retryCount,
     live.state.retryCountdown,
+    operational,
     session.id,
   ]);
   const connectionSnapshot = { dashboard: dashboardConnection, session: sessionConnection };

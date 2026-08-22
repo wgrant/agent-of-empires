@@ -100,8 +100,6 @@ function optimisticPromptId(): string {
 
 export function useAcpSession(
   sessionId: string | null,
-  /** Queued prompts can be sent immediately only while the worker is running. */
-  workerState: "absent" | "resuming" | "running" | "stopping" = "running",
   archivedAt: string | null = null,
   snoozedUntil: string | null = null,
 ) {
@@ -432,13 +430,6 @@ export function useAcpSession(
     editQueuedPrompt,
     clearQueue,
     sendQueuedNow,
-    canSendQueuedNow:
-      status === "open" &&
-      !state.workerStopped &&
-      !state.workerRestarting &&
-      (workerState === "running" || state.workerIdleStopped || state.rateLimitRetriesExhausted),
-    /** Send now would cancel a running, non-steerable turn rather than send immediately. */
-    sendNowInterruptsTurn: state.turnActive && !steerable,
     setConfigOption,
   };
 }
