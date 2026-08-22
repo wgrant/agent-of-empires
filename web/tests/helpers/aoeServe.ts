@@ -81,7 +81,12 @@ export interface ServeHandle {
   tokenFile?: string;
   sessionCookie?: { name: string; value: string };
   deviceBindingSecret?: string;
-  /** `aoe_dev_` for debug builds, `aoe_` for release. */
+  /**
+   * The tmux session prefix the running binary uses. Debug builds from
+   * `cargo build` use `aoe_dev_`; release and `dev-release` builds use `aoe_`.
+   * Specs that need to assert on tmux session names should compose this
+   * with the session title rather than hard-coding `aoe_`.
+   */
   tmuxPrefix: "aoe_" | "aoe_dev_";
   /** Raw `tmux` calls must pass `-S <tmuxSocket>`. */
   tmuxSocket: string;
