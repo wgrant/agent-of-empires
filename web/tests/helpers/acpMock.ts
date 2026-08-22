@@ -1,9 +1,22 @@
-// Mocked structured view session: REST stubs plus a WebSocket replaying `{ session_id, seq, event }` frames.
-// The frame log is resent on reconnect like the daemon's drain; the reducer dedupes by seq.
+// Shared scaffolding for mocked structured-view (ACP) specs.
+//
+// Mirrors the route stack proven by acp-edit-card-diff.spec.ts: REST
+// stubs for the app shell, a single structured-view session in the
+// sidebar, a swallowed terminal WebSocket, and a scripted structured
+// view WebSocket that replays the daemon's `AcpBroadcastFrame` wire
+// shape (web/src/lib/acpTypes.ts). Specs push externally-tagged
+// `AcpEvent` values; the helper wraps each in
+// `{ session_id, seq, event }` with a monotonically increasing seq.
+// The full frame log is re-sent to a late or reconnecting socket,
+// mimicking the server's on-connect drain; the reducer's seq dedupe
+// drops the duplicates.
 
 import { expect, type Page, type WebSocketRoute } from "@playwright/test";
 
-/** `prompt_id` is the client-minted id echoed on `UserPromptSent`. */
+/** Parsed `POST .../acp/prompt` request body. `prompt_id` is the
+ *  client-minted id the daemon echoes back on `UserPromptSent`, so a spec can
+ *  assert the optimistic-row correlation directly. Optional because a caller
+ *  that predates the id (or posts by hand) may omit it. */
 export interface AcpPromptBody {
   text: string;
   prompt_id?: string;
@@ -12,78 +25,122 @@ export interface AcpPromptBody {
 export interface AcpSessionMockOptions {
   sessionId?: string;
   title?: string;
+  /** Events replayed onto the structured view WS as soon as it connects. */
   initialEvents?: unknown[];
-  /** Events replayed after a prompt POST, standing in for the agent's turn. */
+  /** Maps a captured `POST .../acp/prompt` body to events replayed on
+   *  the WS after the POST is fulfilled, standing in for the live
+   *  fake-ACP agent's scripted turn. */
   onPrompt?: (body: AcpPromptBody) => unknown[];
+  /** Same, for `POST .../acp/config-option`: the returned events play
+   *  the adapter's confirming snapshot (or rejection). */
   onConfigOption?: (body: { config_id: string; value: string }) => unknown[];
+  /** Override the `/api/about` payload (e.g. `{ read_only: true }`). */
   about?: Record<string, unknown>;
-  /** Report the session trashed with a stopped worker (#2529). */
+  /** When set, the session is reported trashed (`trashed_at`) with a stopped
+   *  worker, so the trashed read-only banner shows. See #2529. */
   trashedAt?: string;
 }
 
 export interface AcpSessionMock {
   sessionId: string;
   title: string;
+  /** Parsed bodies of every `POST .../acp/prompt` the page sent. */
   promptBodies: AcpPromptBody[];
+  /** Parsed bodies of every `POST .../acp/config-option`. */
   configOptionBodies: Array<{ config_id: string; value: string }>;
+  /** Parsed bodies of every `POST /api/telemetry/seen`. */
   telemetryPings: Array<{ surface?: string }>;
-  /** Deliver events as frames, buffered until the WS connects. */
+  /** Wrap events into frames and deliver them over the structured view
+   *  WS (buffered until it connects). */
   pushEvents: (events: unknown[]) => void;
 }
 
-/**
- * Minimal stand-in for the daemon's TranscriptModel (src/acp/transcript.rs) so mocked specs have rows to render.
- * Ids mirror the server's so merge-by-id behaves the same; fold correctness is tested in Rust and live specs.
+/** Test double for the daemon's `TranscriptModel` (src/acp/transcript.rs),
+ *  covering only the event kinds the mocked specs push: agent message chunks,
+ *  user prompts, and the two tool-lifecycle edges. Everything else folds to no
+ *  row, which is what the server does for the control-only events these specs
+ *  use (`Stopped`, `ConfigOptionsUpdated`, ...).
+ *
+ *  Row ids and group ids mirror the server's (`msg-<seq>`, `user-seq-<seq>`,
+ *  `start-<id>` / `done-<id>` grouped under `tool-<id>`, `g<n>` for the rest)
+ *  so merge-by-id behaves as it does in production. Fold *correctness* is not
+ *  what this suite tests: the Rust unit tests in `transcript.rs` and the live
+ *  Playwright specs cover that against the real fold. This exists so mocked
+ *  browser-behavior specs (fonts, scrolling, touch, card layout) have a
+ *  transcript to render at all now that the client no longer folds events
+ *  itself.
  */
-function foldEventToRow(event: unknown, seq: number, nextGroup: () => string, openMessageGroup: { id: string | null }) {
+type FoldedRowDelta = { kind: "append" | "patch"; row: Record<string, unknown> };
+
+function foldEventToRow(
+  event: unknown,
+  seq: number,
+  nextGroup: () => string,
+  openMessage: { row: Record<string, unknown> | null },
+): FoldedRowDelta | null {
   const now = new Date().toISOString();
   // Unit variants serialize as a bare string.
   if (event === "SessionCleared") {
-    openMessageGroup.id = null;
+    openMessage.row = null;
     return {
-      id: `cleared-${seq}`,
-      group_id: nextGroup(),
-      kind: "session_cleared",
-      at: now,
-      text: "Conversation cleared, the model no longer remembers earlier turns.",
+      kind: "append",
+      row: {
+        id: `cleared-${seq}`,
+        group_id: nextGroup(),
+        kind: "session_cleared",
+        at: now,
+        text: "Conversation cleared, the model no longer remembers earlier turns.",
+      },
     };
   }
-  if (typeof event !== "object" || event === null) return null;
+  if (typeof event !== "object" || event === null) {
+    openMessage.row = null;
+    return null;
+  }
   const ev = event as Record<string, Record<string, unknown>>;
   if (ev.AgentMessageChunk) {
-    // Consecutive chunks share one group; any other event closes the run.
-    const group = openMessageGroup.id ?? nextGroup();
-    openMessageGroup.id = group;
-    return {
+    const text = String(ev.AgentMessageChunk.text ?? "");
+    if (openMessage.row) {
+      openMessage.row = { ...openMessage.row, text: String(openMessage.row.text ?? "") + text };
+      return { kind: "patch", row: openMessage.row };
+    }
+    openMessage.row = {
       id: `msg-${seq}`,
-      group_id: group,
+      group_id: nextGroup(),
       kind: "message",
       at: now,
-      text: String(ev.AgentMessageChunk.text ?? ""),
+      text,
     };
+    return { kind: "append", row: openMessage.row };
   }
-  openMessageGroup.id = null;
+  openMessage.row = null;
   if (ev.UserPromptSent) {
     const promptId = ev.UserPromptSent.prompt_id;
     return {
-      id: typeof promptId === "string" && promptId ? promptId : `user-seq-${seq}`,
-      group_id: nextGroup(),
-      kind: "user_prompt",
-      at: now,
-      text: String(ev.UserPromptSent.text ?? ""),
-      attachments: ev.UserPromptSent.attachments ?? [],
+      kind: "append",
+      row: {
+        id: typeof promptId === "string" && promptId ? promptId : `user-seq-${seq}`,
+        group_id: nextGroup(),
+        kind: "user_prompt",
+        at: now,
+        text: String(ev.UserPromptSent.text ?? ""),
+        attachments: ev.UserPromptSent.attachments ?? [],
+      },
     };
   }
   if (ev.ToolCallStarted) {
     const tc = ev.ToolCallStarted.tool_call as Record<string, unknown>;
     return {
-      id: `start-${String(tc.id)}`,
-      group_id: `tool-${String(tc.id)}`,
-      kind: "tool_start",
-      at: String(tc.started_at ?? now),
-      text: String(tc.name ?? ""),
-      tool_call_id: String(tc.id),
-      tool: tc,
+      kind: "append",
+      row: {
+        id: `start-${String(tc.id)}`,
+        group_id: `tool-${String(tc.id)}`,
+        kind: "tool_start",
+        at: String(tc.started_at ?? now),
+        text: String(tc.name ?? ""),
+        tool_call_id: String(tc.id),
+        tool: tc,
+      },
     };
   }
   if (ev.ToolCallCompleted) {
@@ -91,13 +148,16 @@ function foldEventToRow(event: unknown, seq: number, nextGroup: () => string, op
     const isError = Boolean(c.is_error);
     const content = String(c.content ?? "");
     return {
-      id: `done-${String(c.tool_call_id)}`,
-      group_id: `tool-${String(c.tool_call_id)}`,
-      kind: isError ? "tool_error" : "tool_complete",
-      at: String(c.completed_at ?? now),
-      text: content || (isError ? "tool failed" : "completed"),
-      tool_call_id: String(c.tool_call_id),
-      output: c.output ?? [],
+      kind: "append",
+      row: {
+        id: `done-${String(c.tool_call_id)}`,
+        group_id: `tool-${String(c.tool_call_id)}`,
+        kind: isError ? "tool_error" : "tool_complete",
+        at: String(c.completed_at ?? now),
+        text: content || (isError ? "tool failed" : "completed"),
+        tool_call_id: String(c.tool_call_id),
+        output: c.output ?? [],
+      },
     };
   }
   return null;
@@ -110,21 +170,31 @@ export async function mockAcpSession(page: Page, opts: AcpSessionMockOptions = {
   let seq = 0;
   let ws: WebSocketRoute | null = null;
   const frameLog: string[] = [];
-  // Rows keep their seq so replay pages rows over the same window as frames.
+  // Server-folded transcript rows, tagged with the seq that produced them so
+  // the replay route can page rows over the same seq window as the frames.
   const rowLog: Array<{ seq: number; row: Record<string, unknown> }> = [];
   let groupCounter = 0;
   const nextGroup = () => `g${++groupCounter}`;
-  const openMessageGroup: { id: string | null } = { id: null };
+  const openMessage: { row: Record<string, unknown> | null } = { row: null };
   const pushEvents = (events: unknown[]) => {
     for (const event of events) {
       const at = ++seq;
       const frame = JSON.stringify({ session_id: sessionId, seq: at, event });
       frameLog.push(frame);
       ws?.send(frame);
-      const row = foldEventToRow(event, at, nextGroup, openMessageGroup);
-      if (row) {
-        rowLog.push({ seq: at, row });
-        ws?.send(JSON.stringify({ kind: "transcript_delta", delta: { Append: row } }));
+      // The daemon folds the event and ships the row separately (Tier 4); the
+      // raw frame above now feeds the client's control reducer only.
+      const folded = foldEventToRow(event, at, nextGroup, openMessage);
+      if (folded) {
+        if (folded.kind === "append") {
+          rowLog.push({ seq: at, row: folded.row });
+          ws?.send(JSON.stringify({ kind: "transcript_delta", delta: { Append: folded.row } }));
+        } else {
+          const id = String(folded.row.id);
+          const existing = rowLog.findIndex((entry) => entry.row.id === id);
+          if (existing >= 0) rowLog[existing] = { seq: at, row: folded.row };
+          ws?.send(JSON.stringify({ kind: "transcript_delta", delta: { Patch: { id, row: folded.row } } }));
+        }
       }
     }
   };
@@ -162,7 +232,7 @@ export async function mockAcpSession(page: Page, opts: AcpSessionMockOptions = {
       try {
         handle.telemetryPings.push(JSON.parse(body));
       } catch {
-        // Only well-formed pings are recorded.
+        // Only well-formed `{ surface }` posts matter to the specs.
       }
     }
     return r.fulfill({ status: 204 });
@@ -200,10 +270,16 @@ export async function mockAcpSession(page: Page, opts: AcpSessionMockOptions = {
     });
   });
   await page.route("**/api/sessions/*/ensure", (r) => r.fulfill({ json: { ok: true } }));
-  // Registered first: later, more specific routes win.
+  // Structured view REST endpoints (snapshot/...): empty is fine,
+  // everything interesting arrives over the WebSocket. Registered before
+  // the prompt/config-option captures so those (later, more specific)
+  // routes win Playwright's reverse-registration-order matching.
   await page.route("**/api/sessions/*/acp/**", (r) => r.fulfill({ json: {} }));
-  // Replay pages recent-first like the daemon so cold open and scroll-up paging run for real (#2236).
-  // `?view=rows` returns rows with empty frames, as the daemon does.
+  // Replay endpoint: serve the frame log with the real recent-first
+  // paging contract so the client's cold-open (tail via `before`) and
+  // scroll-up (older pages via `before`) paths are exercised, not stubbed.
+  // Registered after the generic acp/** route so it wins for replay URLs.
+  // See #2236.
   const isBoundary = (event: unknown): boolean =>
     typeof event === "object" && event !== null && ("UserPromptSent" in event || "UserDiffCommentsPrompt" in event);
   // Rows covering the same seq window as a frame page. `?view=rows` returns
@@ -263,7 +339,12 @@ export async function mockAcpSession(page: Page, opts: AcpSessionMockOptions = {
     const body = JSON.parse(r.request().postData() ?? "{}") as AcpPromptBody;
     handle.promptBodies.push(body);
     await r.fulfill({ json: {} });
-    // The daemon echoes `UserPromptSent` before the agent replies; without it the composer stays working (#3417).
+    // The daemon publishes `UserPromptSent` carrying the client-minted
+    // `prompt_id` BEFORE it forwards the prompt to the agent
+    // (`send_turn` -> `publish_user_prompt_with_attachments`). That echo is
+    // what settles the client's optimistic in-flight marker and opens the
+    // turn, so a mock that jumps straight to the agent's reply leaves the
+    // composer wedged in its "working" state. See #3417.
     pushEvents([{ UserPromptSent: { text: body.text, prompt_id: body.prompt_id ?? null } }]);
     pushEvents(opts.onPrompt?.(body) ?? []);
   });
@@ -277,12 +358,15 @@ export async function mockAcpSession(page: Page, opts: AcpSessionMockOptions = {
     pushEvents(opts.onConfigOption?.(body) ?? []);
   });
 
+  // Terminal WS (only opened outside structured view mode): swallow it.
   await page.routeWebSocket(/\/sessions\/[^/]+\/ws(\?|$)/, () => {
     // no-op
   });
   await page.routeWebSocket(/\/sessions\/[^/]+\/acp\/ws/, (route) => {
     ws = route;
     for (const frame of frameLog) route.send(frame);
+    // The daemon's on-connect transcript snapshot. Merged by row id, so
+    // re-sending rows the client already has from replay is a no-op.
     route.send(JSON.stringify({ kind: "transcript_snapshot", rows: rowLog.map((e) => e.row) }));
   });
 
@@ -290,14 +374,20 @@ export async function mockAcpSession(page: Page, opts: AcpSessionMockOptions = {
   return handle;
 }
 
-/** Deep link rather than a sidebar click, which fails at mobile widths. */
+/** Open the mocked structured-view session via its deep link. Direct
+ *  navigation rather than a sidebar click: several consumers run at
+ *  mobile widths where the sidebar is collapsed and the session link is
+ *  outside the viewport (sidebar-row navigation has its own spec). */
 export async function openStructuredSession(page: Page, mock: AcpSessionMock) {
   await page.goto(`/session/${mock.sessionId}`);
   await expect(page.locator("header")).toBeVisible();
 }
 
-/** Wait until the structured view WebSocket is open. Reveal the compact
- * mobile composer first because earlier sends queue instead of posting. */
+/** Wait until the composer reflects an open structured view WS. On a narrow
+ *  viewport, reveal the compact composer first: callers of this helper need
+ *  the full composer, rather than testing its collapsed summary. The Send
+ *  button only reads "Send message" while `status === "open"`; sending
+ *  before that would queue the prompt instead of POSTing it. */
 export async function waitForComposerConnected(page: Page) {
   const openComposer = page.getByRole("button", { name: /^Open message composer/ });
   const sendMessage = page.getByRole("button", { name: "Send message" });

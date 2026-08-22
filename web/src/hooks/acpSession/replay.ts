@@ -141,10 +141,17 @@ async function fetchForward(
 
 /** Fetch the page below `before`. Returns whether more older history remains, or null on failure. */
 export async function fetchOlderPage(sid: string, before: number, dispatch: Dispatch): Promise<boolean | null> {
-  const res = await getReplay(sid, `before=${before}&limit=${REPLAY_PAGE_SIZE}&view=rows`);
-  if (!res.ok) return null;
-  const data = (await res.json()) as ReplayPageResponse;
-  const rows = toActivityRows(data.rows ?? [], sid);
-  if (rows.length > 0) dispatch({ kind: "prepend", rows, oldestSeq: data.next_cursor ?? before });
-  return data.has_more ?? false;
+  let cursor = before;
+  for (;;) {
+    const res = await getReplay(sid, `before=${cursor}&limit=${REPLAY_PAGE_SIZE}&view=rows`);
+    if (!res.ok) return null;
+    const data = (await res.json()) as ReplayPageResponse;
+    const next = data.next_cursor ?? cursor;
+    const rows = toActivityRows(data.rows ?? [], sid);
+    if (rows.length > 0 || !data.has_more || next >= cursor) {
+      dispatch({ kind: "prepend", rows, oldestSeq: next });
+      return (data.has_more ?? false) && next < cursor;
+    }
+    cursor = next;
+  }
 }
