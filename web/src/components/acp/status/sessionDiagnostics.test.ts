@@ -72,6 +72,37 @@ describe("ACP session diagnostics", () => {
         expected: { turn: { kind: "awaiting_user", request: "approval" } },
       },
       {
+        name: "an elicitation suppresses other active turn detail",
+        changes: {
+          state: {
+            ...emptyAcpState(),
+            turnActive: true,
+            thinking: true,
+            pendingElicitations: [{} as never],
+          },
+        },
+        expected: { turn: { kind: "awaiting_user", request: "elicitation" } },
+      },
+      {
+        name: "tool activity retains the display label",
+        changes: {
+          state: { ...emptyAcpState(), turnActive: true, inFlightTool: { name: "Read file" } as never },
+        },
+        expected: { turn: { kind: "running", activity: "tool", tool: "Read file" } },
+      },
+      {
+        name: "cancellation retains the escalation deadline",
+        changes: {
+          state: {
+            ...emptyAcpState(),
+            turnActive: true,
+            cancelling: true,
+            cancelEscalatesAt: "2026-08-16T11:00:00Z",
+          },
+        },
+        expected: { turn: { kind: "cancelling", escalatesAt: "2026-08-16T11:00:00Z" } },
+      },
+      {
         name: "compaction owns active turn state",
         changes: { state: { ...emptyAcpState(), turnActive: true, compacting: true } },
         expected: { turn: { kind: "compacting" } },
@@ -80,6 +111,11 @@ describe("ACP session diagnostics", () => {
         name: "a scheduled wake remains distinct from idle",
         changes: { state: { ...emptyAcpState(), nextWakeupAt: "2026-08-16T12:00:00Z", nextWakeupReason: "check CI" } },
         expected: { turn: { kind: "scheduled", wakeAt: "2026-08-16T12:00:00Z", reason: "check CI" } },
+      },
+      {
+        name: "a monitor retains its description",
+        changes: { state: { ...emptyAcpState(), monitorArmed: true, monitorDescription: "Waiting for CI" } },
+        expected: { turn: { kind: "monitoring", description: "Waiting for CI" } },
       },
     ];
 
