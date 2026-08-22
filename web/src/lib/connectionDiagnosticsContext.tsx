@@ -4,6 +4,13 @@ import { createContext, useCallback, useContext, useMemo, useState, type ReactNo
 import type { SessionConnectionDiagnostics } from "../components/acp/status/connectionStatus";
 
 export interface PublishedSessionConnectionDiagnostics {
+  /** Stable identity for this mounted diagnostic source. Cleanup removes only
+   * this source, never another surface describing the same session. */
+  sourceId: string;
+  /** Only the active primary conversation may drive the global status UI.
+   * Auxiliary panes remain registered for pane-local diagnostics. */
+  role: "primary" | "auxiliary";
+  active: boolean;
   session: SessionConnectionDiagnostics;
   /** A routine connection attempt is already visible in the header, but is
    * not yet disruptive enough to show the transcript overlay. */
@@ -12,9 +19,9 @@ export interface PublishedSessionConnectionDiagnostics {
 }
 
 interface ConnectionDiagnosticsContextValue {
-  published: PublishedSessionConnectionDiagnostics | null;
+  published: Map<string, PublishedSessionConnectionDiagnostics>;
   publish: (snapshot: PublishedSessionConnectionDiagnostics) => void;
-  clear: (sessionId: string) => void;
+  clear: (sourceId: string) => void;
 }
 
 const ConnectionDiagnosticsContext = createContext<ConnectionDiagnosticsContextValue | null>(null);
@@ -24,22 +31,34 @@ const ConnectionDiagnosticsContext = createContext<ConnectionDiagnosticsContextV
  * carried with every snapshot, so a late unmount cannot describe a newly
  * selected session. */
 export function ConnectionDiagnosticsProvider({ children }: { children: ReactNode }) {
-  const [published, setPublished] = useState<PublishedSessionConnectionDiagnostics | null>(null);
+  const [published, setPublished] = useState<Map<string, PublishedSessionConnectionDiagnostics>>(() => new Map());
   const publish = useCallback((snapshot: PublishedSessionConnectionDiagnostics) => {
     setPublished((current) => {
+      const previous = current.get(snapshot.sourceId);
       if (
-        current?.session.sessionId === snapshot.session.sessionId &&
-        current.session.kind === snapshot.session.kind &&
-        current.incidentVisible === snapshot.incidentVisible &&
-        JSON.stringify(current.session) === JSON.stringify(snapshot.session)
+        previous?.session.sessionId === snapshot.session.sessionId &&
+        previous.session.kind === snapshot.session.kind &&
+        previous.role === snapshot.role &&
+        previous.active === snapshot.active &&
+        previous.incidentVisible === snapshot.incidentVisible &&
+        previous.onReconnect === snapshot.onReconnect &&
+        JSON.stringify(previous.session) === JSON.stringify(snapshot.session)
       ) {
         return current;
       }
-      return snapshot;
+      const next = new Map(current);
+      next.delete(snapshot.sourceId);
+      next.set(snapshot.sourceId, snapshot);
+      return next;
     });
   }, []);
-  const clear = useCallback((sessionId: string) => {
-    setPublished((current) => (current?.session.sessionId === sessionId ? null : current));
+  const clear = useCallback((sourceId: string) => {
+    setPublished((current) => {
+      if (!current.has(sourceId)) return current;
+      const next = new Map(current);
+      next.delete(sourceId);
+      return next;
+    });
   }, []);
   const value = useMemo(() => ({ published, publish, clear }), [clear, published, publish]);
   return <ConnectionDiagnosticsContext.Provider value={value}>{children}</ConnectionDiagnosticsContext.Provider>;
@@ -55,5 +74,9 @@ export function useConnectionDiagnosticsPublisher() {
 
 export function usePublishedConnectionDiagnostics(activeSessionId: string | null) {
   const context = useContext(ConnectionDiagnosticsContext);
-  return context?.published?.session.sessionId === activeSessionId ? context.published : null;
+  if (!activeSessionId || !context) return null;
+  const candidates = [...context.published.values()].filter(
+    (entry) => entry.active && entry.role === "primary" && entry.session.sessionId === activeSessionId,
+  );
+  return candidates.at(-1) ?? null;
 }

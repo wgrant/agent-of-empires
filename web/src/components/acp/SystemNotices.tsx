@@ -120,8 +120,9 @@ function PublishedConnectionDiagnostics({
 }) {
   const { publish, clear } = useConnectionDiagnosticsPublisher();
   useEffect(() => {
-    publish({ session: sessionConnection, incidentVisible, onReconnect });
-    return () => clear(sessionId);
+    const sourceId = `structured:${sessionId}`;
+    publish({ sourceId, role: "primary", active: true, session: sessionConnection, incidentVisible, onReconnect });
+    return () => clear(sourceId);
   }, [clear, incidentVisible, onReconnect, publish, sessionConnection, sessionId]);
   return null;
 }

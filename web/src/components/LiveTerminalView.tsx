@@ -112,14 +112,21 @@ export function LiveTerminalView({ session, active = true, surface = "agent", te
     session.id,
   ]);
   const connectionSnapshot = { dashboard: dashboardConnection, session: sessionConnection };
+  const diagnosticSourceId = `${surface}:${session.id}:${terminalIndex}`;
   useEffect(() => {
     publishConnectionDiagnostics({
+      sourceId: diagnosticSourceId,
+      role: surface === "agent" ? "primary" : "auxiliary",
+      active,
       session: sessionConnection,
       incidentVisible: true,
       onReconnect: live.manualReconnect,
     });
-  }, [live.manualReconnect, publishConnectionDiagnostics, sessionConnection]);
-  useEffect(() => () => clearConnectionDiagnostics(session.id), [clearConnectionDiagnostics, session.id]);
+  }, [active, diagnosticSourceId, live.manualReconnect, publishConnectionDiagnostics, sessionConnection, surface]);
+  useEffect(
+    () => () => clearConnectionDiagnostics(diagnosticSourceId),
+    [clearConnectionDiagnostics, diagnosticSourceId],
+  );
   // The viewport hook supplies the Safari bottom inset and the occlusion-based
   // keyboard state used to gate the pane's sizing latch.
   const { keyboardHeight, keyboardOpen } = useMobileKeyboard();
