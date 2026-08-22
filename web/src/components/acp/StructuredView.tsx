@@ -552,7 +552,7 @@ function ComposerDock({
         )}
         {!composerConnected && <ComposerConnectionNotice diagnostics={connectionDiagnostics} />}
         <RejectedPromptsStrip
-          rejected={promptOutbox.rejected}
+          rejected={promptOutbox.legacy.rejected}
           onRetry={ctx.sendPrompt}
           onDismiss={ctx.dismissRejectedPrompt}
           disabled={state.workerRestarting || state.workerStopped || Boolean(state.startupError)}
@@ -564,14 +564,14 @@ function ComposerDock({
           onDismiss={ctx.dismissConfigOptionSwitchFailed}
         />
         <QueuedPromptsStrip
-          queued={promptOutbox.queued}
+          queued={promptOutbox.legacy.queued}
           onRemove={ctx.removeQueuedPrompt}
           onEdit={ctx.editQueuedPrompt}
           onClear={ctx.clearQueue}
           onSendNow={ctx.sendQueuedNow}
           canSendNow={ctx.canSendQueuedNow}
           sendNowInterrupts={ctx.sendNowInterruptsTurn}
-          pendingResume={promptOutbox.queuedDelivery === "waiting_for_recovery"}
+          pendingResume={promptOutbox.legacy.queuedDelivery === "waiting_for_recovery"}
         />
         <ContextPrimerBanner
           sessionId={sessionId}
@@ -626,7 +626,7 @@ function ComposerDock({
           pendingAttachments={ctx.pendingAttachments}
           setPendingAttachments={ctx.setPendingAttachments}
           primerPrefill={primerPrefill}
-          queuedPrompts={promptOutbox.queued}
+          queuedPrompts={promptOutbox.legacy.queued}
           editQueuedPrompt={ctx.editQueuedPrompt}
         />
       </CollapsibleRegion>
