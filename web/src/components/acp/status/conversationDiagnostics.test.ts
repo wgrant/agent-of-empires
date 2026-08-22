@@ -66,7 +66,9 @@ describe("conversation diagnostics selectors", () => {
       snoozedUntil: "2099-01-01T09:30:00Z",
     });
     expect(
-      deriveSessionIncident(snapshot({ state: { ...emptyAcpState(), startupError: "binary missing" } })),
+      deriveSessionIncident(
+        snapshot({ state: { ...emptyAcpState(), startupError: "binary missing" }, workerState: "absent" }),
+      ),
     ).toMatchObject({
       kind: "failed",
       action: "retry_start",
@@ -81,8 +83,16 @@ describe("conversation diagnostics selectors", () => {
       [snapshot({ trashedAt: "2026-08-16T10:00:00Z" }), "trashed", "read_only"],
       [snapshot({ archivedAt: "2026-08-16T10:00:00Z" }), "archived", "resume_then_send"],
       [snapshot({ snoozedUntil: "2026-08-16T10:00:00Z" }), "snoozed", "resume_then_send"],
-      [snapshot({ state: { ...emptyAcpState(), startupError: "binary missing" } }), "failed", "blocked"],
-      [snapshot({ state: { ...emptyAcpState(), workerStopped: true } }), "stopped", "queue_for_recovery"],
+      [
+        snapshot({ state: { ...emptyAcpState(), startupError: "binary missing" }, workerState: "absent" }),
+        "failed",
+        "blocked",
+      ],
+      [
+        snapshot({ state: { ...emptyAcpState(), workerStopped: true }, workerState: "absent" }),
+        "stopped",
+        "queue_for_recovery",
+      ],
       [snapshot({ workerState: "stopping" }), "stopping", "queue_for_recovery"],
       [
         snapshot({
