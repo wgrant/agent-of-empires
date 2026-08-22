@@ -29,9 +29,15 @@ describe("ACP session diagnostics", () => {
         expected: { disposition: { kind: "live" }, runtime: { kind: "ready" }, turn: { kind: "idle" } },
       },
       {
-        name: "cold worker is starting",
+        name: "bare worker absence is unknown rather than progress",
         changes: { workerState: "absent" },
-        expected: { runtime: { kind: "starting" } },
+        expected: {
+          operational: {
+            kind: "active",
+            agent: { kind: "unknown", detail: "No worker is running and no start is in progress." },
+          },
+          runtime: { kind: "unknown" },
+        },
       },
       {
         name: "persisted stop outranks stale idle-stop replay after restart",
@@ -48,9 +54,15 @@ describe("ACP session diagnostics", () => {
         expected: { runtime: { kind: "ready" } },
       },
       {
-        name: "resuming supervisor outranks a lagging stopped REST poll",
+        name: "bare supervisor resume is a start rather than a restart",
         changes: { workerState: "resuming", sessionStatus: "Stopped" },
-        expected: { runtime: { kind: "restarting", reason: "manual_restart" } },
+        expected: {
+          operational: {
+            kind: "active",
+            agent: { kind: "transitioning", operation: "start" },
+          },
+          runtime: { kind: "starting" },
+        },
       },
       {
         name: "idle reaping is dormant rather than stopped",
@@ -63,9 +75,9 @@ describe("ACP session diagnostics", () => {
         expected: { runtime: { kind: "dormant", reason: "idle_auto_stop" } },
       },
       {
-        name: "a user stop is distinct from automatic recovery",
+        name: "a stale user stop does not outrank a running supervisor",
         changes: { state: { ...emptyAcpState(), workerStopped: true } },
-        expected: { runtime: { kind: "stopped", reason: "user_stopped" } },
+        expected: { operational: { kind: "active", agent: { kind: "online" } }, runtime: { kind: "ready" } },
       },
       {
         name: "a stopping worker remains transitional",
@@ -74,8 +86,25 @@ describe("ACP session diagnostics", () => {
       },
       {
         name: "restart causes retain their recovery meaning",
-        changes: { state: { ...emptyAcpState(), agentOrphaned: true, workerRestarting: true } },
-        expected: { runtime: { kind: "restarting", reason: "prompt_orphaned" } },
+        changes: {
+          workerState: "resuming",
+          state: { ...emptyAcpState(), agentOrphaned: true, workerRestarting: true },
+        },
+        expected: {
+          operational: { kind: "active", agent: { kind: "transitioning", operation: "recover" } },
+          runtime: { kind: "restarting", reason: "prompt_orphaned" },
+        },
+      },
+      {
+        name: "explicit restart intent distinguishes restart from start",
+        changes: {
+          workerState: "resuming",
+          state: { ...emptyAcpState(), workerRestarting: true },
+        },
+        expected: {
+          operational: { kind: "active", agent: { kind: "transitioning", operation: "restart" } },
+          runtime: { kind: "restarting", reason: "manual_restart" },
+        },
       },
       {
         name: "a provider limit blocks an otherwise running worker",
@@ -85,11 +114,68 @@ describe("ACP session diagnostics", () => {
         expected: { runtime: { kind: "blocked", reason: "rate_limited" } },
       },
       {
-        name: "trash takes disposition precedence without rewriting runtime",
+        name: "trash structurally hides stale agent and turn evidence",
         changes: { trashedAt: "2026-08-16T10:00:00Z", state: { ...emptyAcpState(), workerStopped: true } },
         expected: {
+          operational: { kind: "trashed", trashedAt: "2026-08-16T10:00:00Z" },
           disposition: { kind: "trashed", trashedAt: "2026-08-16T10:00:00Z" },
-          runtime: { kind: "stopped", reason: "user_stopped" },
+          runtime: { kind: "unknown" },
+          turn: { kind: "idle" },
+        },
+      },
+      {
+        name: "server startup failure is retained when replay has no error",
+        changes: {
+          workerState: "absent",
+          sessionStatus: "Error",
+          lastError: "adapter exited before initialize",
+        },
+        expected: {
+          operational: {
+            kind: "active",
+            agent: { kind: "failed", category: "startup", message: "adapter exited before initialize" },
+          },
+          runtime: { kind: "failed", category: "startup", message: "adapter exited before initialize" },
+        },
+      },
+      {
+        name: "accepted stop outranks a briefly live old worker",
+        changes: {
+          pendingOperation: {
+            kind: "stop",
+            stage: "accepted",
+            startedAt: "2026-08-16T10:30:00Z",
+            operationId: "stop-1",
+            error: null,
+          },
+        },
+        expected: {
+          operational: {
+            kind: "active",
+            agent: { kind: "transitioning", operation: "stop", operationId: "stop-1" },
+          },
+        },
+      },
+      {
+        name: "accepted start outranks stale stopped observations",
+        changes: {
+          workerState: "absent",
+          sessionStatus: "Stopped",
+          state: { ...emptyAcpState(), workerStopped: true },
+          pendingOperation: {
+            kind: "start",
+            stage: "accepted",
+            startedAt: "2026-08-16T10:31:00Z",
+            operationId: "start-1",
+            error: null,
+          },
+        },
+        expected: {
+          operational: {
+            kind: "active",
+            agent: { kind: "transitioning", operation: "start", operationId: "start-1" },
+          },
+          runtime: { kind: "starting" },
         },
       },
       {
