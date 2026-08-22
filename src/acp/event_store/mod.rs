@@ -11,7 +11,7 @@ use std::path::Path;
 use std::sync::{Mutex, MutexGuard};
 
 use anyhow::{Context, Result};
-use rusqlite::Connection;
+use rusqlite::{params, Connection};
 use tracing::{debug, trace, warn};
 
 use super::state::Event;
@@ -87,6 +87,35 @@ impl EventStore {
         let inserted = events::insert_event(&tx, &self.schema, session_id, seq, &json, now_ms)?;
         if inserted != 0 {
             rate_limit::update_rate_limit_budget(&tx, &self.schema, session_id, seq, event);
+            if let Event::ToolCallContent { tool_call_id, .. } = event {
+                let table = self.schema.events_table();
+                match tx.execute(
+                    &format!(
+                        "DELETE FROM {table}
+                         WHERE session_id = ?1
+                           AND discriminant = 'ToolCallContent'
+                           AND seq < ?2
+                           AND json_extract(event_json, '$.ToolCallContent.tool_call_id') = ?3"
+                    ),
+                    params![session_id, seq as i64, tool_call_id],
+                ) {
+                    Ok(removed) if removed > 0 => trace!(
+                        target: "acp.event_store",
+                        session = %session_id,
+                        tool_call_id,
+                        removed,
+                        "compacted superseded tool content snapshots"
+                    ),
+                    Ok(_) => {}
+                    Err(error) => warn!(
+                        target: "acp.event_store",
+                        session = %session_id,
+                        tool_call_id,
+                        %error,
+                        "failed to compact superseded tool content snapshots"
+                    ),
+                }
+            }
         }
         tx.commit()?;
         trace!(
@@ -284,6 +313,32 @@ mod tests {
         assert_eq!(store.highest_seq("s-1"), 0);
         assert_eq!(store.lowest_seq("s-1"), None);
         assert_eq!(store.highest_seq("s-2"), 1, "siblings are untouched");
+    }
+
+    #[test]
+    fn tool_content_keeps_only_each_calls_latest_replacement() {
+        let (_tmp, store) = open_store(1000);
+        let content = |tool_call_id: &str, text: &str| Event::ToolCallContent {
+            tool_call_id: tool_call_id.into(),
+            content: text.into(),
+        };
+        store.record("s-1", 1, &content("tool-a", "first")).unwrap();
+        store
+            .record("s-1", 2, &content("tool-a", "second"))
+            .unwrap();
+        store
+            .record("s-1", 3, &content("tool-b", "independent"))
+            .unwrap();
+        store.record("s-1", 4, &content("tool-a", "final")).unwrap();
+
+        let replay = store.replay_from("s-1", 0);
+        assert_eq!(seqs(&replay), [3, 4]);
+        assert!(matches!(
+            &replay[1].1,
+            Event::ToolCallContent { tool_call_id, content }
+                if tool_call_id == "tool-a" && content == "final"
+        ));
+        assert_eq!(store.replay_from("s-1", 1).len(), 2);
     }
 
     #[test]
