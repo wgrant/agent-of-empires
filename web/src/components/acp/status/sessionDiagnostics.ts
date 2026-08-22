@@ -13,12 +13,6 @@ export type PendingAgentOperation = {
   error: string | null;
 };
 
-export type SessionDisposition =
-  | { kind: "live" }
-  | { kind: "archived"; archivedAt: string }
-  | { kind: "snoozed"; until: string }
-  | { kind: "trashed"; trashedAt: string };
-
 export type AgentRuntime =
   | { kind: "unknown" }
   | { kind: "starting" }
@@ -79,27 +73,8 @@ export type SessionOperationalState =
   | { kind: "snoozed"; until: string }
   | { kind: "active"; agent: AgentState };
 
-export interface SessionDiagnosticEvidence {
-  workerState: AcpWorkerLifecycleState;
-  startupError: string | null;
-  incompatibleAgent: AcpState["incompatibleAgent"];
-  rateLimit: AcpState["rateLimit"];
-  workerStopped: boolean;
-  workerRestarting: boolean;
-  workerIdleStopped: boolean;
-  agentUnresponsive: boolean;
-  agentOrphaned: boolean;
-  canSteer: boolean;
-}
-
 export interface SessionDiagnostics {
   operational: SessionOperationalState;
-  /** Transitional flat projections retained while existing consumers move to
-   * the hierarchical operational model. */
-  disposition: SessionDisposition;
-  runtime: AgentRuntime;
-  turn: TurnExecution;
-  evidence: SessionDiagnosticEvidence;
 }
 
 export interface SessionDiagnosticsInput {
@@ -188,8 +163,14 @@ function deriveAgent(input: SessionDiagnosticsInput): AgentState {
       message: "The configured agent is incompatible.",
     };
   }
-  const failure = state.startupError ?? (input.sessionStatus === "Error" ? input.lastError : null);
-  if (failure) return { kind: "failed", operation: "start", category: "startup", message: failure };
+  if (state.startupError || input.sessionStatus === "Error") {
+    return {
+      kind: "failed",
+      operation: "start",
+      category: "startup",
+      message: state.startupError ?? input.lastError ?? "The agent could not start.",
+    };
+  }
   if (input.sessionStatus === "Starting") {
     return { kind: "transitioning", operation: "start", reason: null, startedAt: null, operationId: null };
   }
@@ -231,19 +212,6 @@ function deriveOperationalState(input: SessionDiagnosticsInput): SessionOperatio
   return { kind: "active", agent: deriveAgent(input) };
 }
 
-function projectDisposition(operational: SessionOperationalState): SessionDisposition {
-  switch (operational.kind) {
-    case "trashed":
-      return { kind: "trashed", trashedAt: operational.trashedAt };
-    case "archived":
-      return { kind: "archived", archivedAt: operational.archivedAt };
-    case "snoozed":
-      return { kind: "snoozed", until: operational.until };
-    default:
-      return { kind: "live" };
-  }
-}
-
 export function operationalAgentRuntime(operational: SessionOperationalState): AgentRuntime {
   if (operational.kind !== "active") return { kind: "unknown" };
   const { agent } = operational;
@@ -275,27 +243,7 @@ export function operationalAgentRuntime(operational: SessionOperationalState): A
  * remain the source observations until all consumers have migrated.
  */
 export function deriveSessionDiagnostics(input: SessionDiagnosticsInput): SessionDiagnostics {
-  const { state, workerState } = input;
-  const operational = deriveOperationalState(input);
-  return {
-    operational,
-    disposition: projectDisposition(operational),
-    runtime: operationalAgentRuntime(operational),
-    turn:
-      operational.kind === "active" && operational.agent.kind === "online" ? operational.agent.turn : { kind: "idle" },
-    evidence: {
-      workerState,
-      startupError: state.startupError,
-      incompatibleAgent: state.incompatibleAgent,
-      rateLimit: state.rateLimit,
-      workerStopped: state.workerStopped,
-      workerRestarting: state.workerRestarting,
-      workerIdleStopped: state.workerIdleStopped,
-      agentUnresponsive: state.agentUnresponsive,
-      agentOrphaned: state.agentOrphaned,
-      canSteer: state.promptCapabilities?.steering ?? false,
-    },
-  };
+  return { operational: deriveOperationalState(input) };
 }
 
 export function deriveTerminalOperationalState(input: {

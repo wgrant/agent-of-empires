@@ -48,7 +48,11 @@ import {
 } from "./status/conversationDiagnostics";
 import { deriveConversationSyncStatus } from "./status/conversationSyncStatus";
 import { deriveConversationNextStep } from "./status/conversationStatus";
-import { deriveSessionDiagnostics, type PendingAgentOperation } from "./status/sessionDiagnostics";
+import {
+  deriveSessionDiagnostics,
+  operationalAgentRuntime,
+  type PendingAgentOperation,
+} from "./status/sessionDiagnostics";
 import { AssistantMessage, UserMessage } from "./ThreadMessages";
 import { ToolExpansionProvider } from "./ToolExpansion";
 import { ToolDensityToggle, ToolDisplayModeProvider, useToolDensityPref } from "./ToolDisplayMode";
@@ -218,7 +222,7 @@ function AcpChrome({
     retryCount: ctx.retryCount,
     retryCountdown: ctx.retryCountdown,
     maxRetries: ctx.maxRetries,
-    agentRuntime: sessionDiagnostics.runtime,
+    agentRuntime: operationalAgentRuntime(sessionDiagnostics.operational),
     lastWebSocketOpenAt: ctx.lastWebSocketOpenAt,
     lastServerMessageAt: ctx.lastServerMessageAt,
     lastTransportDiagnostic: ctx.lastTransportDiagnostic,

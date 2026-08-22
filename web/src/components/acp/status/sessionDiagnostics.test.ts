@@ -30,7 +30,7 @@ describe("ACP session diagnostics", () => {
       {
         name: "healthy ready session",
         changes: {},
-        expected: { disposition: { kind: "live" }, runtime: { kind: "ready" }, turn: { kind: "idle" } },
+        expected: { operational: { kind: "active", agent: { kind: "online", turn: { kind: "idle" } } } },
       },
       {
         name: "bare worker absence is unknown rather than progress",
@@ -40,7 +40,6 @@ describe("ACP session diagnostics", () => {
             kind: "active",
             agent: { kind: "unknown", detail: "No worker is running and no start is in progress." },
           },
-          runtime: { kind: "unknown" },
         },
       },
       {
@@ -50,12 +49,12 @@ describe("ACP session diagnostics", () => {
           sessionStatus: "Stopped",
           state: { ...emptyAcpState(), workerIdleStopped: true },
         },
-        expected: { runtime: { kind: "stopped", reason: "user_stopped" } },
+        expected: { operational: { kind: "active", agent: { kind: "stopped", cause: "user" } } },
       },
       {
         name: "running supervisor outranks a lagging stopped REST poll",
         changes: { workerState: "running", sessionStatus: "Stopped" },
-        expected: { runtime: { kind: "ready" } },
+        expected: { operational: { kind: "active", agent: { kind: "online" } } },
       },
       {
         name: "bare supervisor resume is a start rather than a restart",
@@ -65,28 +64,27 @@ describe("ACP session diagnostics", () => {
             kind: "active",
             agent: { kind: "transitioning", operation: "start" },
           },
-          runtime: { kind: "starting" },
         },
       },
       {
         name: "idle reaping is dormant rather than stopped",
         changes: { state: { ...emptyAcpState(), workerIdleStopped: true }, workerState: "absent" },
-        expected: { runtime: { kind: "dormant", reason: "idle_auto_stop" } },
+        expected: { operational: { kind: "active", agent: { kind: "dormant", cause: "idle" } } },
       },
       {
         name: "server-owned dormancy fills a missing replay observation",
         changes: { workerState: "absent", dormant: true },
-        expected: { runtime: { kind: "dormant", reason: "idle_auto_stop" } },
+        expected: { operational: { kind: "active", agent: { kind: "dormant", cause: "idle" } } },
       },
       {
         name: "a stale user stop does not outrank a running supervisor",
         changes: { state: { ...emptyAcpState(), workerStopped: true } },
-        expected: { operational: { kind: "active", agent: { kind: "online" } }, runtime: { kind: "ready" } },
+        expected: { operational: { kind: "active", agent: { kind: "online" } } },
       },
       {
         name: "a stopping worker remains transitional",
         changes: { state: { ...emptyAcpState(), workerStopped: true }, workerState: "stopping" },
-        expected: { runtime: { kind: "stopping" } },
+        expected: { operational: { kind: "active", agent: { kind: "transitioning", operation: "stop" } } },
       },
       {
         name: "restart causes retain their recovery meaning",
@@ -96,7 +94,6 @@ describe("ACP session diagnostics", () => {
         },
         expected: {
           operational: { kind: "active", agent: { kind: "transitioning", operation: "recover" } },
-          runtime: { kind: "restarting", reason: "prompt_orphaned" },
         },
       },
       {
@@ -107,7 +104,6 @@ describe("ACP session diagnostics", () => {
         },
         expected: {
           operational: { kind: "active", agent: { kind: "transitioning", operation: "restart" } },
-          runtime: { kind: "restarting", reason: "manual_restart" },
         },
       },
       {
@@ -115,16 +111,15 @@ describe("ACP session diagnostics", () => {
         changes: {
           state: { ...emptyAcpState(), rateLimit: { kind: "rate_limit", status: "later", resets_at: null } },
         },
-        expected: { runtime: { kind: "blocked", reason: "rate_limited" } },
+        expected: {
+          operational: { kind: "active", agent: { kind: "online", condition: { kind: "rate_limited" } } },
+        },
       },
       {
         name: "trash structurally hides stale agent and turn evidence",
         changes: { trashedAt: "2026-08-16T10:00:00Z", state: { ...emptyAcpState(), workerStopped: true } },
         expected: {
           operational: { kind: "trashed", trashedAt: "2026-08-16T10:00:00Z" },
-          disposition: { kind: "trashed", trashedAt: "2026-08-16T10:00:00Z" },
-          runtime: { kind: "unknown" },
-          turn: { kind: "idle" },
         },
       },
       {
@@ -139,7 +134,6 @@ describe("ACP session diagnostics", () => {
             kind: "active",
             agent: { kind: "failed", category: "startup", message: "adapter exited before initialize" },
           },
-          runtime: { kind: "failed", category: "startup", message: "adapter exited before initialize" },
         },
       },
       {
@@ -179,13 +173,17 @@ describe("ACP session diagnostics", () => {
             kind: "active",
             agent: { kind: "transitioning", operation: "start", operationId: "start-1" },
           },
-          runtime: { kind: "starting" },
         },
       },
       {
         name: "an approval is current turn state rather than an agent failure",
         changes: { state: { ...emptyAcpState(), pendingApprovals: [{} as never] } },
-        expected: { turn: { kind: "awaiting_user", request: "approval" } },
+        expected: {
+          operational: {
+            kind: "active",
+            agent: { kind: "online", turn: { kind: "awaiting_user", request: "approval" } },
+          },
+        },
       },
       {
         name: "an elicitation suppresses other active turn detail",
@@ -197,14 +195,24 @@ describe("ACP session diagnostics", () => {
             pendingElicitations: [{} as never],
           },
         },
-        expected: { turn: { kind: "awaiting_user", request: "elicitation" } },
+        expected: {
+          operational: {
+            kind: "active",
+            agent: { kind: "online", turn: { kind: "awaiting_user", request: "elicitation" } },
+          },
+        },
       },
       {
         name: "tool activity retains the display label",
         changes: {
           state: { ...emptyAcpState(), turnActive: true, inFlightTool: { name: "Read file" } as never },
         },
-        expected: { turn: { kind: "running", activity: "tool", tool: "Read file" } },
+        expected: {
+          operational: {
+            kind: "active",
+            agent: { kind: "online", turn: { kind: "running", activity: "tool", tool: "Read file" } },
+          },
+        },
       },
       {
         name: "cancellation retains the escalation deadline",
@@ -216,22 +224,37 @@ describe("ACP session diagnostics", () => {
             cancelEscalatesAt: "2026-08-16T11:00:00Z",
           },
         },
-        expected: { turn: { kind: "cancelling", escalatesAt: "2026-08-16T11:00:00Z" } },
+        expected: {
+          operational: {
+            kind: "active",
+            agent: { kind: "online", turn: { kind: "cancelling", escalatesAt: "2026-08-16T11:00:00Z" } },
+          },
+        },
       },
       {
         name: "compaction owns active turn state",
         changes: { state: { ...emptyAcpState(), turnActive: true, compacting: true } },
-        expected: { turn: { kind: "compacting" } },
+        expected: { operational: { kind: "active", agent: { kind: "online", turn: { kind: "compacting" } } } },
       },
       {
         name: "a scheduled wake remains distinct from idle",
         changes: { state: { ...emptyAcpState(), nextWakeupAt: "2026-08-16T12:00:00Z", nextWakeupReason: "check CI" } },
-        expected: { turn: { kind: "scheduled", wakeAt: "2026-08-16T12:00:00Z", reason: "check CI" } },
+        expected: {
+          operational: {
+            kind: "active",
+            agent: { kind: "online", turn: { kind: "scheduled", wakeAt: "2026-08-16T12:00:00Z", reason: "check CI" } },
+          },
+        },
       },
       {
         name: "a monitor retains its description",
         changes: { state: { ...emptyAcpState(), monitorArmed: true, monitorDescription: "Waiting for CI" } },
-        expected: { turn: { kind: "monitoring", description: "Waiting for CI" } },
+        expected: {
+          operational: {
+            kind: "active",
+            agent: { kind: "online", turn: { kind: "monitoring", description: "Waiting for CI" } },
+          },
+        },
       },
     ];
 
