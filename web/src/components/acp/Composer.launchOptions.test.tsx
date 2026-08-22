@@ -41,7 +41,7 @@ function Harness() {
           setConfigOption={() => {}}
           sessionUsage={null}
           availableCommands={[]}
-          connected
+          availability={{ kind: "send_now" }}
           turnActive={false}
           enqueuePrompt={() => {}}
           promptCapabilities={null}

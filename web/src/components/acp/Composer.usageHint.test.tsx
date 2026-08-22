@@ -36,13 +36,15 @@ function Harness({ usage }: { usage: SessionUsage | null }) {
         setConfigOption={() => {}}
         sessionUsage={usage}
         availableCommands={[]}
-        connected
+        availability={{ kind: "send_now" }}
         turnActive={false}
         queuedCount={0}
         enqueuePrompt={() => {}}
         promptCapabilities={null}
         pendingAttachments={[]}
         setPendingAttachments={() => {}}
+        queuedPrompts={[]}
+        editQueuedPrompt={() => {}}
       />
     </AssistantRuntimeProvider>
   );
