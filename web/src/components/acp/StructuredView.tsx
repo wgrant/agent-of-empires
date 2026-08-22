@@ -64,6 +64,8 @@ interface Props {
   rateLimitAutoResume?: boolean;
   /** Current server-owned session lifecycle, including restart reconciliation. */
   sessionStatus: SessionStatus;
+  /** Durable lifecycle failure reported with the session record. */
+  lastError?: string | null;
   /** An absent worker intentionally reaped for inactivity wakes on the next prompt. */
   dormant: boolean;
   /** Session `tool` registry key; selects the AgentProfile. */
@@ -187,6 +189,7 @@ function AcpChrome({
     state,
     workerState: acpWorkerState,
     sessionStatus: view.sessionStatus,
+    lastError: view.lastError ?? null,
     dormant: view.dormant,
     trashedAt: view.trashedAt,
     archivedAt: view.archivedAt,
@@ -317,6 +320,7 @@ function AcpChrome({
         archivedAt={view.archivedAt}
         snoozedUntil={view.snoozedUntil}
         sessionStatus={view.sessionStatus}
+        lastError={view.lastError ?? null}
         dormant={view.dormant}
         currentAgent={state.agent ?? acpAgent}
         rateLimitAutoResume={view.rateLimitAutoResume}

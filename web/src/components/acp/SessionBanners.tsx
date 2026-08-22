@@ -24,6 +24,7 @@ export function SessionBanners({
   archivedAt,
   snoozedUntil,
   sessionStatus,
+  lastError,
   dormant,
   currentAgent,
   rateLimitAutoResume,
@@ -39,6 +40,7 @@ export function SessionBanners({
   archivedAt: string | null;
   snoozedUntil: string | null;
   sessionStatus: SessionStatus;
+  lastError: string | null;
   dormant: boolean;
   currentAgent: string | null;
   rateLimitAutoResume?: boolean;
@@ -50,6 +52,7 @@ export function SessionBanners({
     state,
     workerState: acpWorkerState,
     sessionStatus,
+    lastError,
     dormant,
     trashedAt,
     archivedAt,
