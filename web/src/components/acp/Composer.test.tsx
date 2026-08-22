@@ -52,7 +52,7 @@ function Harness({
         setConfigOption={() => {}}
         sessionUsage={null}
         availableCommands={[]}
-        connected
+        availability={{ kind: "send_now" }}
         turnActive={isRunning}
         enqueuePrompt={() => {}}
         promptCapabilities={null}
@@ -220,6 +220,28 @@ describe("toolbar and send", () => {
     reader.result = "data:image/png;base64,AQID";
     reader.onload?.(new ProgressEvent("load") as ProgressEvent<FileReader>);
     await waitFor(() => expect(screen.getByRole("button", { name: "Send message" })).toBeTruthy());
+  });
+
+  it.each([false, true])("preserves a blocked draft when turnActive is %s", (isRunning) => {
+    const enqueuePrompt = vi.fn();
+    const { textarea } = mount({
+      isRunning,
+      availability: { kind: "blocked", reason: "failed", action: "retry_start" },
+      enqueuePrompt,
+    });
+    fireEvent.change(textarea(), { target: { value: "keep this draft" } });
+    const button = screen.getByRole("button", { name: "Sending unavailable" }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    fireEvent.keyDown(textarea(), { key: "Enter" });
+    expect(enqueuePrompt).not.toHaveBeenCalled();
+    expect(textarea().value).toBe("keep this draft");
+  });
+
+  it("labels resumable session submission clearly", () => {
+    const { textarea } = mount({ availability: { kind: "resume_then_send", reason: "archived" } });
+    fireEvent.change(textarea(), { target: { value: "resume with this" } });
+    const button = screen.getByRole("button", { name: "Send message and resume session" });
+    expect(button.getAttribute("title")).toBe("Send and resume session, Enter");
   });
 
   it("applies each plugin draft operation id once", async () => {

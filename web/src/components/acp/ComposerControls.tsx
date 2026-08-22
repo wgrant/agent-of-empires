@@ -13,6 +13,7 @@ import { TOUR_ANCHORS, tourAnchor } from "../../lib/tourSteps";
 import { ProvenanceBadge } from "../ProvenanceBadge";
 import { Tooltip } from "../Tooltip";
 import { LaunchOptionRestartDialog } from "./LaunchOptionRestartDialog";
+import type { ComposerAvailability } from "./status/conversationDiagnostics";
 
 /** Flat item list shared by the `@` and `/` popovers; `/` passes a skill index for provenance badges. */
 export function PopoverItems({ trigger, skillIndex }: { trigger: string; skillIndex?: SkillIndex }) {
@@ -372,31 +373,46 @@ function sendButtonClass(disabled: boolean, extra = "") {
   ].join(" ");
 }
 
-/** Stays clickable while disconnected: `sendPrompt` queues until the session resumes. */
 export function SendButton({
-  connected = true,
+  availability,
   disabled = false,
   preparing = false,
   onSend,
 }: {
-  connected?: boolean;
+  availability: Exclude<ComposerAvailability, { kind: "read_only" }>;
   disabled?: boolean;
   preparing?: boolean;
   onSend: () => void;
 }) {
+  const blocked = availability.kind === "blocked";
   const title = preparing
     ? "Preparing attachments…"
-    : disabled
-      ? "Type a message to send"
-      : connected
-        ? "Send, Enter"
-        : "Session not active, will send on resume";
+    : blocked
+      ? "Sending is unavailable; your draft will be preserved"
+      : disabled
+        ? "Type a message to send"
+        : availability.kind === "resume_then_send"
+          ? "Send and resume session, Enter"
+          : availability.kind === "wake_agent"
+            ? "Send and wake agent, Enter"
+            : availability.kind === "queue_for_recovery"
+              ? "Queue message, will send on resume, Enter"
+              : "Send, Enter";
+  const label = preparing
+    ? "Preparing attachments"
+    : blocked
+      ? "Sending unavailable"
+      : availability.kind === "resume_then_send"
+        ? "Send message and resume session"
+        : availability.kind === "wake_agent"
+          ? "Send message and wake agent"
+          : availability.kind === "queue_for_recovery"
+            ? "Queue message until session resumes"
+            : "Send message";
   return (
     <button
       type="button"
-      aria-label={
-        preparing ? "Preparing attachments" : connected ? "Send message" : "Queue message until session resumes"
-      }
+      aria-label={label}
       title={title}
       onClick={onSend}
       disabled={disabled}
@@ -433,37 +449,41 @@ export function StopButton({ compact = false }: { compact?: boolean }) {
 /** Send beside Stop mid-turn. A steerable, connected agent takes the message into
  *  the running turn; otherwise it queues. */
 export function QueueSendButton({
-  connected,
-  steering,
+  availability,
   disabled = false,
   preparing = false,
   onSend,
 }: {
-  connected: boolean;
-  steering: boolean;
+  availability: Exclude<ComposerAvailability, { kind: "read_only" }>;
   disabled?: boolean;
   preparing?: boolean;
   onSend: () => void;
 }) {
+  const blocked = availability.kind === "blocked";
   const title = preparing
     ? "Preparing attachments…"
-    : disabled
-      ? "Type a message to queue"
-      : !connected
-        ? "Queue follow-up, will send on resume, Enter"
-        : steering
-          ? "Send into the current turn, Enter"
-          : "Queue follow-up (sent when current turn ends), Enter";
+    : blocked
+      ? "Sending is unavailable; your draft will be preserved"
+      : disabled
+        ? "Type a message to queue"
+        : availability.kind === "queue_for_recovery"
+          ? "Queue follow-up, will send on resume, Enter"
+          : availability.kind === "steer_now"
+            ? "Send into the current turn, Enter"
+            : "Queue follow-up (sent when current turn ends), Enter";
+  const label = preparing
+    ? "Preparing attachments"
+    : blocked
+      ? "Sending unavailable"
+      : availability.kind === "steer_now"
+        ? "Send message into the current turn"
+        : availability.kind === "queue_for_recovery"
+          ? "Queue follow-up until session resumes"
+          : "Queue follow-up message";
   return (
     <button
       type="button"
-      aria-label={
-        preparing
-          ? "Preparing attachments"
-          : connected && steering
-            ? "Send message into the current turn"
-            : "Queue follow-up message"
-      }
+      aria-label={label}
       {...tourAnchor(TOUR_ANCHORS.queueSend)}
       title={title}
       onClick={onSend}

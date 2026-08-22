@@ -4,7 +4,7 @@
 
 import { useLayoutEffect, useRef, useState } from "react";
 import { ThreadPrimitive } from "@assistant-ui/react";
-import { AlertTriangle, ChevronDown, RotateCcw } from "lucide-react";
+import { ChevronDown, RotateCcw } from "lucide-react";
 
 import { useIsWideViewport } from "../../hooks/useIsWideViewport";
 import { useConnectionIncidentVisibility } from "../../hooks/useConnectionIncidentVisibility";
@@ -35,16 +35,19 @@ import { StartupErrorScreen } from "./StartupErrorScreen";
 import { deriveStructuredConnectionDiagnostics, SystemNotices } from "./SystemNotices";
 import { ComposerActionRail } from "./status/ComposerActionRail";
 import {
-  connectionComposerNotice,
-  connectionStatusPresentation,
   selectConnectionDiagnostics,
-  type ConnectionDiagnostics,
   type ConnectionStatusSnapshot,
   type SessionConnectionDiagnostics,
   type StreamTransportDiagnostics,
 } from "./status/connectionStatus";
+import {
+  deriveComposerAvailability,
+  type ComposerAvailability,
+  type ConversationDiagnosticsSnapshot,
+} from "./status/conversationDiagnostics";
 import { deriveConversationSyncStatus } from "./status/conversationSyncStatus";
 import { deriveConversationNextStep, deriveConversationStatus } from "./status/conversationStatus";
+import { deriveSessionDiagnostics } from "./status/sessionDiagnostics";
 import { AssistantMessage, UserMessage } from "./ThreadMessages";
 import { ToolDensityToggle, ToolDisplayModeProvider, useToolDensityPref } from "./ToolDisplayMode";
 import { useTranscriptScroll } from "./useTranscriptScroll";
@@ -215,6 +218,18 @@ function AcpChrome({
   };
   const dashboardConnection = useDashboardConnectionDiagnostics();
   const connectionSnapshot: ConnectionStatusSnapshot = { dashboard: dashboardConnection, session: sessionConnection };
+  const sessionDiagnostics = deriveSessionDiagnostics({
+    state,
+    workerState: acpWorkerState,
+    trashedAt: view.trashedAt,
+    archivedAt: view.archivedAt,
+    snoozedUntil: view.snoozedUntil,
+  });
+  const conversationDiagnostics: ConversationDiagnosticsSnapshot = {
+    connection: connectionSnapshot,
+    session: { sessionId, kind: "structured", lifecycle: sessionDiagnostics },
+  };
+  const composerAvailability = deriveComposerAvailability(conversationDiagnostics);
   const displayConnectionDiagnostics = selectConnectionDiagnostics(connectionSnapshot);
   const conversationSync = deriveConversationSyncStatus({
     replaySyncing: ctx.replaySyncing,
@@ -438,7 +453,7 @@ function AcpChrome({
 
         {/* Always mounted: the scroll observers need it even for a read-only trashed session. */}
         <div ref={belowViewportRef}>
-          {!view.trashedAt && (
+          {composerAvailability.kind !== "read_only" && (
             <ComposerDock
               view={view}
               ctx={ctx}
@@ -447,7 +462,7 @@ function AcpChrome({
               collapsible={composerCollapsible}
               collapsed={composerCollapsed}
               onToggleCollapsed={() => setComposerCollapsed((v) => !v)}
-              connectionDiagnostics={connectionDiagnostics}
+              availability={composerAvailability}
               conversationStatus={conversationStatus}
             />
           )}
@@ -467,7 +482,7 @@ function ComposerDock({
   collapsible,
   collapsed,
   onToggleCollapsed,
-  connectionDiagnostics,
+  availability,
   conversationStatus,
 }: {
   view: Props;
@@ -477,12 +492,11 @@ function ComposerDock({
   collapsible: boolean;
   collapsed: boolean;
   onToggleCollapsed: () => void;
-  connectionDiagnostics: ConnectionDiagnostics;
+  availability: Exclude<ComposerAvailability, { kind: "read_only" }>;
   conversationStatus: ReturnType<typeof deriveConversationStatus>;
 }) {
   const { sessionId, acpWorkerState, acpAgent } = view;
   const { state, status } = ctx;
-  const composerConnected = status === "open" && !state.workerStopped && !state.workerRestarting;
   const promptOutbox = derivePromptOutbox({
     queued: state.queuedPrompts,
     rejected: state.rejectedPrompts,
@@ -492,15 +506,12 @@ function ComposerDock({
   return (
     <>
       <ComposerActionRail>
-        {conversationStatus.kind === "updating" && conversationStatus.cause === "reconnect" && (
-          <ConversationRefreshNotice />
-        )}
-        {!composerConnected && <ComposerConnectionNotice diagnostics={connectionDiagnostics} />}
+        <ComposerAvailabilityNotice availability={availability} conversationStatus={conversationStatus} />
         <PromptOutboxPanel
           outbox={promptOutbox}
           onRetry={ctx.sendPrompt}
           onDismissRejected={ctx.dismissRejectedPrompt}
-          retryDisabled={state.workerRestarting || state.workerStopped || Boolean(state.startupError)}
+          retryDisabled={availability.kind === "blocked" || availability.kind === "queue_for_recovery"}
           onRemoveQueued={ctx.removeQueuedPrompt}
           onEditQueued={ctx.editQueuedPrompt}
           onClearQueued={ctx.clearQueue}
@@ -558,7 +569,7 @@ function ComposerDock({
           setConfigOption={ctx.setConfigOption}
           sessionUsage={state.sessionUsage}
           availableCommands={state.availableCommands}
-          connected={composerConnected}
+          availability={availability}
           turnActive={state.turnActive}
           enqueuePrompt={ctx.sendPrompt}
           promptCapabilities={state.promptCapabilities}
@@ -573,36 +584,40 @@ function ComposerDock({
   );
 }
 
-function ComposerConnectionNotice({ diagnostics }: { diagnostics: ConnectionDiagnostics }) {
-  const presentation = connectionStatusPresentation(diagnostics.primary);
-  const icon = presentation.working ? (
-    <RotateCcw className="size-3 shrink-0 animate-spin" aria-hidden="true" />
-  ) : (
-    <AlertTriangle className="size-3 shrink-0" aria-hidden="true" />
-  );
-  const tone = presentation.tone === "error" ? "text-status-error" : "text-status-warning";
-  return (
-    <div
-      className={`flex items-center gap-1.5 border-b border-surface-800/70 px-3 py-1.5 text-[11px] md:hidden ${tone}`}
-      data-testid="composer-connection-notice"
-      role="status"
-    >
-      {icon}
-      <span>{connectionComposerNotice(diagnostics.primary)}</span>
-    </div>
-  );
-}
-
-function ConversationRefreshNotice() {
+function ConversationAvailabilityNotice({ label }: { label: string }) {
   return (
     <div
       className="flex items-center gap-1.5 border-b border-surface-800/70 px-3 py-1.5 text-[11px] text-text-secondary"
       role="status"
     >
       <RotateCcw className="size-3 shrink-0 animate-spin text-text-muted" aria-hidden="true" />
-      Updating conversation…
+      {label}
     </div>
   );
+}
+
+export function composerAvailabilityNoticeLabel(
+  availability: ComposerAvailability,
+  conversationStatus: ReturnType<typeof deriveConversationStatus>,
+): string | null {
+  if (conversationStatus.kind === "updating" && conversationStatus.cause === "reconnect") {
+    return "Updating conversation…";
+  }
+  if (availability.kind === "queue_for_recovery") {
+    return "Messages will be queued until the session resumes.";
+  }
+  return null;
+}
+
+function ComposerAvailabilityNotice({
+  availability,
+  conversationStatus,
+}: {
+  availability: ComposerAvailability;
+  conversationStatus: ReturnType<typeof deriveConversationStatus>;
+}) {
+  const label = composerAvailabilityNoticeLabel(availability, conversationStatus);
+  return label ? <ConversationAvailabilityNotice label={label} /> : null;
 }
 
 function EmptyState({ onPick }: { onPick: (text: string) => Promise<void> }) {
