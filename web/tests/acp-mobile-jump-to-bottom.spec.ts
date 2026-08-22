@@ -67,12 +67,16 @@ test.describe("mobile jump-to-bottom", () => {
     const viewport = page.getByTestId("acp-viewport");
     const isPinned = () => viewport.evaluate((el) => el.scrollTop + el.clientHeight >= el.scrollHeight - 16);
 
-    // Stream several tall chunks while the reader is at the bottom.
-    for (let i = 0; i < 6; i++) {
-      mock.pushEvents([agentMessageChunk("\n" + Array.from({ length: 12 }, (_, j) => `stream ${i}-${j}`).join("\n"))]);
-      await expect(viewport).toContainText(`stream ${i}-11`);
-      await expect.poll(isPinned).toBe(true);
-    }
+    // Stream several tall chunks as one burst while the reader is at the
+    // bottom. The daemon emits one Append and then Patch deltas against that
+    // stable row; do not give ResizeObserver a settle turn between patches.
+    mock.pushEvents(
+      Array.from({ length: 6 }, (_, i) =>
+        agentMessageChunk("\n" + Array.from({ length: 12 }, (_, j) => `stream ${i}-${j}`).join("\n")),
+      ),
+    );
+    await expect(viewport).toContainText("stream 5-11");
+    await expect.poll(isPinned).toBe(true);
     // Never had to reach for the button: it stays hidden the whole time.
     await expect(page.getByTestId("acp-jump-to-latest")).toBeHidden();
   });
@@ -213,7 +217,9 @@ test.describe("mobile jump-to-bottom", () => {
     const longText = Array.from({ length: 120 }, (_, i) => `history line ${i}`).join("\n");
     const mock = await mockAcpSession(page, {
       title: "story-noyank",
-      initialEvents: [agentMessageChunk(longText), stopped()],
+      // Leave the text run open so the later chunk is a Patch of this row,
+      // matching production streaming after transcript coalescing.
+      initialEvents: [agentMessageChunk(longText)],
     });
     await openStructuredSession(page, mock);
     await waitForComposerConnected(page);

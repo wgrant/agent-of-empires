@@ -25,6 +25,7 @@ export function useTranscriptScroll({
   promptSeq,
   hasEverOpened,
   localInflight,
+  liveTailRow,
 }: {
   sessionId: string;
   canLoadEarlierHistory: boolean;
@@ -38,6 +39,8 @@ export function useTranscriptScroll({
   hasEverOpened: boolean;
   /** This client has an optimistic prompt row still awaiting its server echo. */
   localInflight: boolean;
+  /** Latest transcript row object; patches replace it while a stream grows. */
+  liveTailRow: object | undefined;
 }) {
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const belowViewportRef = useRef<HTMLDivElement | null>(null);
@@ -75,6 +78,11 @@ export function useTranscriptScroll({
     });
   }, []);
   const scrollToBottom = useCallback(() => pinToBottom(), [pinToBottom]);
+
+  useLayoutEffect(() => {
+    const viewport = viewportRef.current;
+    if (viewport && wasAtBottomRef.current) viewport.scrollTop = viewport.scrollHeight;
+  }, [liveTailRow]);
 
   // A new prompt re-engages stick-to-bottom, as the CLI does: on a fine pointer
   // the composer growing while typing can drop the pinned intent. See
