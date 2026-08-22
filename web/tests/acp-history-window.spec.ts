@@ -137,7 +137,7 @@ test("large transcript keeps the mounted history range bounded while navigating"
   // The transcript moves toward older rows, but never mounts all of the
   // loaded history. This is intentionally a DOM-shape assertion rather than
   // a timing benchmark, so it stays deterministic on CI.
-  await expect(page.getByText(/large prompt 1[0-9]{2}/).first()).toBeAttached();
+  await expect(page.getByText(/large prompt 2[0-9]{2}/).first()).toBeAttached();
   const elements = await page.getByTestId("acp-viewport").evaluate((root) => root.getElementsByTagName("*").length);
   expect(elements).toBeLessThan(5_000);
 });

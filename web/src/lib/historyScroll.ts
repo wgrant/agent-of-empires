@@ -114,7 +114,3 @@ export function earlierAction(canRevealLoaded: boolean, hasMoreOlder: boolean): 
 export function canOfferEarlier(canRevealLoaded: boolean, hasMoreOlder: boolean): boolean {
   return canRevealLoaded || hasMoreOlder;
 }
-/** A settled load that didn't grow the transcript; left set it would jump the viewport on the next live append. */
-export function anchorIsStale(loading: boolean, anchor: number | null, scrollHeight: number): boolean {
-  return !loading && anchor != null && anchor === scrollHeight;
-}
