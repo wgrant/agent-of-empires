@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { ZoomableImage } from "../ImageLightbox";
 
 interface Props {
@@ -15,6 +15,9 @@ interface RasterPreviewProps {
   filePath: string;
   /** Displayed when byte sniffing says this is not a supported raster image. */
   fallback: ReactNode;
+  /** Lets a containing probe viewer replace its whole shell when the bytes are
+   * not an image, instead of nesting the fallback viewer inside image chrome. */
+  onUnsupported?: () => void;
 }
 
 function loadErrorForStatus(status: number): string {
@@ -27,7 +30,7 @@ function loadErrorForStatus(status: number): string {
 /** Displays a workspace image through the authenticated, session-confined
  * byte endpoint. A blob URL is required because token authentication is
  * injected into fetch requests, not bare img navigations. */
-export function RasterImagePreview({ sessionId, filePath, fallback }: RasterPreviewProps) {
+export function RasterImagePreview({ sessionId, filePath, fallback, onUnsupported }: RasterPreviewProps) {
   const [loaded, setLoaded] = useState<{
     key: string;
     url: string | null;
@@ -49,7 +52,10 @@ export function RasterImagePreview({ sessionId, filePath, fallback }: RasterPrev
       .then((response) => {
         if (response.ok) return response.blob();
         if (response.status === 415) {
-          if (!disposed) setLoaded({ key, url: null, error: null, notImage: true });
+          if (!disposed) {
+            onUnsupported?.();
+            setLoaded({ key, url: null, error: null, notImage: true });
+          }
           return null;
         }
         return Promise.reject(new Error(loadErrorForStatus(response.status)));
@@ -73,7 +79,7 @@ export function RasterImagePreview({ sessionId, filePath, fallback }: RasterPrev
       disposed = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [sessionId, filePath, key]);
+  }, [sessionId, filePath, key, onUnsupported]);
 
   const current = loaded.key === key ? loaded : { key, url: null, error: null, notImage: false };
   if (current.notImage) return fallback;
@@ -100,6 +106,13 @@ export function RasterImagePreview({ sessionId, filePath, fallback }: RasterPrev
  * byte endpoint. A blob URL is required because token authentication is
  * injected into fetch requests, not bare img navigations. */
 export function FileImageViewer({ sessionId, filePath, onBack, fallback }: Props) {
+  const key = `${sessionId} ${filePath}`;
+  const [unsupportedKey, setUnsupportedKey] = useState<string | null>(null);
+  const showFallback = unsupportedKey === key;
+  const handleUnsupported = useCallback(() => setUnsupportedKey(key), [key]);
+
+  if (showFallback) return fallback;
+
   return (
     <div className="flex-1 flex flex-col bg-surface-900 overflow-hidden">
       <div className="px-3 py-2 border-b border-surface-700/20 flex items-center gap-2 shrink-0">
@@ -116,7 +129,12 @@ export function FileImageViewer({ sessionId, filePath, onBack, fallback }: Props
         )}
         <span className="font-mono text-[12px] text-text-primary truncate">{filePath}</span>
       </div>
-      <RasterImagePreview sessionId={sessionId} filePath={filePath} fallback={fallback} />
+      <RasterImagePreview
+        sessionId={sessionId}
+        filePath={filePath}
+        fallback={fallback}
+        onUnsupported={handleUnsupported}
+      />
     </div>
   );
 }
