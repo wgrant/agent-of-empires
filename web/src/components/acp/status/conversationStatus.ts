@@ -1,5 +1,5 @@
 import type { ConversationSyncStatus } from "./conversationSyncStatus";
-import type { AgentRuntime, SessionDiagnostics } from "./sessionDiagnostics";
+import type { SessionDiagnostics } from "./sessionDiagnostics";
 
 /** View model for the transcript's single next-step slot. */
 export type ConversationNextStep =
@@ -16,24 +16,6 @@ export type ConversationNextStep =
   | { kind: "monitoring"; description: string | null }
   | null;
 
-/** Only a ready normalized runtime may publish turn state at the transcript
- * tail. Every recovery, blocked, stopped, dormant, failed, starting, or
- * unknown runtime can carry stale turn observations from before transition. */
-export function runtimeAllowsConversationTail(runtime: AgentRuntime): boolean {
-  switch (runtime.kind) {
-    case "ready":
-      return true;
-    case "unknown":
-    case "starting":
-    case "dormant":
-    case "restarting":
-    case "stopped":
-    case "blocked":
-    case "failed":
-      return false;
-  }
-}
-
 export function deriveConversationNextStep({
   sync,
   diagnostics,
@@ -42,9 +24,13 @@ export function deriveConversationNextStep({
   diagnostics: SessionDiagnostics;
 }): ConversationNextStep {
   if (sync === "initial" || sync === "history") return { kind: "catching_up" };
-  if (sync === "reconnect" || !runtimeAllowsConversationTail(diagnostics.runtime)) return null;
+  if (sync === "reconnect") return null;
 
-  switch (diagnostics.turn.kind) {
+  const operational = diagnostics.operational;
+  if (operational.kind !== "active" || operational.agent.kind !== "online") return null;
+  const { turn } = operational.agent;
+
+  switch (turn.kind) {
     case "awaiting_user":
     case "idle":
       return null;
@@ -54,7 +40,7 @@ export function deriveConversationNextStep({
         thinking: false,
         tool: null,
         cancelling: true,
-        cancelEscalatesAt: diagnostics.turn.escalatesAt,
+        cancelEscalatesAt: turn.escalatesAt,
         compacting: false,
       };
     case "compacting":
@@ -69,15 +55,15 @@ export function deriveConversationNextStep({
     case "running":
       return {
         kind: "working",
-        thinking: diagnostics.turn.activity === "thinking",
-        tool: diagnostics.turn.tool,
+        thinking: turn.activity === "thinking",
+        tool: turn.tool,
         cancelling: false,
         cancelEscalatesAt: null,
         compacting: false,
       };
     case "scheduled":
-      return { kind: "scheduled_wakeup", wakeAt: diagnostics.turn.wakeAt, reason: diagnostics.turn.reason };
+      return { kind: "scheduled_wakeup", wakeAt: turn.wakeAt, reason: turn.reason };
     case "monitoring":
-      return { kind: "monitoring", description: diagnostics.turn.description };
+      return { kind: "monitoring", description: turn.description };
   }
 }
