@@ -155,6 +155,7 @@ test("snooze preset list + 1h pick + unsnooze round-trip", async ({ page, spawnS
   await expect(menuItem(page, "pin")).toHaveCount(0);
   await expect(menuItem(page, "archive")).toHaveCount(0);
   await page.mouse.click(5, 5);
+  await expect(page.locator("[data-testid='sidebar-context-menu']")).toBeHidden();
 
   await snoozedRow.click({ button: "right" });
   expect(await patchVia(page, sessionId, "snooze", () => menuItem(page, "unsnooze").click())).toEqual({
