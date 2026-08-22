@@ -125,7 +125,10 @@ impl TranscriptModel {
             return Vec::new();
         }
         self.last_seq = seq;
-        if !matches!(event, Event::AgentMessageChunk { .. }) {
+        if !matches!(
+            event,
+            Event::AgentMessageChunk { .. } | Event::AgentMessageSnapshot { .. }
+        ) {
             self.open_message_group = None;
         }
 
@@ -140,11 +143,37 @@ impl TranscriptModel {
                     text.clone(),
                 ))]
             }
+            Event::AgentMessageSnapshot {
+                block_start_seq,
+                text,
+            } => {
+                let group_id = self.message_group();
+                self.turn_has_output = true;
+                vec![self.append(TranscriptRow::new(
+                    format!("msg-{block_start_seq}"),
+                    group_id,
+                    TranscriptRowKind::Message,
+                    text.clone(),
+                ))]
+            }
             Event::AgentThoughtChunk { text } => {
                 self.turn_has_output = true;
                 let group_id = self.fresh_group();
                 vec![self.append(TranscriptRow::new(
                     format!("thinking-{seq}"),
+                    group_id,
+                    TranscriptRowKind::Thinking,
+                    text.clone(),
+                ))]
+            }
+            Event::AgentThoughtSnapshot {
+                block_start_seq,
+                text,
+            } => {
+                self.turn_has_output = true;
+                let group_id = self.fresh_group();
+                vec![self.append(TranscriptRow::new(
+                    format!("thinking-{block_start_seq}"),
                     group_id,
                     TranscriptRowKind::Thinking,
                     text.clone(),

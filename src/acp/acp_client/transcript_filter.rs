@@ -14,7 +14,9 @@ pub(super) fn is_transcript_event(event: &Event) -> bool {
     matches!(
         event,
         Event::AgentThoughtChunk { .. }
+            | Event::AgentThoughtSnapshot { .. }
             | Event::AgentMessageChunk { .. }
+            | Event::AgentMessageSnapshot { .. }
             | Event::ToolCallStarted { .. }
             | Event::ToolCallCompleted { .. }
             | Event::ToolCallContent { .. }
@@ -57,7 +59,9 @@ pub(super) fn is_transcript_event(event: &Event) -> bool {
 pub(super) fn transcript_event_kind(event: &Event) -> &'static str {
     match event {
         Event::AgentThoughtChunk { .. } => "agent_thought_chunk",
+        Event::AgentThoughtSnapshot { .. } => "agent_thought_snapshot",
         Event::AgentMessageChunk { .. } => "agent_message_chunk",
+        Event::AgentMessageSnapshot { .. } => "agent_message_snapshot",
         Event::ToolCallStarted { .. } => "tool_call_started",
         Event::ToolCallCompleted { .. } => "tool_call_completed",
         Event::ToolCallContent { .. } => "tool_call_content",
