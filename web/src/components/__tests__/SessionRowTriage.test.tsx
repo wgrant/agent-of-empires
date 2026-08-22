@@ -142,6 +142,12 @@ describe("SessionRow context menu", () => {
     for (const t of lacks) expect(text).not.toContain(t);
   });
 
+  it("closes immediately on an outside click", () => {
+    openRowMenu(ws({ pinned_at: PAST }));
+    fireEvent.click(document.body);
+    expect(screen.queryByTestId("sidebar-context-menu")).toBeNull();
+  });
+
   it("offers Switch agent only on structured rows", () => {
     openRowMenu(ws({ view: "structured" }));
     expect(testId("sidebar-context-menu-switch-agent")).not.toBeNull();
