@@ -4,6 +4,7 @@ mod attachments;
 mod rate_limit;
 mod replay;
 mod search;
+mod stream_compaction;
 mod turns;
 mod wakeups;
 
@@ -118,6 +119,23 @@ impl EventStore {
             }
         }
         tx.commit()?;
+        if inserted != 0 && matches!(event, Event::Stopped { .. }) {
+            match stream_compaction::compact_completed_stream_runs(&conn, self, session_id, seq) {
+                Ok(removed) if removed > 0 => trace!(
+                    target: "acp.event_store",
+                    session = %session_id,
+                    removed,
+                    "compacted completed message and thought chunks"
+                ),
+                Ok(_) => {}
+                Err(error) => warn!(
+                    target: "acp.event_store",
+                    session = %session_id,
+                    %error,
+                    "failed to compact completed message and thought chunks"
+                ),
+            }
+        }
         trace!(
             target: "acp.event_store",
             session = %session_id,

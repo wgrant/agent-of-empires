@@ -109,7 +109,9 @@ impl EventStore {
                          OR json_extract(event_json, '$.RateLimitAutoResumed') IS NOT NULL
                          OR json_extract(event_json, '$.AgentStartupError') IS NOT NULL
                          OR json_extract(event_json, '$.AgentMessageChunk') IS NOT NULL
+                         OR json_extract(event_json, '$.AgentMessageSnapshot') IS NOT NULL
                          OR json_extract(event_json, '$.AgentThoughtChunk') IS NOT NULL
+                         OR json_extract(event_json, '$.AgentThoughtSnapshot') IS NOT NULL
                          OR json_extract(event_json, '$.ToolCallStarted') IS NOT NULL
                          -- A unit variant serializes as a bare JSON string.
                          OR event_json = '\"ThinkingStarted\"')
@@ -172,7 +174,7 @@ impl EventStore {
                 Event::UserPromptSent { text, .. } if first_prompt.is_none() => {
                     first_prompt = Some(text);
                 }
-                Event::AgentMessageChunk { text }
+                Event::AgentMessageChunk { text } | Event::AgentMessageSnapshot { text, .. }
                     if first_prompt.is_some() && agent.len() < max_agent_bytes =>
                 {
                     agent.push_str(&text);
