@@ -1115,11 +1115,7 @@ impl SessionService {
             let Some(inst) = instances.iter().find(|i| i.id == id) else {
                 return;
             };
-            if !inst.is_structured()
-                || inst.is_archived()
-                || inst.is_snoozed()
-                || inst.is_trashed()
-                || inst.status != crate::session::Status::Idle
+            if !inst.is_structured() || inst.is_archived() || inst.is_snoozed() || inst.is_trashed()
             {
                 return;
             }
@@ -1138,9 +1134,8 @@ impl SessionService {
             (caller, agent_key, queue)
         };
 
-        // `Status::Idle` above is a mirror the broadcast listener applies one serial task
-        // behind every session's events, so it still reads Idle for as long as that task is
-        // behind.
+        // The persisted status is a lagging projection. Fold the ACP events before
+        // delivering so a queued prompt cannot enter an active turn.
         if self.fold_control_state(id).await.turn_active {
             return;
         }
@@ -1918,7 +1913,9 @@ mod tests {
         let mut idle = Instance::new("idle", "/tmp/aoe-queue-idle");
         idle.id = "sess-idle".to_string();
         idle.view = crate::session::View::Structured;
-        idle.status = crate::session::Status::Idle;
+        // The persisted projection may still say Running after the folded ACP
+        // turn has ended; the drain gates on the folded turn state.
+        idle.status = crate::session::Status::Running;
         let mut mid_turn = Instance::new("mid", "/tmp/aoe-queue-mid-turn");
         mid_turn.id = "sess-mid-turn".to_string();
         mid_turn.view = crate::session::View::Structured;
