@@ -29,7 +29,6 @@ export interface HistoryScrollAnchor {
   scrollTop: number;
   scrollHeight: number;
   publishedGeneration: number;
-  sawAsyncLoad: boolean;
 }
 
 /** Navigation controls must survive a keyed assistant-ui replacement. A
@@ -98,15 +97,10 @@ export interface AcpContext {
   canLoadNewerHistory: boolean;
   loadNewerHistory: () => void;
   jumpToLatestHistory: () => void;
-  /** Last row already published into assistant-ui's current runtime. */
-  publishedTailId: string | null;
   /** Increments whenever assistant-ui is replaced with a different bounded
    * transcript range. Lets the viewport restore an explicit history anchor
    * after that runtime is mounted. */
   publishedTranscriptGeneration: number;
-  /** A bounded history replacement restores its own reader position, so the
-   * viewport must not also run assistant-ui's default initial tail scroll. */
-  suppressHistoryInitializeScroll: boolean;
   /** Stable across assistant-ui runtime replacement. The view stores an
    * explicit older-history scroll anchor here and consumes it once the next
    * transcript publication has mounted. */
@@ -296,9 +290,7 @@ export function AcpRuntime({
         canLoadNewerHistory: canLoadNewer,
         loadNewerHistory: loadNewer,
         jumpToLatestHistory: jumpToLatest,
-        publishedTailId: displayActivity.at(-1)?.id ?? null,
         publishedTranscriptGeneration: historyGeneration,
-        suppressHistoryInitializeScroll: historyGeneration > 0,
         historyScrollAnchorRef,
         historyNavigationControllerRef,
         loadingEarlierHistory: loadingOlder,

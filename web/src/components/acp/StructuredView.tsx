@@ -247,7 +247,9 @@ function AcpChrome({
       sessionId,
       canLoadEarlierHistory: ctx.canLoadEarlierHistory,
       loadEarlierHistory: ctx.loadEarlierHistory,
-      loadingEarlierHistory: ctx.loadingEarlierHistory,
+      publishedTranscriptGeneration: ctx.publishedTranscriptGeneration,
+      historyScrollAnchorRef: ctx.historyScrollAnchorRef,
+      historyNavigationControllerRef: ctx.historyNavigationControllerRef,
       composerCollapsed,
       promptSeq: state.promptSeq,
       hasEverOpened: ctx.hasEverOpened,
@@ -349,10 +351,10 @@ function AcpChrome({
         {connectionNotice}
         <div className="relative flex min-h-0 flex-1 flex-col">
           <ThreadPrimitive.Viewport
-            autoScroll={!ctx.suppressHistoryInitializeScroll}
-            scrollToBottomOnInitialize={!ctx.suppressHistoryInitializeScroll}
-            scrollToBottomOnRunStart={!ctx.suppressHistoryInitializeScroll}
-            scrollToBottomOnThreadSwitch={!ctx.suppressHistoryInitializeScroll}
+            autoScroll={false}
+            scrollToBottomOnInitialize={false}
+            scrollToBottomOnRunStart={false}
+            scrollToBottomOnThreadSwitch={false}
             ref={viewportRef}
             data-testid="acp-viewport"
             className="flex-1 overflow-x-hidden overflow-y-auto [overflow-anchor:none]"
@@ -461,7 +463,10 @@ function AcpChrome({
           {(!atBottom || ctx.canLoadNewerHistory) && (
             <button
               type="button"
-              onClick={requestLatest}
+              onPointerDown={requestLatest}
+              onClick={(event) => {
+                if (event.detail === 0) requestLatest();
+              }}
               data-testid="acp-jump-to-latest"
               aria-label="Scroll to latest messages"
               title="Scroll to latest messages"
