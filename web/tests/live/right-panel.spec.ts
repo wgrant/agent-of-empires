@@ -175,8 +175,8 @@ test("right panel notifications: structured view comments banner appears on stag
     .getByRole("button", { name: /notes\.md/ })
     .first()
     .click();
-  // The comment gutter exists only in the Raw diff view.
-  await page.getByRole("button", { name: "Raw", exact: true }).first().click();
+  // The comment gutter exists only in the Diff view.
+  await page.getByRole("button", { name: "Diff", exact: true }).first().click();
   const gutterLine1 = page.locator("[data-line-number-content]").filter({ hasText: /^1$/ }).first();
   await expect(gutterLine1).toBeVisible({ timeout: 10_000 });
   await gutterLine1.click();
