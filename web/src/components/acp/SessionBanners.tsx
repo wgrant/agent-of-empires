@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { useRespawnSession } from "../../hooks/useRespawnSession";
+import { useRespawnSession, type RespawnState } from "../../hooks/useRespawnSession";
 import type { AcpState } from "../../lib/acpTypes";
 import type { ConnectionStatusSnapshot } from "./status/connectionStatus";
 import {
@@ -11,6 +11,7 @@ import {
 import { deriveSessionDiagnostics } from "./status/sessionDiagnostics";
 import { ActionFeedbackNotice } from "./status/ActionFeedbackNotice";
 import { StartupErrorBanner } from "./StartupErrorBanner";
+import { rateLimitDetail, RateLimitRecoverySection } from "./SystemNotices";
 
 /** Worker lifecycle and triage banners stacked above the transcript. */
 export function SessionBanners({
@@ -21,6 +22,9 @@ export function SessionBanners({
   trashedAt,
   archivedAt,
   snoozedUntil,
+  currentAgent,
+  rateLimitAutoResume,
+  onRecoveryPrefill,
   onRestore,
   dismissError,
 }: {
@@ -31,6 +35,9 @@ export function SessionBanners({
   trashedAt: string | null;
   archivedAt: string | null;
   snoozedUntil: string | null;
+  currentAgent: string | null;
+  rateLimitAutoResume?: boolean;
+  onRecoveryPrefill: (text: string) => void;
   onRestore?: () => Promise<boolean> | void;
   dismissError: () => void;
 }) {
@@ -46,10 +53,29 @@ export function SessionBanners({
     session: { sessionId, kind: "structured", lifecycle: diagnostics },
   };
   const incident = deriveSessionIncident(conversationDiagnostics);
+  const rateLimitResume = useRespawnSession(
+    sessionId,
+    state.rateLimit ? (state.rateLimit.resets_at ?? "unknown") : null,
+  );
 
   return (
     <>
-      <ConversationLifecycleNotice sessionId={sessionId} incident={incident} onRestore={onRestore} />
+      <RateLimitRecoverySection sessionId={sessionId} currentAgent={currentAgent} onPrefill={onRecoveryPrefill}>
+        {({ onSwitchAgent }) => (
+          <ConversationLifecycleNotice
+            sessionId={sessionId}
+            incident={incident}
+            onRestore={onRestore}
+            rateLimit={state.rateLimit}
+            rateLimitAutoResume={rateLimitAutoResume}
+            rateLimitRetriesExhausted={state.rateLimitRetriesExhausted}
+            onSwitchAgent={onSwitchAgent}
+            onResumeRateLimit={() => void rateLimitResume.respawn()}
+            rateLimitResumeState={rateLimitResume.state}
+            rateLimitResumeError={rateLimitResume.error}
+          />
+        )}
+      </RateLimitRecoverySection>
       {state.lastError && (
         <ActionFeedbackNotice
           title="Action did not complete"
@@ -67,10 +93,24 @@ export function ConversationLifecycleNotice({
   sessionId,
   incident,
   onRestore,
+  rateLimit = null,
+  rateLimitAutoResume,
+  rateLimitRetriesExhausted = false,
+  onSwitchAgent,
+  onResumeRateLimit,
+  rateLimitResumeState = "idle",
+  rateLimitResumeError = null,
 }: {
   sessionId: string;
   incident: SessionIncident | null;
   onRestore?: () => Promise<boolean> | void;
+  rateLimit?: AcpState["rateLimit"];
+  rateLimitAutoResume?: boolean;
+  rateLimitRetriesExhausted?: boolean;
+  onSwitchAgent?: () => void;
+  onResumeRateLimit?: () => void;
+  rateLimitResumeState?: RespawnState;
+  rateLimitResumeError?: string | null;
 }) {
   if (!incident) return null;
   if (incident.kind === "failed") return <StartupErrorBanner sessionId={sessionId} message={incident.detail} />;
@@ -82,7 +122,97 @@ export function ConversationLifecycleNotice({
     return <SnoozedWorkerStoppedBanner sessionId={sessionId} snoozedUntil={incident.snoozedUntil} />;
   }
   if (incident.kind === "stopped") return <WorkerStoppedBanner sessionId={sessionId} />;
+  if (incident.kind === "blocked" && incident.reason === "rate_limited") {
+    return (
+      <RateLimitLifecycleBanner
+        incident={incident}
+        rateLimit={rateLimit}
+        autoResume={rateLimitAutoResume}
+        retriesExhausted={rateLimitRetriesExhausted}
+        onSwitchAgent={onSwitchAgent}
+        onResume={onResumeRateLimit}
+        resumeState={rateLimitResumeState}
+        resumeError={rateLimitResumeError}
+      />
+    );
+  }
   return null;
+}
+
+function RateLimitLifecycleBanner({
+  incident,
+  rateLimit,
+  autoResume,
+  retriesExhausted,
+  onSwitchAgent,
+  onResume,
+  resumeState,
+  resumeError,
+}: {
+  incident: Extract<SessionIncident, { kind: "blocked" }>;
+  rateLimit: AcpState["rateLimit"];
+  autoResume?: boolean;
+  retriesExhausted: boolean;
+  onSwitchAgent?: () => void;
+  onResume?: () => void;
+  resumeState: RespawnState;
+  resumeError: string | null;
+}) {
+  const resumePending = resumeState === "retrying" || resumeState === "ok";
+  return (
+    <div className="border-b border-status-warning/30 bg-status-warning/10 px-4 py-3 text-status-warning">
+      <div className="text-sm font-medium">{incident.title}</div>
+      <div className="mt-1 text-xs text-status-warning/90">
+        {rateLimit ? rateLimitDetail(rateLimit) : incident.detail}
+      </div>
+      {(onResume || onSwitchAgent || autoResume !== undefined || retriesExhausted) && (
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          {onResume && (
+            <button
+              type="button"
+              onClick={onResume}
+              disabled={resumePending}
+              className="rounded-md border border-status-warning/40 bg-status-warning/20 px-2 py-1 text-[10px] font-mono uppercase tracking-wide text-status-warning hover:bg-status-warning/30 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {resumeState === "retrying" ? "Resuming…" : resumeState === "ok" ? "Resume requested" : "Resume now"}
+            </button>
+          )}
+          {onSwitchAgent && (
+            <button
+              type="button"
+              onClick={onSwitchAgent}
+              className="rounded-md border border-status-warning/40 bg-status-warning/20 px-2 py-1 text-[10px] font-mono uppercase tracking-wide text-status-warning hover:bg-status-warning/30"
+            >
+              Continue in another agent
+            </button>
+          )}
+          {autoResume === true && !retriesExhausted && (
+            <span className="basis-full text-xs text-text-muted">
+              Auto-resume is armed; the session resumes when the window clears.
+            </span>
+          )}
+          {autoResume === false && (
+            <span className="basis-full text-xs text-text-muted">
+              Auto-resume is off for this profile; use Resume now, or enable acp.rate_limit_auto_resume.
+            </span>
+          )}
+          {retriesExhausted && (
+            <span className="basis-full text-xs text-status-warning">
+              Auto-resume stopped after repeated attempts. Resume manually or send a new prompt.
+            </span>
+          )}
+          {resumeState === "ok" && (
+            <span className="basis-full text-xs text-text-muted">
+              Resume requested. New events should start streaming shortly.
+            </span>
+          )}
+          {resumeState === "failed" && resumeError && (
+            <span className="basis-full text-xs text-status-error">Resume failed: {resumeError}</span>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function MonitoringBanner({ description }: { description: string | null }) {

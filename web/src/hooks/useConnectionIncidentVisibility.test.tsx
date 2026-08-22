@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { deriveConnectionDiagnostics } from "../components/acp/status/connectionStatus";
 import {
   CONNECTION_INCIDENT_DELAY_MS,
+  hasConnectionIncident,
   shouldDelayConnectionIncident,
   useConnectionIncidentVisibility,
 } from "./useConnectionIncidentVisibility";
@@ -61,17 +62,39 @@ describe("useConnectionIncidentVisibility", () => {
     expect(result.current).toBe(true);
   });
 
-  it("shows known connection and agent failures immediately", () => {
+  it("places only route and continuity failures in the floating incident", () => {
+    const cases = [
+      ["healthy", diagnostics(), false],
+      ["startup failure", diagnostics({ startupError: true }), false],
+      ["stopped agent", diagnostics({ workerStopped: true }), false],
+      ["restarting agent", diagnostics({ workerRestarting: true }), false],
+      ["unresponsive agent", diagnostics({ agentUnresponsive: true }), false],
+      [
+        "rate-limited provider",
+        diagnostics({ rateLimit: { kind: "rate_limit", status: "limited", resets_at: null } }),
+        false,
+      ],
+      ["connecting route", diagnostics({ status: "connecting", hasEverOpened: false }), true],
+      ["disconnected route", diagnostics({ status: "closed", retryCount: 7 }), true],
+      ["missed updates", diagnostics({ lagged: true }), true],
+      ["delayed updates", diagnostics({ liveUpdatesStale: true }), true],
+    ] as const;
+    for (const [label, value, expected] of cases) {
+      expect(hasConnectionIncident(value), label).toBe(expected);
+    }
+  });
+
+  it("shows known route and continuity failures immediately", () => {
     const cases = [
       diagnostics({ status: "connecting", hasEverOpened: false, serverReachability: "unreachable" }),
-      diagnostics({ status: "connecting", hasEverOpened: false, workerStopped: true }),
       diagnostics({ status: "closed", retryCount: 7 }),
+      diagnostics({ lagged: true }),
     ];
     for (const value of cases) {
       expect(shouldDelayConnectionIncident(value)).toBe(false);
-      const { result, unmount } = renderHook(() => useConnectionIncidentVisibility("session", value));
-      expect(result.current).toBe(true);
-      unmount();
+      const view = renderHook(() => useConnectionIncidentVisibility("session", value));
+      expect(view.result.current).toBe(true);
+      view.unmount();
     }
   });
 });

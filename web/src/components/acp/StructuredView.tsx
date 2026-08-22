@@ -9,7 +9,6 @@ import { AlertTriangle, ChevronDown, RotateCcw } from "lucide-react";
 import { useIsWideViewport } from "../../hooks/useIsWideViewport";
 import { useConnectionIncidentVisibility } from "../../hooks/useConnectionIncidentVisibility";
 import { useMobileKeyboard } from "../../hooks/useMobileKeyboard";
-import { useRespawnSession } from "../../hooks/useRespawnSession";
 import { useWebSettings } from "../../hooks/useWebSettings";
 import { useDashboardConnectionDiagnostics } from "../../lib/connectionState";
 import { lastClearIndex } from "../../lib/acpHistoryWindow";
@@ -33,7 +32,7 @@ import { ModeSwitchFailedNotice, PromptOutboxPanel } from "./PromptStrips";
 import { MonitoringBanner, ScheduledWakeupBanner, SessionBanners } from "./SessionBanners";
 import { ConfigOptionSwitchFailedNotice } from "./SessionConfigControls";
 import { StartupErrorScreen } from "./StartupErrorScreen";
-import { deriveStructuredConnectionDiagnostics, RateLimitRecoverySection, SystemNotices } from "./SystemNotices";
+import { deriveStructuredConnectionDiagnostics, SystemNotices } from "./SystemNotices";
 import { ComposerActionRail } from "./status/ComposerActionRail";
 import {
   connectionComposerNotice,
@@ -176,11 +175,6 @@ function AcpChrome({
   // Rows before the latest `/clear` divider are the hidden history.
   const hiddenCount = lastClearIndex(state.activity);
   const [primerPrefill, setPrimerPrefill] = useState<Prefill>(null);
-  // A rate limit with no reported reset still needs a key to scope resume status by.
-  const rateLimitResume = useRespawnSession(
-    sessionId,
-    state.rateLimit ? (state.rateLimit.resets_at ?? "unknown") : null,
-  );
   const connectionDiagnostics = deriveStructuredConnectionDiagnostics({
     status,
     serverReachability: ctx.serverReachability,
@@ -283,27 +277,12 @@ function AcpChrome({
   }, [connectionInset, viewportRef]);
 
   const connectionNotice = (
-    <RateLimitRecoverySection
-      sessionId={sessionId}
-      currentAgent={state.agent ?? acpAgent}
-      onPrefill={(text) => setPrimerPrefill({ id: `rate-limit-recovery-${Date.now()}`, text })}
-    >
-      {({ onSwitchAgent }) => (
-        <SystemNotices
-          connectionSnapshot={connectionSnapshot}
-          rateLimit={state.rateLimit}
-          rateLimitAutoResume={view.rateLimitAutoResume}
-          rateLimitRetriesExhausted={state.rateLimitRetriesExhausted}
-          conversationSync={conversationSync}
-          manualReconnect={ctx.manualReconnect}
-          showConnectionIncident={connectionIncidentVisible}
-          onSwitchAgent={onSwitchAgent}
-          onResumeRateLimit={() => void rateLimitResume.respawn()}
-          rateLimitResumeState={rateLimitResume.state}
-          rateLimitResumeError={rateLimitResume.error}
-        />
-      )}
-    </RateLimitRecoverySection>
+    <SystemNotices
+      connectionSnapshot={connectionSnapshot}
+      conversationSync={conversationSync}
+      manualReconnect={ctx.manualReconnect}
+      showConnectionIncident={connectionIncidentVisible}
+    />
   );
 
   // An adapter that failed the compatibility check never runs, so no chat surface.
@@ -327,6 +306,9 @@ function AcpChrome({
         trashedAt={view.trashedAt}
         archivedAt={view.archivedAt}
         snoozedUntil={view.snoozedUntil}
+        currentAgent={state.agent ?? acpAgent}
+        rateLimitAutoResume={view.rateLimitAutoResume}
+        onRecoveryPrefill={(text) => setPrimerPrefill({ id: `rate-limit-recovery-${Date.now()}`, text })}
         onRestore={view.onRestore}
         dismissError={ctx.dismissError}
       />
