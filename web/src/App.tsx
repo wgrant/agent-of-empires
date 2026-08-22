@@ -2023,6 +2023,7 @@ function AppContent({
                         acpWorkerState={activeSession.acp_worker_state ?? "absent"}
                         rateLimitAutoResume={activeSession.rate_limit_auto_resume}
                         sessionStatus={activeSession.status}
+                        lastError={activeSession.last_error}
                         dormant={activeSession.dormant}
                         tool={activeSession.tool}
                         acpAgent={activeSession.acp_agent ?? null}
