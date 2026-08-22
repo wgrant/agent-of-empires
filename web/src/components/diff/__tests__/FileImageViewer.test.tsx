@@ -74,8 +74,16 @@ describe("FileImageViewer", () => {
   it("falls back to the normal file viewer when the bytes are not a raster image", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 415 }));
 
-    render(<FileImageViewer sessionId="s1" filePath="src/app.ts" fallback={<p>normal file viewer</p>} />);
+    render(
+      <FileImageViewer
+        sessionId="s1"
+        filePath="src/app.ts"
+        onBack={() => {}}
+        fallback={<button>normal file viewer</button>}
+      />,
+    );
 
-    expect(await screen.findByText("normal file viewer")).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "normal file viewer" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Back to transcript" })).toBeNull();
   });
 });
