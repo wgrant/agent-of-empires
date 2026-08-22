@@ -40,11 +40,11 @@ test("desktop: re-selecting the active structured view session refocuses the com
   await expect(composer(page)).toBeFocused({ timeout: 10_000 });
 });
 
-test("coarse pointer: selecting a structured view session focuses the composer (auto-open keyboard)", async ({
+test("coarse pointer: selecting a structured view session leaves the composer unfocused", async ({
   page,
   spawnServe,
 }) => {
-  // Force a touch-only profile; mount autofocus is suppressed there, so only auto-open keyboard can focus.
+  // Force a touch-only profile. Mount autofocus and navigation focus dispatch must both stay suppressed.
   await page.addInitScript(() => {
     const orig = window.matchMedia.bind(window);
     const forced: Record<string, boolean> = { "(pointer: coarse)": true, "(any-pointer: fine)": false };
@@ -67,7 +67,7 @@ test("coarse pointer: selecting a structured view session focuses the composer (
 
   await row.click();
   await waitForStructuredView(page);
-  await expect(composer(page)).toBeFocused({ timeout: 10_000 });
+  await expect(composer(page)).not.toBeFocused();
 });
 
 test("desktop: re-selecting the active terminal session refocuses the textarea", async ({ page, spawnServe }) => {
