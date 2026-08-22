@@ -5,11 +5,34 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ConversationLifecycleNotice } from "./SessionBanners";
 import { rateLimitDetail } from "./SystemNotices";
+import { composerAvailabilityNoticeLabel } from "./StructuredView";
 import type { SessionIncident } from "./status/conversationDiagnostics";
 
 afterEach(cleanup);
 
 describe("ConversationLifecycleNotice", () => {
+  it("selects one composer status notice with reconnect precedence", () => {
+    const reconnect = {
+      kind: "updating",
+      cause: "reconnect",
+      tone: "progress",
+      placement: "composer",
+      composer: "queue",
+    } as const;
+    const idle = { kind: "idle", tone: "neutral", placement: null, composer: "available" } as const;
+    const cases = [
+      [{ kind: "queue_for_recovery" }, reconnect, "Updating conversation…"],
+      [{ kind: "queue_for_recovery" }, idle, "Messages will be queued until the session resumes."],
+      [{ kind: "blocked", reason: "failed", action: "retry_start" }, idle, null],
+      [{ kind: "send_now" }, idle, null],
+      [{ kind: "resume_then_send", reason: "archived" }, idle, null],
+      [{ kind: "wake_agent" }, idle, null],
+    ] as const;
+    for (const [availability, status, expected] of cases) {
+      expect(composerAvailabilityNoticeLabel(availability, status)).toBe(expected);
+    }
+  });
+
   it("normalizes provider rate-limit detail", () => {
     const reportedReset = "2099-01-01T09:30:00Z";
     const cases = [

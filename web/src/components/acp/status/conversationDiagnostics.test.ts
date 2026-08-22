@@ -16,6 +16,7 @@ const connection: ConnectionStatusSnapshot = {
 
 function snapshot(
   changes: Parameters<typeof deriveSessionDiagnostics>[0] = {} as never,
+  connectionSnapshot: ConnectionStatusSnapshot = connection,
 ): ConversationDiagnosticsSnapshot {
   const lifecycle = deriveSessionDiagnostics({
     state: emptyAcpState(),
@@ -25,7 +26,7 @@ function snapshot(
     trashedAt: null,
     ...changes,
   });
-  return { connection, session: { sessionId: "s1", kind: "structured", lifecycle } };
+  return { connection: connectionSnapshot, session: { sessionId: "s1", kind: "structured", lifecycle } };
 }
 
 describe("conversation diagnostics selectors", () => {
@@ -77,6 +78,7 @@ describe("conversation diagnostics selectors", () => {
       [snapshot(), null, "send_now"],
       [snapshot({ trashedAt: "2026-08-16T10:00:00Z" }), "trashed", "read_only"],
       [snapshot({ archivedAt: "2026-08-16T10:00:00Z" }), "archived", "resume_then_send"],
+      [snapshot({ snoozedUntil: "2026-08-16T10:00:00Z" }), "snoozed", "resume_then_send"],
       [snapshot({ state: { ...emptyAcpState(), startupError: "binary missing" } }), "failed", "blocked"],
       [snapshot({ state: { ...emptyAcpState(), workerStopped: true } }), "stopped", "queue_for_recovery"],
       [snapshot({ workerState: "stopping" }), "stopping", "queue_for_recovery"],
@@ -95,6 +97,17 @@ describe("conversation diagnostics selectors", () => {
       [snapshot({ state: { ...emptyAcpState(), workerIdleStopped: true }, workerState: "absent" }), null, "wake_agent"],
       [snapshot({ state: { ...emptyAcpState(), turnActive: true, compacting: true } }), null, "queue_after_turn"],
       [snapshot({ state: { ...emptyAcpState(), turnActive: true } }), null, "queue_after_turn"],
+      [
+        snapshot(
+          {},
+          {
+            dashboard: { phase: "unavailable", lastSuccessAt: null, failureSince: null },
+            session: null,
+          },
+        ),
+        null,
+        "queue_for_recovery",
+      ],
       [
         snapshot({
           state: {
