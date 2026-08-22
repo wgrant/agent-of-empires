@@ -279,6 +279,7 @@ pub(super) const CITYHALL_MUTATION_ALLOW: &[(&str, &str)] = &[
     ("DELETE", "/api/sessions/{id}/queue"),
     ("PATCH", "/api/sessions/{id}/queue/{promptId}"),
     ("DELETE", "/api/sessions/{id}/queue/{promptId}"),
+    ("POST", "/api/sessions/{id}/queue/{promptId}/send-now"),
     // Curated settings surfaces (the handlers field-filter / strip color-mode).
     ("PATCH", "/api/profiles/{name}/settings"),
     ("PATCH", "/api/theme"),

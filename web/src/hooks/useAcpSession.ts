@@ -17,6 +17,7 @@ import {
   enqueueServerPrompt,
   listServerQueue,
   removeServerQueuedPrompt,
+  sendServerQueuedPromptNow,
   reportAcpInteraction,
   setSessionSnooze,
 } from "../lib/api";
@@ -348,7 +349,16 @@ export function useAcpSession(
 
   const steerable = !!state.promptCapabilities?.steering && !state.cancelling && !state.compacting;
 
-  // A non-steerable running turn is cancelled and the server drains the row instead.
+  // Force-send a queued prompt now instead of waiting for the server's
+  // turn-end drain. Two cases:
+  //   - Idle / steerable worker: ask the daemon to atomically deliver this row.
+  //     It retires the durable queue entry only after the agent accepts it.
+  //   - A live, non-steerable turn is blocking it: interrupt. Cancel the
+  //     current turn; the server then drains the queue (this row included) on
+  //     turn-end. We deliberately do NOT POST during the cancel: the daemon
+  //     treats a prompt arriving mid-cancel as a wedge and restarts the runner
+  //     (see `sendPrompt`). This is the destructive "interrupt and send" the
+  //     user opted into.
   const sendQueuedNow = useCallback(
     async (prompt: QueuedPrompt) => {
       const sid = sessionIdRef.current;
@@ -357,19 +367,14 @@ export function useAcpSession(
         await cancelPrompt();
         return;
       }
-      // Removing a row whose bytes live only on the server would delete them before the send.
-      if (prompt.attachments?.some((a) => !a.dataB64)) return;
-      // Remove server-side first so the drain can't also deliver it; a failed remove means it already did.
-      dispatch({ kind: "dequeue_prompt", id: prompt.id });
-      if (!(await removeServerQueuedPrompt(sid, prompt.id))) return;
-      const result = await dispatchPromptNow(prompt.text, prompt.attachments);
-      if (result.kind === "queued") {
-        showServerQueued(result.queuedId, prompt.text, prompt.attachments);
-      } else if (result.kind === "retryable_failure" || result.kind === "worker_not_ready") {
-        enqueueServer(prompt.text, prompt.attachments);
+      const delivered = await sendServerQueuedPromptNow(sid, prompt.id);
+      if (delivered) {
+        dispatch({ kind: "dequeue_prompt", id: prompt.id });
+      } else {
+        dispatch({ kind: "error", message: "Couldn't send the message yet. It remains queued." });
       }
     },
-    [sessionIdRef, state.turnActive, steerable, cancelPrompt, dispatchPromptNow, enqueueServer, showServerQueued],
+    [sessionIdRef, state.turnActive, steerable, cancelPrompt],
   );
 
   // Pessimistic: the value changes when the adapter confirms; pending only dims the clicked option.
