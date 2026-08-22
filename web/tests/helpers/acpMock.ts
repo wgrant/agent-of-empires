@@ -41,6 +41,13 @@ export interface AcpSessionMockOptions {
   trashedAt?: string;
   /** Report the session archived with a stopped worker (#4116). */
   archivedAt?: string;
+  /** Seed the daemon-owned prompt queue returned after the structured view
+   * connects. Useful for browser-only queue presentation tests. */
+  queuedPrompts?: Array<{
+    id: string;
+    text: string;
+    createdAt?: string;
+  }>;
 }
 
 export interface AcpSessionMock {
@@ -336,6 +343,19 @@ export async function mockAcpSession(page: Page, opts: AcpSessionMockOptions = {
         next_cursor: page.length > 0 ? page[page.length - 1]!.seq : null,
         has_more: newer.length > limit,
       },
+    });
+  });
+  await page.route("**/api/sessions/*/queue", (r) => {
+    if (r.request().method() !== "GET") return r.fallback();
+    return r.fulfill({
+      json: (opts.queuedPrompts ?? []).map((prompt, index) => ({
+        id: prompt.id,
+        seq: index + 1,
+        text: prompt.text,
+        created_at: prompt.createdAt ?? "2026-08-22T00:00:00.000Z",
+        attachments: [],
+        origin_device: null,
+      })),
     });
   });
   await page.route("**/api/sessions/*/acp/prompt", async (r) => {
