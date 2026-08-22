@@ -8,28 +8,34 @@ import type { ConnectionDiagnostics } from "../components/acp/status/connectionS
 // enough to absorb ordinary session switches and brief mobile flaps.
 export const CONNECTION_INCIDENT_DELAY_MS = 3_000;
 
+/** The floating capsule owns route and transcript-continuity interruptions.
+ * Agent/provider lifecycle remains available in the header and detail popout,
+ * while the session lifecycle surface owns its actionable incident. */
+export function hasConnectionIncident(diagnostics: ConnectionDiagnostics): boolean {
+  return diagnostics.route !== "connected" || diagnostics.continuity !== "current";
+}
+
 export function shouldDelayConnectionIncident(diagnostics: ConnectionDiagnostics): boolean {
   return (
-    diagnostics.hasIncident &&
+    hasConnectionIncident(diagnostics) &&
     diagnostics.serverReachability !== "unreachable" &&
-    (diagnostics.session === "starting" || diagnostics.session === "ready") &&
     (diagnostics.route === "connecting" || diagnostics.route === "reconnecting")
   );
 }
 
 function initialVisibility(diagnostics: ConnectionDiagnostics): boolean {
-  return diagnostics.hasIncident && !shouldDelayConnectionIncident(diagnostics);
+  return hasConnectionIncident(diagnostics) && !shouldDelayConnectionIncident(diagnostics);
 }
 
 /**
- * Keep brief conversation-socket churn quiet, without hiding an observed
- * server or agent problem. `sessionId` is explicit so a reused view cannot
- * briefly carry an incident from the previously selected session.
+ * Keep brief conversation-socket churn quiet. Agent/provider lifecycle has a
+ * separate session incident surface; `sessionId` is explicit so a reused view
+ * cannot briefly carry a route incident from the previously selected session.
  */
 export function useConnectionIncidentVisibility(sessionId: string, diagnostics: ConnectionDiagnostics): boolean {
   const initial = initialVisibility(diagnostics);
   const delayed = shouldDelayConnectionIncident(diagnostics);
-  const delayKey = `${sessionId}:${diagnostics.route}:${diagnostics.session}`;
+  const delayKey = `${sessionId}:${diagnostics.route}:${diagnostics.continuity}`;
   const [delay, setDelay] = useState(() => ({ key: delayKey, elapsed: false }));
   if (delay.key !== delayKey) {
     setDelay({ key: delayKey, elapsed: false });
@@ -43,6 +49,6 @@ export function useConnectionIncidentVisibility(sessionId: string, diagnostics: 
     return () => window.clearTimeout(timer);
   }, [delayKey, delayed]);
 
-  if (!diagnostics.hasIncident || !delayed) return initial;
+  if (!hasConnectionIncident(diagnostics) || !delayed) return initial;
   return delay.key === delayKey && delay.elapsed;
 }
