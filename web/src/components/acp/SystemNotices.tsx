@@ -3,20 +3,17 @@ import { RotateCcw } from "lucide-react";
 
 import type { RespawnState } from "../../hooks/useRespawnSession";
 import type { AcpState } from "../../lib/acpTypes";
-import type { AcpContext } from "./AcpRuntime";
 import { SwitchAgentModal } from "./SwitchAgentModal";
 import { useConnectionDiagnosticsPublisher } from "../../lib/connectionDiagnosticsContext";
 import { ConnectionIncidentBubble } from "../connection/ConnectionStatusView";
 import {
   deriveConnectionDiagnostics,
   selectConnectionDiagnostics,
-  type ConnectionDiagnostics,
   type ConnectionStatusSnapshot,
   type ConnectionStatusInput,
   type SessionConnectionDiagnostics,
 } from "./status/connectionStatus";
 import type { ConversationSyncStatus } from "./status/conversationSyncStatus";
-import type { ConversationStatus } from "./status/conversationStatus";
 
 /** Owns the rate-limit recovery modal toggle and hands its opener to `children`. */
 export function RateLimitRecoverySection({
@@ -69,128 +66,39 @@ export function deriveStructuredConnectionDiagnostics(input: Omit<ConnectionStat
 }
 
 export function SystemNotices({
-  sessionId = "",
-  status,
-  serverReachability,
-  lagged,
+  connectionSnapshot,
   rateLimit,
   rateLimitAutoResume,
   rateLimitRetriesExhausted,
-  startupError,
-  workerStopped,
-  workerRestarting,
-  agentUnresponsive,
-  agentOrphaned,
-  lastWebSocketOpenAt,
-  lastServerMessageAt,
-  lastTransportDiagnostic,
-  reconnectingSince,
-  liveUpdatesStale,
   conversationSync = "idle",
-  conversationStatus,
-  hasEverOpened,
-  reconnecting,
-  retryCount,
-  retryCountdown,
-  maxRetries,
   manualReconnect,
-  diagnostics: suppliedDiagnostics,
-  sessionConnection,
-  connectionSnapshot,
   showConnectionIncident = true,
   onSwitchAgent,
   onResumeRateLimit,
   rateLimitResumeState = "idle",
   rateLimitResumeError = null,
 }: {
-  sessionId?: string;
-  status: AcpContext["status"];
-  serverReachability: AcpContext["serverReachability"];
-  lagged: boolean;
+  connectionSnapshot: ConnectionStatusSnapshot & { session: SessionConnectionDiagnostics };
   rateLimit: AcpState["rateLimit"];
   /** Omitted when unknown, in which case nothing is claimed about auto-resume. */
   rateLimitAutoResume?: boolean;
   rateLimitRetriesExhausted: boolean;
-  startupError: boolean;
-  workerStopped: boolean;
-  workerRestarting: boolean;
-  agentUnresponsive: boolean;
-  agentOrphaned: boolean;
-  lastWebSocketOpenAt: AcpContext["lastWebSocketOpenAt"];
-  lastServerMessageAt: AcpContext["lastServerMessageAt"];
-  lastTransportDiagnostic: AcpContext["lastTransportDiagnostic"];
-  reconnectingSince: AcpContext["reconnectingSince"];
-  liveUpdatesStale: AcpContext["liveUpdatesStale"];
   conversationSync?: ConversationSyncStatus;
-  conversationStatus?: ConversationStatus;
-  hasEverOpened: boolean;
-  reconnecting: boolean;
-  retryCount: number;
-  retryCountdown: number;
-  maxRetries: number;
   manualReconnect: () => void;
-  diagnostics?: ConnectionDiagnostics;
-  sessionConnection?: SessionConnectionDiagnostics;
-  connectionSnapshot?: ConnectionStatusSnapshot;
   showConnectionIncident?: boolean;
   onSwitchAgent?: () => void;
   onResumeRateLimit?: () => void;
   rateLimitResumeState?: RespawnState;
   rateLimitResumeError?: string | null;
 }) {
-  const diagnostics =
-    suppliedDiagnostics ??
-    deriveStructuredConnectionDiagnostics({
-      status,
-      serverReachability,
-      lagged,
-      rateLimit,
-      rateLimitRetriesExhausted,
-      hasEverOpened,
-      reconnecting,
-      retryCount,
-      retryCountdown,
-      maxRetries,
-      startupError,
-      workerStopped,
-      workerRestarting,
-      agentUnresponsive,
-      agentOrphaned,
-      lastWebSocketOpenAt,
-      lastServerMessageAt,
-      lastTransportDiagnostic,
-      reconnectingSince,
-      liveUpdatesStale,
-    });
-  const effectiveSessionConnection: SessionConnectionDiagnostics = sessionConnection ?? {
-    kind: "structured",
-    sessionId,
-    diagnostics,
-    transport: {
-      route: diagnostics.route,
-      connectedAt: null,
-      lastMessageAt: null,
-      reconnectingSince: null,
-      retryCount: diagnostics.retryCount ?? 0,
-      retryCountdown: 0,
-      maxRetries: diagnostics.maxRetries ?? 0,
-      lastFailure: null,
-    },
-  };
-  const effectiveSnapshot: ConnectionStatusSnapshot = connectionSnapshot ?? {
-    dashboard: {
-      phase: diagnostics.serverReachability === "unreachable" ? "unavailable" : "connected",
-      lastSuccessAt: null,
-      failureSince: null,
-    },
-    session: effectiveSessionConnection,
-  };
-  const displayDiagnostics = selectConnectionDiagnostics(effectiveSnapshot);
+  const displayDiagnostics = selectConnectionDiagnostics(connectionSnapshot);
+  const sessionConnection = connectionSnapshot.session;
+  const sessionId = sessionConnection.sessionId;
   const initialSessionLoad = conversationSync === "initial";
   const publication = (
     <PublishedConnectionDiagnostics
       sessionId={sessionId}
-      sessionConnection={effectiveSessionConnection}
+      sessionConnection={sessionConnection}
       onReconnect={manualReconnect}
       incidentVisible={showConnectionIncident}
     />
@@ -203,10 +111,7 @@ export function SystemNotices({
       </>
     );
   }
-  const rateLimitIncident =
-    conversationStatus?.kind === "blocked" && conversationStatus.cause === "rate_limited"
-      ? true
-      : rateLimit !== null && diagnostics.session === "rate_limited";
+  const rateLimitIncident = rateLimit !== null && displayDiagnostics.session === "rate_limited";
   const resumePending = rateLimitResumeState === "retrying" || rateLimitResumeState === "ok";
   const actions =
     rateLimitIncident || rateLimitRetriesExhausted ? (
@@ -263,7 +168,7 @@ export function SystemNotices({
     <>
       {publication}
       {showConnectionIncident && displayDiagnostics.hasIncident && (
-        <ConnectionIncidentBubble snapshot={effectiveSnapshot} onReconnect={manualReconnect} actions={actions} />
+        <ConnectionIncidentBubble snapshot={connectionSnapshot} onReconnect={manualReconnect} actions={actions} />
       )}
     </>
   );

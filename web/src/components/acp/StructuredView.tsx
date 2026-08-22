@@ -290,34 +290,12 @@ function AcpChrome({
     >
       {({ onSwitchAgent }) => (
         <SystemNotices
-          sessionId={sessionId}
-          status={status}
-          serverReachability={ctx.serverReachability}
-          lagged={state.lagged}
+          connectionSnapshot={connectionSnapshot}
           rateLimit={state.rateLimit}
           rateLimitAutoResume={view.rateLimitAutoResume}
           rateLimitRetriesExhausted={state.rateLimitRetriesExhausted}
-          startupError={state.startupError !== null}
-          workerStopped={state.workerStopped}
-          workerRestarting={state.workerRestarting || acpWorkerState === "resuming"}
-          agentUnresponsive={state.agentUnresponsive}
-          agentOrphaned={state.agentOrphaned}
-          lastWebSocketOpenAt={ctx.lastWebSocketOpenAt}
-          lastServerMessageAt={ctx.lastServerMessageAt}
-          lastTransportDiagnostic={ctx.lastTransportDiagnostic}
-          reconnectingSince={ctx.reconnectingSince}
-          liveUpdatesStale={ctx.liveUpdatesStale}
           conversationSync={conversationSync}
-          conversationStatus={conversationStatus}
-          hasEverOpened={ctx.hasEverOpened}
-          reconnecting={ctx.reconnecting}
-          retryCount={ctx.retryCount}
-          retryCountdown={ctx.retryCountdown}
-          maxRetries={ctx.maxRetries}
           manualReconnect={ctx.manualReconnect}
-          diagnostics={connectionDiagnostics}
-          sessionConnection={sessionConnection}
-          connectionSnapshot={connectionSnapshot}
           showConnectionIncident={connectionIncidentVisible}
           onSwitchAgent={onSwitchAgent}
           onResumeRateLimit={() => void rateLimitResume.respawn()}

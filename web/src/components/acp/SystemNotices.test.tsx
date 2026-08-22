@@ -2,7 +2,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 
-import { RateLimitRecoverySection, SystemNotices } from "./SystemNotices";
+import { deriveStructuredConnectionDiagnostics, RateLimitRecoverySection, SystemNotices } from "./SystemNotices";
+import type { ConnectionStatusSnapshot, StreamTransportDiagnostics } from "./status/connectionStatus";
 
 vi.mock("../../lib/api", () => ({
   fetchAcpAgents: vi.fn(),
@@ -20,35 +21,65 @@ const LIMITED = { status: "limited", resets_at: "2099-01-01T00:00:00Z", kind: "r
 const PARIS = "Internal error: You've hit your weekly limit · resets 4am (Europe/Paris)";
 
 type NoticeProps = React.ComponentProps<typeof SystemNotices>;
+type ConnectionInput = Parameters<typeof deriveStructuredConnectionDiagnostics>[0];
+type MountOverrides = Partial<NoticeProps> & { connection?: Partial<ConnectionInput> };
 
-function noticeProps(overrides?: Partial<NoticeProps>): NoticeProps {
+const defaultConnectionInput: ConnectionInput = {
+  status: "open",
+  serverReachability: "unknown",
+  lagged: false,
+  rateLimit: null,
+  rateLimitRetriesExhausted: false,
+  startupError: false,
+  workerStopped: false,
+  workerRestarting: false,
+  agentUnresponsive: false,
+  agentOrphaned: false,
+  lastWebSocketOpenAt: null,
+  lastServerMessageAt: null,
+  lastTransportDiagnostic: null,
+  reconnectingSince: null,
+  liveUpdatesStale: false,
+  hasEverOpened: true,
+  reconnecting: false,
+  retryCount: 0,
+  retryCountdown: 0,
+  maxRetries: 7,
+};
+
+function connectionSnapshot(input: ConnectionInput): ConnectionStatusSnapshot & {
+  session: NonNullable<ConnectionStatusSnapshot["session"]>;
+} {
+  const diagnostics = deriveStructuredConnectionDiagnostics(input);
+  const transport: StreamTransportDiagnostics = {
+    route: diagnostics.route,
+    connectedAt: input.lastWebSocketOpenAt,
+    lastMessageAt: input.lastServerMessageAt,
+    reconnectingSince: input.reconnectingSince,
+    retryCount: input.retryCount,
+    retryCountdown: input.retryCountdown,
+    maxRetries: input.maxRetries,
+    lastFailure: input.lastTransportDiagnostic,
+  };
   return {
-    status: "open",
-    serverReachability: "unknown",
-    lagged: false,
-    rateLimit: null,
-    rateLimitRetriesExhausted: false,
-    startupError: false,
-    workerStopped: false,
-    workerRestarting: false,
-    agentUnresponsive: false,
-    agentOrphaned: false,
-    lastWebSocketOpenAt: null,
-    lastServerMessageAt: null,
-    lastTransportDiagnostic: null,
-    reconnectingSince: null,
-    liveUpdatesStale: false,
-    hasEverOpened: true,
-    reconnecting: false,
-    retryCount: 0,
-    retryCountdown: 0,
-    maxRetries: 7,
-    manualReconnect: vi.fn(),
-    ...overrides,
+    dashboard: { phase: "connected", lastSuccessAt: null, failureSince: null },
+    session: { kind: "structured", sessionId: "session-1", diagnostics, transport },
   };
 }
 
-const mount = (overrides?: Partial<NoticeProps>) => {
+function noticeProps(overrides: MountOverrides = {}): NoticeProps {
+  const { connection = {}, ...componentOverrides } = overrides;
+  const rateLimit = componentOverrides.rateLimit ?? null;
+  return {
+    connectionSnapshot: connectionSnapshot({ ...defaultConnectionInput, rateLimit, ...connection }),
+    rateLimit,
+    rateLimitRetriesExhausted: false,
+    manualReconnect: vi.fn(),
+    ...componentOverrides,
+  };
+}
+
+const mount = (overrides?: MountOverrides) => {
   const result = render(<SystemNotices {...noticeProps(overrides)} />);
   const expand = () => fireEvent.click(result.getByRole("button", { name: "Show connection details" }));
   return { expand, ...result };
@@ -61,8 +92,7 @@ describe("SystemNotices", () => {
 
   it("shows a neutral loading state instead of the connection overlay", () => {
     const { getByRole, queryByTestId } = mount({
-      status: "connecting",
-      hasEverOpened: false,
+      connection: { status: "connecting", hasEverOpened: false },
       conversationSync: "initial",
     });
     expect(getByRole("status").textContent).toContain("Loading conversation…");
@@ -71,10 +101,7 @@ describe("SystemNotices", () => {
 
   it("renders reconnect progress on the route and keeps its summary in the same row", () => {
     const { getByLabelText, getByTestId } = mount({
-      status: "closed",
-      serverReachability: "reachable",
-      reconnecting: true,
-      retryCount: 1,
+      connection: { status: "closed", serverReachability: "reachable", reconnecting: true, retryCount: 1 },
     });
     expect(getByLabelText("Device to AoE: ready")).toBeDefined();
     expect(getByLabelText("AoE to agent: inactive")).toBeDefined();
@@ -157,10 +184,7 @@ describe("SystemNotices", () => {
     rerender(
       <SystemNotices
         {...noticeProps({
-          reconnecting: true,
-          status: "connecting",
-          retryCount: 1,
-          retryCountdown: 3,
+          connection: { reconnecting: true, status: "connecting", retryCount: 1, retryCountdown: 3 },
           onSwitchAgent,
           onResumeRateLimit,
         })}
