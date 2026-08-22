@@ -48,7 +48,7 @@ import {
 } from "./status/conversationDiagnostics";
 import { deriveConversationSyncStatus } from "./status/conversationSyncStatus";
 import { deriveConversationNextStep } from "./status/conversationStatus";
-import { deriveSessionDiagnostics } from "./status/sessionDiagnostics";
+import { deriveSessionDiagnostics, type PendingAgentOperation } from "./status/sessionDiagnostics";
 import { AssistantMessage, UserMessage } from "./ThreadMessages";
 import { ToolDensityToggle, ToolDisplayModeProvider, useToolDensityPref } from "./ToolDisplayMode";
 import { useTranscriptScroll } from "./useTranscriptScroll";
@@ -66,6 +66,8 @@ interface Props {
   sessionStatus: SessionStatus;
   /** Durable lifecycle failure reported with the session record. */
   lastError?: string | null;
+  /** Control request accepted by this browser but not yet corroborated by worker evidence. */
+  pendingOperation?: PendingAgentOperation | null;
   /** An absent worker intentionally reaped for inactivity wakes on the next prompt. */
   dormant: boolean;
   /** Session `tool` registry key; selects the AgentProfile. */
@@ -190,6 +192,7 @@ function AcpChrome({
     workerState: acpWorkerState,
     sessionStatus: view.sessionStatus,
     lastError: view.lastError ?? null,
+    pendingOperation: view.pendingOperation ?? null,
     dormant: view.dormant,
     trashedAt: view.trashedAt,
     archivedAt: view.archivedAt,
@@ -321,6 +324,7 @@ function AcpChrome({
         snoozedUntil={view.snoozedUntil}
         sessionStatus={view.sessionStatus}
         lastError={view.lastError ?? null}
+        pendingOperation={view.pendingOperation ?? null}
         dormant={view.dormant}
         currentAgent={state.agent ?? acpAgent}
         rateLimitAutoResume={view.rateLimitAutoResume}

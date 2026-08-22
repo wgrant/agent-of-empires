@@ -111,6 +111,7 @@ import {
   forwardTerminalBeforeInput,
 } from "./lib/mobileKeyboardProxy";
 import { ConnectionDiagnosticsProvider } from "./lib/connectionDiagnosticsContext";
+import type { PendingAgentOperation } from "./components/acp/status/sessionDiagnostics";
 import { hydrateWebUiStateFromServer, initWebUiSync } from "./lib/webUiSync";
 import { WorkspaceSidebar } from "./components/WorkspaceSidebar";
 import { SnoozeModal } from "./components/sidebar/SnoozeModal";
@@ -363,6 +364,22 @@ function AppContent({
     setSessionStatus,
     applySession,
   } = useSessions();
+  const [pendingAgentOperations, setPendingAgentOperations] = useState<Record<string, PendingAgentOperation>>({});
+  const effectivePendingAgentOperations = useMemo(() => {
+    const next = { ...pendingAgentOperations };
+    for (const session of sessions) {
+      const operation = next[session.id];
+      if (!operation) continue;
+      const completed =
+        operation.kind === "stop"
+          ? session.status === "Stopped" && session.acp_worker_state !== "running"
+          : session.view === "structured"
+            ? session.acp_worker_state === "running" || session.status === "Error"
+            : !["Starting", "Stopped"].includes(session.status);
+      if (completed) delete next[session.id];
+    }
+    return next;
+  }, [pendingAgentOperations, sessions]);
   const workspaces = useWorkspaces(sessions);
   // Trash is a whole-workspace concern, so it is derived here from the
   // authoritative unsliced workspace list rather than reconstructed from the
@@ -1239,16 +1256,32 @@ function AppContent({
     // Close the dialog and show "Stopped" immediately; the 2s status poller
     // reconciles the true state and corrects this if the request fails.
     setStoppingWorkspaceId(null);
+    setPendingAgentOperations((current) => ({
+      ...current,
+      [sessionId]: {
+        kind: "stop",
+        stage: "requesting",
+        startedAt: new Date().toISOString(),
+        operationId: null,
+        error: null,
+      },
+    }));
     setSessionStatus(sessionId, "Stopped");
 
     const result = await stopSession(sessionId);
     if (!result) {
+      setPendingAgentOperations((current) => {
+        const next = { ...current };
+        delete next[sessionId];
+        return next;
+      });
       setSessionStatus(sessionId, "Error");
       toastBus.handler?.error("Failed to stop session");
       return;
     }
+    applySession(result);
     toastBus.handler?.info("Session stopped");
-  }, [stoppingSession, setSessionStatus]);
+  }, [applySession, stoppingSession, setSessionStatus]);
 
   const switchViewSession = switchViewTarget
     ? (workspaces.flatMap((w) => w.sessions).find((s) => s.id === switchViewTarget.sessionId) ?? null)
@@ -1279,16 +1312,38 @@ function AppContent({
       if (!session) return;
 
       // Optimistic Starting; the status poller reconciles to the real state.
+      setPendingAgentOperations((current) => ({
+        ...current,
+        [session.id]: {
+          kind: "start",
+          stage: "requesting",
+          startedAt: new Date().toISOString(),
+          operationId: null,
+          error: null,
+        },
+      }));
       setSessionStatus(session.id, "Starting");
       const result = await startSession(session.id);
       if (!result) {
+        setPendingAgentOperations((current) => {
+          const next = { ...current };
+          delete next[session.id];
+          return next;
+        });
         setSessionStatus(session.id, "Error");
         toastBus.handler?.error("Failed to start session");
         return;
       }
+      applySession(result);
+      if (session.view === "structured") {
+        setPendingAgentOperations((current) => ({
+          ...current,
+          [session.id]: { ...current[session.id]!, stage: "accepted" },
+        }));
+      }
       toastBus.handler?.info("Session started");
     },
-    [workspaces, setSessionStatus],
+    [applySession, workspaces, setSessionStatus],
   );
 
   const handleCreateSession = useCallback(
@@ -1864,6 +1919,7 @@ function AppContent({
           pairedMounted={pairedMounted}
           activeSession={activeSession ?? null}
           activeSessionId={activeSessionId}
+          pendingAgentOperation={activeSessionId ? (effectivePendingAgentOperations[activeSessionId] ?? null) : null}
           sessions={sessions}
           webSettings={webSettings}
           selectedFilePath={selectedFilePath}
@@ -1956,6 +2012,7 @@ function AppContent({
                         rateLimitAutoResume={activeSession.rate_limit_auto_resume}
                         sessionStatus={activeSession.status}
                         lastError={activeSession.last_error}
+                        pendingOperation={effectivePendingAgentOperations[activeSession.id] ?? null}
                         dormant={activeSession.dormant}
                         tool={activeSession.tool}
                         acpAgent={activeSession.acp_agent ?? null}
