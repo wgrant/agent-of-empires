@@ -18,14 +18,16 @@ export function useContextMenu<T extends { x: number; y: number }>(touchOpenedAt
       close();
     };
     const onContextMenu = touchOpenedAt ? onClick : close;
-    // Deferred so the event that opened the menu finishes bubbling first.
-    const id = requestAnimationFrame(() => {
-      document.addEventListener("click", onClick);
-      document.addEventListener("contextmenu", onContextMenu);
-    });
+    // A discrete contextmenu can flush this effect before it finishes bubbling.
+    // Clicks are safe to observe immediately, but defer that one listener.
+    document.addEventListener("click", onClick);
+    const contextMenuListenerTimer = window.setTimeout(
+      () => document.addEventListener("contextmenu", onContextMenu),
+      0,
+    );
     menuBus.addEventListener("close", close);
     return () => {
-      cancelAnimationFrame(id);
+      window.clearTimeout(contextMenuListenerTimer);
       document.removeEventListener("click", onClick);
       document.removeEventListener("contextmenu", onContextMenu);
       menuBus.removeEventListener("close", close);
