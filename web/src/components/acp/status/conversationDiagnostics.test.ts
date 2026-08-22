@@ -92,11 +92,7 @@ describe("conversation diagnostics selectors", () => {
         "restarting",
         "queue_for_recovery",
       ],
-      [
-        snapshot({ state: { ...emptyAcpState(), workerIdleStopped: true }, workerState: "absent" }),
-        "dormant",
-        "wake_agent",
-      ],
+      [snapshot({ state: { ...emptyAcpState(), workerIdleStopped: true }, workerState: "absent" }), null, "wake_agent"],
       [snapshot({ state: { ...emptyAcpState(), turnActive: true, compacting: true } }), null, "queue_after_turn"],
       [snapshot({ state: { ...emptyAcpState(), turnActive: true } }), null, "queue_after_turn"],
       [
