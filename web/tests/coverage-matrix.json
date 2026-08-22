@@ -2661,7 +2661,12 @@
       "id": "acp.queue-send-now",
       "kind": "vitest",
       "risk": "medium",
-      "specs": ["src/components/acp/QueuedPromptsStrip.test.tsx", "src/components/acp/Composer.test.tsx"],
+      "specs": [
+        "src/components/acp/QueuedPromptsStrip.test.tsx",
+        "src/components/acp/Composer.test.tsx",
+        "src/hooks/useAcpSession.test.ts",
+        "src/lib/api.test.ts"
+      ],
       "components": [
         "web/src/components/acp/StructuredView.tsx",
         "web/src/components/acp/Composer.tsx",

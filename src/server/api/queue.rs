@@ -20,7 +20,7 @@ use super::acp::validate_attachments;
 use super::read_only_block;
 use crate::acp::protocol::PromptAttachmentUpload;
 use crate::daemon::PromptAttachmentRef;
-use crate::server::session_service::EditQueuedOutcome;
+use crate::server::session_service::{EditQueuedOutcome, SendQueuedNowOutcome, SendTurnError};
 use crate::server::AppState;
 
 /// Cap on total queued-attachment bytes buffered per session: enough for
@@ -296,6 +296,70 @@ pub async fn queue_remove(
         StatusCode::NO_CONTENT.into_response()
     } else {
         (StatusCode::NOT_FOUND, "queued prompt not found").into_response()
+    }
+}
+
+/// `POST /api/sessions/{id}/queue/{promptId}/send-now`: deliver one queued row.
+/// The service keeps the row and its buffered attachments intact unless the
+/// agent accepts the prompt, so this endpoint is safe to retry.
+pub async fn queue_send_now(
+    State(state): State<Arc<AppState>>,
+    Path((id, prompt_id)): Path<(String, String)>,
+) -> impl IntoResponse {
+    if let Some(resp) = read_only_block(&state) {
+        return resp;
+    }
+    if !session_exists(&state, &id).await {
+        return (StatusCode::NOT_FOUND, "session not found").into_response();
+    }
+    let running = state.acp_supervisor.is_running(&id).await;
+    let control = state.session_service.fold_control_state(&id).await;
+    let dispatch = crate::acp::dispatch::decide(
+        &control,
+        crate::acp::dispatch::WorkerLiveness {
+            running,
+            idle_dormant: false,
+            rate_limit_exhausted: false,
+        },
+    );
+    if matches!(
+        dispatch,
+        crate::acp::dispatch::PromptDispatch::Queued { .. }
+    ) {
+        return (
+            StatusCode::CONFLICT,
+            "queued message cannot be sent while the agent is unavailable or busy",
+        )
+            .into_response();
+    }
+
+    match state
+        .session_service
+        .send_queued_prompt_now(&id, &prompt_id)
+        .await
+    {
+        Ok(SendQueuedNowOutcome::Delivered) => StatusCode::NO_CONTENT.into_response(),
+        Ok(SendQueuedNowOutcome::AlreadyDraining) => (
+            StatusCode::CONFLICT,
+            "queued message is already being delivered",
+        )
+            .into_response(),
+        Ok(SendQueuedNowOutcome::NotFound) | Err(SendTurnError::SessionNotFound) => {
+            (StatusCode::NOT_FOUND, "queued prompt not found").into_response()
+        }
+        Ok(SendQueuedNowOutcome::Undeliverable) => (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "queued prompt has no deliverable content",
+        )
+            .into_response(),
+        Err(SendTurnError::NotOwner) => {
+            (StatusCode::FORBIDDEN, "session not owned by caller").into_response()
+        }
+        Err(e) => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            format!("queued prompt remains queued: {e}"),
+        )
+            .into_response(),
     }
 }
 

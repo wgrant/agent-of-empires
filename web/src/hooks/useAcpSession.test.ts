@@ -339,6 +339,7 @@ describe("sendPrompt outcomes", () => {
 describe("server queue", () => {
   let serverQueue: Map<string, ServerQueuedPrompt>;
   let serverBusy: boolean;
+  let sendNowFailureStatus: number | null;
   const row = (id: string, text: string, extra: Partial<ServerQueuedPrompt> = {}): ServerQueuedPrompt => ({
     id,
     seq: serverQueue.size,
@@ -350,11 +351,22 @@ describe("server queue", () => {
   beforeEach(() => {
     serverQueue = new Map();
     serverBusy = false;
+    sendNowFailureStatus = null;
     vi.mocked(reportAcpInteraction).mockClear();
     calls = installAcpFakes(({ url, method, body }) => {
       if (url.includes("/queue")) {
         const item = url.match(/\/queue\/([^/?]+)/)?.[1];
         if (method === "GET") return json([...serverQueue.values()].sort((a, b) => a.seq - b.seq));
+        if (method === "POST" && url.endsWith("/send-now")) {
+          if (sendNowFailureStatus !== null) {
+            return new Response("queued prompt remains queued", { status: sendNowFailureStatus });
+          }
+          if (serverBusy) return new Response("agent busy", { status: 409 });
+          if (!item || !serverQueue.delete(decodeURIComponent(item))) {
+            return new Response("queued prompt not found", { status: 404 });
+          }
+          return new Response(null, { status: 204 });
+        }
         if (method === "POST") {
           const parsed = JSON.parse(body!) as { id: string; text: string };
           serverQueue.set(parsed.id, row(parsed.id, parsed.text));
@@ -437,26 +449,35 @@ describe("server queue", () => {
     }
     const deletes = () => calls.filter((c) => c.method === "DELETE");
 
-    it("removes a row server-side, then sends it", async () => {
+    it("atomically sends and retires a queued row", async () => {
       serverQueue.set("t1", row("t1", "text only"));
-      await sendNow("t1");
-      expect(deletes()).toHaveLength(1);
-      expect(posts("/acp/prompt")).toHaveLength(1);
+      const result = await sendNow("t1");
+      expect(deletes()).toHaveLength(0);
+      expect(posts("/queue/t1/send-now")).toHaveLength(1);
+      expect(posts("/acp/prompt")).toHaveLength(0);
       expect(serverQueue.has("t1")).toBe(false);
+      expect(result.current.state.queuedPrompts.map((q) => q.id)).not.toContain("t1");
     });
 
-    it("leaves a row whose attachment bytes live only on the server", async () => {
+    it("sends a row whose attachment bytes live only on the server", async () => {
       const attachments = [{ id: "a", kind: "image" as const, mime_type: "image/png", name: "s.png", size: 9 }];
       serverQueue.set("img", row("img", "caption", { attachments }));
       const result = await sendNow("img");
-      expect([deletes(), posts("/acp/prompt")]).toEqual([[], []]);
-      expect(result.current.state.queuedPrompts.map((q) => q.id)).toContain("img");
+      expect(deletes()).toHaveLength(0);
+      expect(posts("/queue/img/send-now")).toHaveLength(1);
+      expect(posts("/acp/prompt")).toHaveLength(0);
+      expect(result.current.state.queuedPrompts.map((q) => q.id)).not.toContain("img");
     });
 
-    it("sends nothing when the drain claimed the row first", async () => {
+    it("keeps the authoritative row when send-now is rejected", async () => {
       serverQueue.set("r1", row("r1", "raced"));
-      await sendNow("r1", () => serverQueue.delete("r1"));
+      const result = await sendNow("r1", () => {
+        sendNowFailureStatus = 409;
+      });
+      expect(posts("/queue/r1/send-now")).toHaveLength(1);
       expect(posts("/acp/prompt")).toHaveLength(0);
+      expect(serverQueue.has("r1")).toBe(true);
+      expect(result.current.state.queuedPrompts.map((q) => q.id)).toContain("r1");
     });
   });
 });

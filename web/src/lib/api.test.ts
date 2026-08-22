@@ -223,6 +223,11 @@ const requestCases: RequestCase[] = [
     { body: { text: "edited" }, result: true },
   ],
   ["DELETE /api/sessions/a%2Fb/queue/c%20d", () => api.removeServerQueuedPrompt("a/b", "c d"), { result: true }],
+  [
+    "POST /api/sessions/a%2Fb/queue/c%20d/send-now",
+    () => api.sendServerQueuedPromptNow("a/b", "c d"),
+    { result: true },
+  ],
   ["DELETE /api/sessions/s1/queue", () => api.clearServerQueue("s1"), { result: true }],
   ["GET /api/devices", () => api.fetchDevices()],
   ["DELETE /api/login/sessions/sess%2F1", () => api.revokeDevice("sess/1"), { result: true }],

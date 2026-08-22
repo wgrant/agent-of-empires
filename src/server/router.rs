@@ -353,6 +353,10 @@ pub(super) fn build_router(state: Arc<AppState>) -> Router {
             patch(api::queue_edit).delete(api::queue_remove),
         )
         .route(
+            "/api/sessions/{id}/queue/{promptId}/send-now",
+            post(api::queue_send_now),
+        )
+        .route(
             "/api/sessions/{id}/acp/approvals/{nonce}",
             post(api::resolve_approval),
         )

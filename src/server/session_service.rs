@@ -85,6 +85,18 @@ pub(crate) enum EditQueuedOutcome {
     WouldEmpty,
 }
 
+/// Result of atomically delivering one row from the server-owned queue.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SendQueuedNowOutcome {
+    Delivered,
+    /// The turn-end drain already owns this session's queue.
+    AlreadyDraining,
+    /// The session or requested queue row no longer exists.
+    NotFound,
+    /// The row has neither text nor buffered attachment bytes.
+    Undeliverable,
+}
+
 /// Pick the leading drain batch from a session's queue and its combined text, matching the
 /// client's `useAcpSession` split exactly.
 fn queue_drain_batch<'a>(
@@ -885,7 +897,13 @@ impl SessionService {
         .unwrap_or(EditQueuedOutcome::NotFound)
     }
 
-    /// Remove a queued prompt by id.
+    /// Remove a queued prompt by id. Returns `true` if a row was removed. Also
+    /// drops any attachment bytes buffered for that prompt so they don't leak.
+    ///
+    /// Takes the [`Self::prompt_submission`] guard the drain holds across its
+    /// whole snapshot, send, and retire sequence, so a removal cannot land in
+    /// the middle of a delivery. The atomic send-now action takes the same
+    /// guard.
     pub(crate) async fn remove_queued_prompt(
         self: &Arc<Self>,
         id: &str,
@@ -990,8 +1008,94 @@ impl SessionService {
         })
     }
 
-    /// Drain the leading batch of a session's server-owned queue into the live worker once
-    /// the current turn has ended.
+    /// Deliver one queued row and retire it only after `send_turn` succeeds.
+    ///
+    /// The session-level drain claim excludes the automatic batch drain, and
+    /// the prompt-submission guard excludes removal during delivery. Callers
+    /// verify that the worker can accept the prompt before entering.
+    pub(crate) async fn send_queued_prompt_now(
+        self: &Arc<Self>,
+        id: &str,
+        prompt_id: &str,
+    ) -> Result<SendQueuedNowOutcome, SendTurnError> {
+        {
+            let mut drains = self
+                .pending_drains
+                .lock()
+                .expect("pending_drains mutex poisoned");
+            if !drains.insert(id.to_string()) {
+                return Ok(SendQueuedNowOutcome::AlreadyDraining);
+            }
+        }
+        let _claim = PendingDrainGuard {
+            service: Arc::clone(self),
+            id: id.to_string(),
+        };
+        let _submission = self.prompt_submission(id).await;
+
+        let (caller, row) = {
+            let instances = self.instances.read().await;
+            let Some(inst) = instances.iter().find(|i| i.id == id) else {
+                return Ok(SendQueuedNowOutcome::NotFound);
+            };
+            let Some(row) = inst.queued_prompts.iter().find(|q| q.id == prompt_id) else {
+                return Ok(SendQueuedNowOutcome::NotFound);
+            };
+            let caller = match &inst.created_by_plugin {
+                Some(plugin_id) => SessionCaller::Plugin {
+                    plugin_id: plugin_id.clone(),
+                },
+                None => SessionCaller::User,
+            };
+            (caller, row.clone())
+        };
+        let attachments = self
+            .acp_event_store
+            .load_pending_attachments_for_ref(id, prompt_id);
+        if row.text.trim().is_empty() && attachments.is_empty() {
+            return Ok(SendQueuedNowOutcome::Undeliverable);
+        }
+
+        self.send_turn(
+            &caller,
+            id,
+            SendTurnRequest {
+                text: &row.text,
+                attachments: &attachments,
+                woke_idle_dormant: false,
+                prompt_id: Some(row.id.clone()),
+                synthesized: false,
+            },
+        )
+        .await?;
+        self.retire_drained_rows(id, vec![row.id]).await;
+        Ok(SendQueuedNowOutcome::Delivered)
+    }
+
+    /// Drain the leading batch of a session's server-owned queue into the live
+    /// worker once the current turn has ended. Mirrors
+    /// `drain_pending_initial_turn`'s single-owner `pending_drains` claim +
+    /// [`Self::prompt_submission_for_session`] delivery, so a batch is never
+    /// sent twice concurrently and the idle check below cannot be invalidated
+    /// by a direct prompt deciding its own disposition before this one reaches
+    /// the agent.
+    ///
+    /// Only drains an idle turn, and asks the live control fold rather than
+    /// `Instance.status`: dispatch parks a prompt on that fold, so gating the
+    /// delivery on the lagging status mirror lets the drain hand a queued
+    /// prompt to the turn it was parked behind.
+    ///
+    /// The reconciler tick gates on `is_running`, which is also true for a
+    /// resume that has reserved its slot but has no worker yet, so `send_turn`
+    /// here can park on `WORKER_READY_TIMEOUT`. That is why delivery must not
+    /// hold `instance_lock`: the resume being waited for takes it inside
+    /// `build_spawn_request`, and holding it stalled the drain for the whole
+    /// timeout and left the queue for a later retry (#3621).
+    ///
+    /// The `/clear`-boundary split matches the client
+    /// (`useAcpSession`): a clear-command row fires as its own turn; a leading
+    /// run of non-clear rows combines into one with blank-line separators.
+    /// A batch's buffered attachment bytes are reloaded and forwarded with it.
     pub(crate) async fn drain_queued_prompts_once(self: &Arc<Self>, id: &str) {
         {
             let mut drains = self
@@ -1767,6 +1871,73 @@ mod tests {
                 .expect("pending_drains mutex poisoned")
                 .is_empty(),
             "drain must release its claim on the no-op paths"
+        );
+    }
+
+    #[tokio::test]
+    async fn send_queued_now_never_retires_a_row_before_delivery() {
+        let mut inst = Instance::new("queue", "/tmp/aoe-send-queued-now");
+        inst.id = "sess-send-now".to_string();
+        inst.view = crate::session::View::Structured;
+        let service = service_for(vec![inst]);
+        service
+            .enqueue_prompt(
+                "sess-send-now",
+                "husk".into(),
+                String::new(),
+                vec![crate::daemon::PromptAttachmentRef {
+                    id: "expired".into(),
+                    kind: crate::daemon::PromptAttachmentKind::Image,
+                    mime_type: "image/png".into(),
+                    name: None,
+                    size: 10,
+                }],
+                None,
+                "t0".into(),
+            )
+            .await
+            .expect("session exists");
+
+        assert_eq!(
+            service
+                .send_queued_prompt_now("sess-send-now", "husk")
+                .await
+                .unwrap_or_else(|e| panic!("unexpected delivery attempt: {e}")),
+            SendQueuedNowOutcome::Undeliverable
+        );
+        assert_eq!(
+            service
+                .send_queued_prompt_now("sess-send-now", "missing")
+                .await
+                .unwrap_or_else(|e| panic!("unexpected delivery attempt: {e}")),
+            SendQueuedNowOutcome::NotFound
+        );
+        service
+            .pending_drains
+            .lock()
+            .expect("pending_drains mutex poisoned")
+            .insert("sess-send-now".into());
+        assert_eq!(
+            service
+                .send_queued_prompt_now("sess-send-now", "husk")
+                .await
+                .unwrap_or_else(|e| panic!("unexpected delivery attempt: {e}")),
+            SendQueuedNowOutcome::AlreadyDraining
+        );
+        service
+            .pending_drains
+            .lock()
+            .expect("pending_drains mutex poisoned")
+            .remove("sess-send-now");
+
+        assert_eq!(
+            service
+                .queued_prompts_snapshot("sess-send-now")
+                .await
+                .iter()
+                .map(|row| row.id.as_str())
+                .collect::<Vec<_>>(),
+            ["husk"]
         );
     }
 

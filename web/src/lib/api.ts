@@ -1108,6 +1108,12 @@ export function removeServerQueuedPrompt(sessionId: string, promptId: string): P
   return fetchOk(queuePath(sessionId, promptId), { method: "DELETE" });
 }
 
+/** Atomically deliver one queued prompt. The daemon retires the row only after
+ *  the agent accepts it, so false means the message remains queued. */
+export async function sendServerQueuedPromptNow(sessionId: string, promptId: string): Promise<boolean> {
+  return fetchOk(`${queuePath(sessionId, promptId)}/send-now`, { method: "POST" });
+}
+
 export function clearServerQueue(sessionId: string): Promise<boolean> {
   return fetchOk(queuePath(sessionId), { method: "DELETE" });
 }
