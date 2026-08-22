@@ -62,6 +62,25 @@ describe("loadPersistedState", () => {
     expect(loaded?.oldestSeq).toBe(42);
     expect(loaded?.pendingElicitations.map((e) => e.nonce)).toEqual(["e-1"]);
   });
+
+  it("coalesces adjacent stream rows written by older bundles", () => {
+    writeEntry("chunks", {
+      ...emptyAcpState(),
+      activity: [
+        { id: "msg-1", kind: "message", text: "Hel", at: "2026-01-01T00:00:00Z" },
+        { id: "msg-2", kind: "message", text: "lo", at: "2026-01-01T00:00:01Z" },
+        { id: "thinking-3", kind: "thinking", text: "plan", at: "2026-01-01T00:00:02Z" },
+        { id: "thinking-4", kind: "thinking", text: "ning", at: "2026-01-01T00:00:03Z" },
+        { id: "msg-5", kind: "message", text: "Done", at: "2026-01-01T00:00:04Z" },
+      ],
+    });
+
+    expect(loadPersistedState("chunks")?.activity.map(({ id, text }) => [id, text])).toEqual([
+      ["msg-1", "Hello"],
+      ["thinking-3", "planning"],
+      ["msg-5", "Done"],
+    ]);
+  });
 });
 
 describe("eviction on quota (#1345)", () => {
