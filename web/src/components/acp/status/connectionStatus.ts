@@ -1,6 +1,7 @@
 import type { AcpState } from "../../../lib/acpTypes";
 import type { ConnectionStatus, TransportDiagnostic } from "../../../hooks/useAcpSession";
 import type { DashboardConnectionDiagnostics } from "../../../lib/connectionState";
+import type { AgentRuntime } from "./sessionDiagnostics";
 
 export type ConnectionHopState = "ready" | "working" | "blocked" | "failed" | "unknown";
 export type ConnectionEdgeState = "ready" | "working" | "blocked" | "failed" | "inactive";
@@ -14,6 +15,7 @@ export type AgentSessionStatus =
   | "ready"
   | "starting"
   | "restarting"
+  | "dormant"
   | "stopped"
   | "failed"
   | "unresponsive"
@@ -157,11 +159,7 @@ export interface ConnectionStatusInput {
   retryCountdown: number;
   maxRetries: number;
   rateLimitText: (rateLimit: NonNullable<AcpState["rateLimit"]>) => string;
-  startupError: boolean;
-  workerStopped: boolean;
-  workerRestarting: boolean;
-  agentUnresponsive: boolean;
-  agentOrphaned: boolean;
+  agentRuntime: AgentRuntime;
   lastWebSocketOpenAt: number | null;
   lastServerMessageAt: number | null;
   lastTransportDiagnostic: TransportDiagnostic | null;
@@ -285,6 +283,8 @@ function sessionDescription(session: AgentSessionStatus): string {
       return "Starting";
     case "restarting":
       return "Restarting";
+    case "dormant":
+      return "Dormant";
     case "ready":
       return "No issue reported";
     case "unknown":
@@ -308,19 +308,26 @@ export function deriveConnectionDiagnostics(input: ConnectionStatusInput): Conne
         : input.status === "connecting" || input.status === "error"
           ? "connecting"
           : "disconnected";
-  const session: AgentSessionStatus = input.startupError
-    ? "failed"
-    : input.workerStopped
-      ? "stopped"
-      : input.rateLimit
-        ? "rate_limited"
-        : input.agentUnresponsive
-          ? "unresponsive"
-          : input.workerRestarting || input.agentOrphaned
-            ? "restarting"
-            : input.status === "connecting" && !input.hasEverOpened
-              ? "starting"
-              : "ready";
+  const session: AgentSessionStatus = (() => {
+    switch (input.agentRuntime.kind) {
+      case "failed":
+        return "failed";
+      case "stopped":
+        return "stopped";
+      case "blocked":
+        return "rate_limited";
+      case "restarting":
+        return input.agentRuntime.reason === "cancel_unresponsive" ? "unresponsive" : "restarting";
+      case "starting":
+        return "starting";
+      case "dormant":
+        return "dormant";
+      case "ready":
+        return "ready";
+      case "unknown":
+        return input.status === "connecting" && !input.hasEverOpened ? "starting" : "unknown";
+    }
+  })();
   const continuity: ConversationContinuity =
     route !== "connected" || input.serverReachability === "unreachable"
       ? "unavailable"
@@ -349,18 +356,22 @@ export function deriveConnectionDiagnostics(input: ConnectionStatusInput): Conne
       ? "failed"
       : session === "rate_limited"
         ? "blocked"
-        : session === "starting" || session === "restarting" || session === "unresponsive"
-          ? "working"
-          : "ready";
+        : session === "dormant"
+          ? "unknown"
+          : session === "starting" || session === "restarting" || session === "unresponsive"
+            ? "working"
+            : "ready";
   const serverToAgent: ConnectionEdgeState =
     route === "connected"
-      ? observedAgent === "failed"
-        ? "failed"
-        : observedAgent === "blocked"
-          ? "blocked"
-          : observedAgent === "working"
-            ? "working"
-            : "ready"
+      ? session === "dormant"
+        ? "inactive"
+        : observedAgent === "failed"
+          ? "failed"
+          : observedAgent === "blocked"
+            ? "blocked"
+            : observedAgent === "working"
+              ? "working"
+              : "ready"
       : "inactive";
   const observedServer: ConnectionHopState =
     input.serverReachability === "reachable"

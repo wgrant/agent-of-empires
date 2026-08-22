@@ -1,4 +1,5 @@
 import type { AcpState } from "../../../lib/acpTypes";
+import type { SessionStatus } from "../../../lib/types";
 
 export type AcpWorkerLifecycleState = "absent" | "resuming" | "running" | "stopping";
 
@@ -54,6 +55,8 @@ export interface SessionDiagnostics {
 export interface SessionDiagnosticsInput {
   state: AcpState;
   workerState: AcpWorkerLifecycleState;
+  sessionStatus: SessionStatus;
+  dormant: boolean;
   archivedAt: string | null;
   snoozedUntil: string | null;
   trashedAt: string | null;
@@ -78,8 +81,15 @@ function deriveRuntime(input: SessionDiagnosticsInput): AgentRuntime {
   if (state.agentOrphaned) return { kind: "restarting", reason: "prompt_orphaned" };
   if (state.agentUnresponsive) return { kind: "restarting", reason: "cancel_unresponsive" };
   if (state.workerRestarting || workerState === "resuming") return { kind: "restarting", reason: "manual_restart" };
-  if (state.workerIdleStopped) return { kind: "dormant", reason: "idle_auto_stop" };
+  // The worker supervisor is the freshest positive observation during a
+  // start, while SessionResponse.status is REST-polled and may still say
+  // Stopped for one poll. Conversely, once the supervisor says the worker is
+  // absent, the current persisted Stopped state outranks an old
+  // idle_auto_stop event replayed from the transcript after a daemon restart.
   if (workerState === "running") return { kind: "ready" };
+  if (input.sessionStatus === "Stopped") return { kind: "stopped", reason: "user_stopped" };
+  if (state.workerIdleStopped) return { kind: "dormant", reason: "idle_auto_stop" };
+  if (input.dormant) return { kind: "dormant", reason: "idle_auto_stop" };
   return { kind: "starting" };
 }
 
