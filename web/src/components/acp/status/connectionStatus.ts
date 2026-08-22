@@ -1,7 +1,7 @@
 import type { AcpState } from "../../../lib/acpTypes";
 import type { ConnectionStatus, TransportDiagnostic } from "../../../hooks/useAcpSession";
 import type { DashboardConnectionDiagnostics } from "../../../lib/connectionState";
-import type { AgentRuntime } from "./sessionDiagnostics";
+import type { AgentRuntime, SessionOperationalState } from "./sessionDiagnostics";
 
 export type ConnectionHopState = "ready" | "working" | "blocked" | "failed" | "unknown";
 export type ConnectionEdgeState = "ready" | "working" | "blocked" | "failed" | "inactive";
@@ -100,8 +100,20 @@ export interface StreamTransportDiagnostics {
 
 /** The optional selected-session half of the two-part connection model. */
 export type SessionConnectionDiagnostics =
-  | { kind: "structured"; sessionId: string; diagnostics: ConnectionDiagnostics; transport: StreamTransportDiagnostics }
-  | { kind: "terminal"; sessionId: string; diagnostics: ConnectionDiagnostics; transport: StreamTransportDiagnostics };
+  | {
+      kind: "structured";
+      sessionId: string;
+      operational: SessionOperationalState;
+      diagnostics: ConnectionDiagnostics;
+      transport: StreamTransportDiagnostics;
+    }
+  | {
+      kind: "terminal";
+      sessionId: string;
+      operational: SessionOperationalState;
+      diagnostics: ConnectionDiagnostics;
+      transport: StreamTransportDiagnostics;
+    };
 
 /** The only input the connection-status displays will ultimately consume. */
 export interface ConnectionStatusSnapshot {
@@ -540,6 +552,7 @@ export function deriveTerminalConnectionDiagnostics(input: {
   retryCount: number;
   retryCountdown: number;
   maxRetries: number;
+  agentRuntime: AgentRuntime;
 }): ConnectionDiagnostics {
   const retriesExhausted = !input.connected && !input.reconnecting && input.retryCount >= input.maxRetries;
   const route: ConnectionRouteStatus = input.connected
@@ -549,18 +562,58 @@ export function deriveTerminalConnectionDiagnostics(input: {
       : "disconnected";
   const deviceToServer: ConnectionEdgeState =
     route === "connected" ? "ready" : route === "reconnecting" ? "working" : "failed";
+  const session: AgentSessionStatus = (() => {
+    switch (input.agentRuntime.kind) {
+      case "starting":
+        return "starting";
+      case "restarting":
+        return "restarting";
+      case "stopped":
+        return "stopped";
+      case "failed":
+        return "failed";
+      case "blocked":
+        return "rate_limited";
+      case "dormant":
+        return "dormant";
+      case "ready":
+        return "ready";
+      case "unknown":
+        return "unknown";
+    }
+  })();
+  const observedAgent: ConnectionHopState =
+    session === "failed" || session === "stopped"
+      ? "failed"
+      : session === "rate_limited"
+        ? "blocked"
+        : session === "starting" || session === "restarting"
+          ? "working"
+          : input.connected
+            ? "ready"
+            : "unknown";
+  const primary =
+    session === "failed"
+      ? "agent_failed"
+      : session === "stopped"
+        ? "agent_stopped"
+        : session === "starting"
+          ? "agent_starting"
+          : session === "restarting"
+            ? "agent_restarting"
+            : primaryStatus({ route, session, continuity: input.connected ? "current" : "unavailable" });
   return {
     device: "ready",
     deviceToServer,
     server: input.connected ? "ready" : "unknown",
     serverToAgent: input.connected ? "ready" : "inactive",
-    agent: input.connected ? "ready" : "unknown",
+    agent: observedAgent,
     targetLabel: "Terminal",
     route,
     serverReachability: input.connected ? "reachable" : "unknown",
-    session: input.connected ? "ready" : "unknown",
+    session,
     continuity: input.connected ? "current" : "unavailable",
-    primary: route,
+    primary,
     retriesExhausted,
     retryCount: input.retryCount,
     maxRetries: input.maxRetries,
@@ -599,8 +652,8 @@ export function deriveTerminalConnectionDiagnostics(input: {
         observations: [
           {
             label: "Terminal",
-            state: input.connected ? "ready" : "inactive",
-            value: input.connected ? "Connected" : "Waiting for connection",
+            state: observedAgent,
+            value: sessionDescription(session),
           },
         ],
       },

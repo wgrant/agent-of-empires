@@ -105,7 +105,6 @@ export function StructuredView(props: Props) {
         <ToolDisplayModeProvider density={toolDensity}>
           <AcpRuntime
             sessionId={sessionId}
-            acpWorkerState={acpWorkerState}
             archivedAt={archivedAt}
             snoozedUntil={snoozedUntil}
             showClearedTurns={showClearedTurns}
@@ -199,6 +198,13 @@ function AcpChrome({
     archivedAt: view.archivedAt,
     snoozedUntil: view.snoozedUntil,
   });
+  const activeAgent = sessionDiagnostics.operational.kind === "active" ? sessionDiagnostics.operational.agent : null;
+  const canSendQueuedNow = status === "open" && (activeAgent?.kind === "online" || activeAgent?.kind === "dormant");
+  const sendNowInterruptsTurn =
+    activeAgent?.kind === "online" &&
+    (activeAgent.turn.kind === "cancelling" ||
+      activeAgent.turn.kind === "compacting" ||
+      ((activeAgent.turn.kind === "running" || activeAgent.turn.kind === "awaiting_user") && !activeAgent.canSteer));
   const connectionDiagnostics = deriveStructuredConnectionDiagnostics({
     status,
     serverReachability: ctx.serverReachability,
@@ -230,6 +236,7 @@ function AcpChrome({
   const sessionConnection: SessionConnectionDiagnostics = {
     kind: "structured",
     sessionId,
+    operational: sessionDiagnostics.operational,
     diagnostics: connectionDiagnostics,
     transport: streamTransport,
   };
@@ -508,8 +515,7 @@ function ComposerDock({
   const promptOutbox = derivePromptOutbox({
     queued: state.queuedPrompts,
     rejected: state.rejectedPrompts,
-    waitingForRecovery:
-      status !== "open" || acpWorkerState !== "running" || state.workerStopped || state.workerRestarting,
+    waitingForRecovery: status !== "open" || (activeAgent?.kind !== "online" && activeAgent?.kind !== "dormant"),
   });
   return (
     <>
@@ -524,8 +530,8 @@ function ComposerDock({
           onEditQueued={ctx.editQueuedPrompt}
           onClearQueued={ctx.clearQueue}
           onSendQueuedNow={ctx.sendQueuedNow}
-          canSendQueuedNow={ctx.canSendQueuedNow}
-          sendQueuedNowInterrupts={ctx.sendNowInterruptsTurn}
+          canSendQueuedNow={canSendQueuedNow}
+          sendQueuedNowInterrupts={sendNowInterruptsTurn}
         />
         <ModeSwitchFailedNotice failure={state.modeSwitchFailed} onDismiss={ctx.dismissModeSwitchFailed} />
         <ConfigOptionSwitchFailedNotice

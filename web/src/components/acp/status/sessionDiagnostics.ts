@@ -244,7 +244,7 @@ function projectDisposition(operational: SessionOperationalState): SessionDispos
   }
 }
 
-function projectRuntime(operational: SessionOperationalState): AgentRuntime {
+export function operationalAgentRuntime(operational: SessionOperationalState): AgentRuntime {
   if (operational.kind !== "active") return { kind: "unknown" };
   const { agent } = operational;
   switch (agent.kind) {
@@ -280,7 +280,7 @@ export function deriveSessionDiagnostics(input: SessionDiagnosticsInput): Sessio
   return {
     operational,
     disposition: projectDisposition(operational),
-    runtime: projectRuntime(operational),
+    runtime: operationalAgentRuntime(operational),
     turn:
       operational.kind === "active" && operational.agent.kind === "online" ? operational.agent.turn : { kind: "idle" },
     evidence: {
@@ -295,5 +295,73 @@ export function deriveSessionDiagnostics(input: SessionDiagnosticsInput): Sessio
       agentOrphaned: state.agentOrphaned,
       canSteer: state.promptCapabilities?.steering ?? false,
     },
+  };
+}
+
+export function deriveTerminalOperationalState(input: {
+  sessionStatus: SessionStatus;
+  lastError: string | null;
+  archivedAt: string | null;
+  snoozedUntil: string | null;
+  trashedAt: string | null;
+  ensureState: "pending" | "ready" | "error";
+  ensureError: string | null;
+  connected: boolean;
+}): SessionOperationalState {
+  if (input.sessionStatus === "Creating") return { kind: "creating" };
+  if (input.sessionStatus === "Deleting") return { kind: "deleting" };
+  if (input.trashedAt) return { kind: "trashed", trashedAt: input.trashedAt };
+  if (input.archivedAt) return { kind: "archived", archivedAt: input.archivedAt };
+  if (input.snoozedUntil) return { kind: "snoozed", until: input.snoozedUntil };
+  if (input.ensureState === "pending") {
+    return {
+      kind: "active",
+      agent: { kind: "transitioning", operation: "start", reason: null, startedAt: null, operationId: null },
+    };
+  }
+  if (input.ensureState === "error") {
+    return {
+      kind: "active",
+      agent: {
+        kind: "failed",
+        operation: "start",
+        category: "startup",
+        message: input.ensureError ?? input.lastError ?? "Could not start session.",
+      },
+    };
+  }
+  if (input.connected) {
+    return {
+      kind: "active",
+      agent: {
+        kind: "online",
+        since: null,
+        condition: { kind: "normal" },
+        turn: { kind: "idle" },
+        canSteer: false,
+      },
+    };
+  }
+  if (input.sessionStatus === "Stopped") return { kind: "active", agent: { kind: "stopped", cause: "user" } };
+  if (input.sessionStatus === "Error") {
+    return {
+      kind: "active",
+      agent: {
+        kind: "failed",
+        operation: "start",
+        category: "startup",
+        message: input.lastError ?? "Could not start session.",
+      },
+    };
+  }
+  if (input.sessionStatus === "Starting") {
+    return {
+      kind: "active",
+      agent: { kind: "transitioning", operation: "start", reason: null, startedAt: null, operationId: null },
+    };
+  }
+  return {
+    kind: "active",
+    agent: { kind: "unknown", detail: "The terminal is not connected and no start is in progress." },
   };
 }
