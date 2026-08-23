@@ -23,30 +23,35 @@ function renderBanner(message = NATIVE_BINARY_MSG, sessionId = "s-1") {
 }
 
 describe("StartupErrorBanner remediation", () => {
-  it.each<[string, string, string[], boolean]>([
-    [
-      "native binary",
-      NATIVE_BINARY_MSG,
-      ["Architecture mismatch", "dynamic loader", "bind-mounted into a container"],
-      false,
-    ],
+  it.each([
+    ["native binary", NATIVE_BINARY_MSG, ["Architecture mismatch", "dynamic loader", "bind-mounted into a container"]],
     // A respawn-budget park embeds the ProjectPathMissing text when the cwd moved.
     [
       "moved project path",
       "Structured view worker failed to stay up after 5 restart attempts in 60s; auto-respawn paused. project path no longer exists: /Users/me/aoe/worktrees/Burmese",
       ["working directory no longer exists", "/Users/me/aoe/worktrees/Burmese"],
-      false,
     ],
-    ["generic failure", "some unknown failure", ["aoe acp doctor --fix"], true],
-  ])("routes %s to its own copy or doctor --fix", (label, message, copy, doctor) => {
+  ])("routes %s to its own copy, not doctor --fix", (_label, message, copy) => {
     stubLog({ exists: false, tail: "" });
     const { container } = renderBanner(message);
     for (const text of copy) expect(container.textContent).toContain(text);
-    expect(container.textContent?.includes("aoe acp doctor --fix")).toBe(doctor);
-    if (label === "native binary") {
-      const anchor = container.querySelector("a[href*='structured-view']");
-      expect(anchor?.getAttribute("href")).toContain("native-binary-launch-failure");
-    }
+    expect(container.textContent).not.toContain("aoe acp doctor --fix");
+  });
+
+  it("links the native-binary docs anchor", () => {
+    stubLog({ exists: false, tail: "" });
+    const anchor = renderBanner().container.querySelector("a[href*='structured-view']");
+    expect(anchor?.getAttribute("href")).toContain("native-binary-launch-failure");
+  });
+
+  it("renders generic remediation and sends retry through the shared action state", async () => {
+    const fetchSpy = stubLog({ exists: false, tail: "" });
+    const { container, getByRole } = renderBanner("some unknown failure");
+    expect(container.textContent).toContain("aoe acp doctor --fix");
+    fireEvent.click(getByRole("button", { name: "Retry start" }));
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
+    expect(fetchSpy.mock.calls[0]?.[0]).toBe("/api/sessions/s-1/acp/spawn");
+    await waitFor(() => expect(getByRole("button", { name: "Start requested" })).toBeDefined());
   });
 });
 
