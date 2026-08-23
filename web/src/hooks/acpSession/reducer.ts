@@ -30,6 +30,7 @@ export type Action =
   | { kind: "frame"; frame: AcpFrame }
   | { kind: "reduced_state"; state: ReducedState; unchanged: string[] }
   | { kind: "frames"; frames: AcpFrame[]; rows?: ActivityRow[]; oldestSeq?: number }
+  | { kind: "catchup"; frames: AcpFrame[]; rows: ActivityRow[]; reset: boolean }
   | { kind: "prepend"; rows: ActivityRow[]; oldestSeq: number }
   | { kind: "handshake"; frames: AcpFrame[] }
   | { kind: "transcript_snapshot"; rows: ActivityRow[] }
@@ -150,6 +151,12 @@ export function reducer(state: AcpState, action: Action): AcpState {
         next = withServerRows(next, mergeServerRows(next.activity, action.rows));
       if (action.oldestSeq != null && state.oldestSeq === 0) return { ...next, oldestSeq: action.oldestSeq };
       return next;
+    }
+    case "catchup": {
+      const base = action.reset ? emptyAcpState() : state;
+      let next = action.frames.reduce(applyEvent, base);
+      if (action.rows.length > 0) next = withServerRows(next, mergeServerRows(next.activity, action.rows));
+      return next.lagged ? { ...next, lagged: false } : next;
     }
     case "prepend": {
       // Older history only adds rows; control state is not a pure fold and must not be touched.
