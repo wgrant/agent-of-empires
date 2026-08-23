@@ -134,6 +134,26 @@ function deriveAgent(input: SessionDiagnosticsInput): AgentState {
     return { kind: "transitioning", operation: "stop", reason: null, startedAt: null, operationId: null };
   }
 
+  // A live supervisor process is not proof that the ACP handshake completed.
+  // These reducer errors are cleared by AcpSessionAssigned, so keep them
+  // authoritative while a replacement worker is merely present.
+  if (state.incompatibleAgent) {
+    return {
+      kind: "failed",
+      operation: "start",
+      category: "compatibility",
+      message: "The configured agent is incompatible.",
+    };
+  }
+  if (state.startupError || input.sessionStatus === "Error") {
+    return {
+      kind: "failed",
+      operation: "start",
+      category: "startup",
+      message: state.startupError ?? input.lastError ?? "The agent could not start.",
+    };
+  }
+
   if (workerState === "running") {
     return {
       kind: "online",
@@ -155,22 +175,6 @@ function deriveAgent(input: SessionDiagnosticsInput): AgentState {
   }
   if (input.sessionStatus === "Stopped" || state.workerStopped) return { kind: "stopped", cause: "user" };
   if (state.workerIdleStopped || input.dormant) return { kind: "dormant", cause: "idle" };
-  if (state.incompatibleAgent) {
-    return {
-      kind: "failed",
-      operation: "start",
-      category: "compatibility",
-      message: "The configured agent is incompatible.",
-    };
-  }
-  if (state.startupError || input.sessionStatus === "Error") {
-    return {
-      kind: "failed",
-      operation: "start",
-      category: "startup",
-      message: state.startupError ?? input.lastError ?? "The agent could not start.",
-    };
-  }
   if (input.sessionStatus === "Starting") {
     return { kind: "transitioning", operation: "start", reason: null, startedAt: null, operationId: null };
   }
