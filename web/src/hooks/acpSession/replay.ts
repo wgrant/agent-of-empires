@@ -58,7 +58,7 @@ export async function fetchReplay(
     } else {
       await fetchForward(
         sid,
-        lastSeq.current,
+        lastSeq,
         dispatch,
         signal,
         setLastTransportDiagnostic,
@@ -117,14 +117,17 @@ async function fetchTail(
 
 async function fetchForward(
   sid: string,
-  lastSeq: number,
+  lastSeq: { current: number },
   dispatch: Dispatch,
   signal: AbortSignal,
   setLastTransportDiagnostic?: (value: TransportDiagnostic) => void,
 ): Promise<void> {
-  const firstSince = Math.max(0, lastSeq - REPLAY_OVERLAP);
+  const firstSince = Math.max(0, lastSeq.current - REPLAY_OVERLAP);
   let cursor = firstSince;
   let target: number | null = null;
+  const bufferedFrames: AcpFrame[] = [];
+  const bufferedRows = [] as ReturnType<typeof toActivityRows>;
+  let reset = false;
   for (;;) {
     const [res, rowsRes] = await getReplayPair(sid, `since=${cursor}&limit=${REPLAY_PAGE_SIZE}`, signal);
     signal.throwIfAborted();
@@ -143,20 +146,26 @@ async function fetchForward(
     if (target === null) {
       target = data.highest_seq;
       // The server's log is behind our cursor (e.g. it was reset), so start over.
-      if (data.highest_seq < firstSince) dispatch({ kind: "reset" });
+      if (data.highest_seq < firstSince) reset = true;
     }
     if (data.lost) {
       dispatch({ kind: "lagged", skipped: data.highest_seq });
       return;
     }
     if (data.frames.length > 0 || pageRows.length > 0) {
-      dispatch({ kind: "frames", frames: data.frames, rows: toActivityRows(pageRows, sid) });
+      bufferedFrames.push(...data.frames);
+      bufferedRows.push(...toActivityRows(pageRows, sid));
     }
     const next = data.next_cursor;
     if (!(data.has_more && next != null && next > cursor && next < target)) break;
     cursor = next;
   }
-  dispatch({ kind: "lagged_resolved" });
+  dispatch({ kind: "catchup", frames: bufferedFrames, rows: bufferedRows, reset });
+  if (reset) {
+    lastSeq.current = bufferedFrames.reduce((highest, frame) => Math.max(highest, frame.seq), 0);
+  } else if (target !== null) {
+    lastSeq.current = target;
+  }
 }
 
 /** Fetch the page below `before`. Returns whether more older history remains, or null on failure. */
