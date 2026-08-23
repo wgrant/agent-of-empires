@@ -151,6 +151,12 @@ describe("connection status model", () => {
     });
     expect(unavailable).toMatchObject({ agent: "failed", serverToAgent: "failed", hasIncident: true });
 
+    const failed = deriveConnectionDiagnostics({
+      ...base,
+      agentRuntime: { kind: "failed", category: "startup", message: "boom" },
+    });
+    expect(connectionStatusPresentation(failed.primary)).toMatchObject({ headline: "Start failed", tone: "error" });
+
     const retrying = deriveConnectionDiagnostics({ ...base, status: "closed", reconnecting: true, retryCount: 3 });
     expect(connectionStatusPresentation(retrying.primary)).toMatchObject({
       headline: "Reconnecting",
