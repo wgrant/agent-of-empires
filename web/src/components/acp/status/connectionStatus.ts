@@ -21,6 +21,7 @@ export type AgentSessionStatus =
   | "failed"
   | "unresponsive"
   | "rate_limited"
+  | "unavailable"
   | "unknown";
 
 /** Whether transcript updates can be treated as current. */
@@ -37,6 +38,7 @@ export type PrimaryConnectionStatus =
   | "agent_restarting"
   | "agent_stopped"
   | "agent_failed"
+  | "agent_unavailable"
   | "agent_unresponsive"
   | "rate_limited"
   | "updates_delayed"
@@ -215,6 +217,13 @@ export function connectionStatusPresentation(primary: PrimaryConnectionStatus): 
       return { headline: "Agent stopped", description: "Agent worker stopped.", tone: "error", working: false };
     case "agent_failed":
       return { headline: "Agent failed", description: "Agent session could not start.", tone: "error", working: false };
+    case "agent_unavailable":
+      return {
+        headline: "Agent unavailable",
+        description: "No agent worker is running.",
+        tone: "error",
+        working: false,
+      };
     case "agent_unresponsive":
       return {
         headline: "Agent unresponsive",
@@ -274,6 +283,7 @@ function primaryStatus({
   if (route === "reconnecting") return "reconnecting";
   if (route === "connecting") return "connecting";
   if (session === "failed") return "agent_failed";
+  if (session === "unavailable") return "agent_unavailable";
   if (session === "stopped") return "agent_stopped";
   if (session === "unresponsive") return "agent_unresponsive";
   if (session === "rate_limited") return "rate_limited";
@@ -306,6 +316,8 @@ function sessionDescription(session: AgentSessionStatus): string {
       return "Dormant";
     case "ready":
       return "No issue reported";
+    case "unavailable":
+      return "No worker is running";
     case "unknown":
       return "Not observed";
   }
@@ -346,7 +358,7 @@ export function deriveConnectionDiagnostics(input: ConnectionStatusInput): Conne
       case "ready":
         return "ready";
       case "unknown":
-        return input.status === "connecting" && !input.hasEverOpened ? "starting" : "unknown";
+        return input.status === "connecting" && !input.hasEverOpened ? "starting" : "unavailable";
     }
   })();
   const continuity: ConversationContinuity =
@@ -373,7 +385,7 @@ export function deriveConnectionDiagnostics(input: ConnectionStatusInput): Conne
             ? "ready"
             : "working";
   const observedAgent: ConnectionHopState =
-    session === "failed" || session === "stopped"
+    session === "failed" || session === "stopped" || session === "unavailable"
       ? "failed"
       : session === "rate_limited"
         ? "blocked"
@@ -590,11 +602,11 @@ export function deriveTerminalConnectionDiagnostics(input: {
       case "ready":
         return "ready";
       case "unknown":
-        return "unknown";
+        return "unavailable";
     }
   })();
   const observedAgent: ConnectionHopState =
-    session === "failed" || session === "stopped"
+    session === "failed" || session === "stopped" || session === "unavailable"
       ? "failed"
       : session === "rate_limited"
         ? "blocked"
@@ -606,15 +618,17 @@ export function deriveTerminalConnectionDiagnostics(input: {
   const primary =
     session === "failed"
       ? "agent_failed"
-      : session === "stopped"
-        ? "agent_stopped"
-        : session === "starting"
-          ? "agent_starting"
-          : session === "stopping"
-            ? "agent_stopping"
-            : session === "restarting"
-              ? "agent_restarting"
-              : primaryStatus({ route, session, continuity: input.connected ? "current" : "unavailable" });
+      : session === "unavailable"
+        ? "agent_unavailable"
+        : session === "stopped"
+          ? "agent_stopped"
+          : session === "starting"
+            ? "agent_starting"
+            : session === "stopping"
+              ? "agent_stopping"
+              : session === "restarting"
+                ? "agent_restarting"
+                : primaryStatus({ route, session, continuity: input.connected ? "current" : "unavailable" });
   return {
     device: "ready",
     deviceToServer,
