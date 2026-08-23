@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import { useRespawnSession } from "../../hooks/useRespawnSession";
+import { LifecycleIncidentNotice } from "./status/LifecycleIncidentNotice";
 
 function Code({ children }: { children: React.ReactNode }) {
   return <code className="rounded bg-rose-900/60 px-1">{children}</code>;
@@ -40,7 +41,7 @@ function Remediation({ message }: { message: string }) {
         <ol className="mt-1 list-decimal space-y-0.5 pl-5">
           <li>
             Restore the directory at the path above (e.g. <Code>git worktree move</Code> it back, or recreate it), then
-            click <strong>Retry</strong>.
+            click <strong>Retry start</strong>.
           </li>
           <li>
             Stop <Code>aoe serve</Code>, edit <Code>project_path</Code> for this session in{" "}
@@ -93,34 +94,25 @@ function Remediation({ message }: { message: string }) {
 export function StartupErrorBanner({ sessionId, message }: { sessionId: string; message: string }) {
   const { state: retryState, error: retryError, respawn: handleRetry } = useRespawnSession(sessionId);
   return (
-    <div className="border-b border-rose-900/60 bg-rose-950/40 px-4 py-3 text-rose-200">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex-1 min-w-0">
-          <div className="text-sm font-medium">Structured view agent failed to start</div>
-          <pre className="mt-1 whitespace-pre-wrap text-xs text-rose-100/90">{message}</pre>
-        </div>
-        <button
-          type="button"
-          onClick={handleRetry}
-          disabled={retryState === "retrying"}
-          className="shrink-0 rounded-md border border-rose-800/60 bg-rose-900/40 px-3 py-1 text-xs font-medium text-rose-100 hover:bg-rose-900/60 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {retryState === "retrying" ? "Retrying…" : "Retry"}
-        </button>
-      </div>
-      {retryState === "ok" && (
-        <div className="mt-2 text-xs text-emerald-200/90">
-          Spawn requested. New events should start streaming in shortly.
-        </div>
-      )}
-      {retryState === "failed" && retryError && (
-        <div className="mt-2 text-xs text-rose-100/90">Retry failed: {retryError}</div>
-      )}
+    <LifecycleIncidentNotice
+      title="Agent could not start"
+      detail={<pre className="whitespace-pre-wrap">{message}</pre>}
+      tone="error"
+      testId="acp-startup-error"
+      primaryAction={{
+        label: "Retry start",
+        pendingLabel: "Retrying…",
+        acceptedLabel: "Start requested",
+        phase: retryState === "retrying" ? "pending" : retryState === "ok" ? "accepted" : retryState,
+        error: retryState === "failed" ? `Start failed: ${retryError ?? "unknown error"}` : null,
+        onInvoke: () => void handleRetry(),
+      }}
+    >
       <div className="mt-2 text-xs text-rose-200/80">
         <Remediation message={message} />
       </div>
       <AgentLogDisclosure sessionId={sessionId} />
-    </div>
+    </LifecycleIncidentNotice>
   );
 }
 

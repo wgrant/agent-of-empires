@@ -44,9 +44,14 @@ describe("StartupErrorBanner remediation", () => {
     expect(anchor?.getAttribute("href")).toContain("native-binary-launch-failure");
   });
 
-  it("falls back to the doctor --fix copy on a generic failure", () => {
-    stubLog({ exists: false, tail: "" });
-    expect(renderBanner("some unknown failure").container.textContent).toContain("aoe acp doctor --fix");
+  it("renders generic remediation and sends retry through the shared action state", async () => {
+    const fetchSpy = stubLog({ exists: false, tail: "" });
+    const { container, getByRole } = renderBanner("some unknown failure");
+    expect(container.textContent).toContain("aoe acp doctor --fix");
+    fireEvent.click(getByRole("button", { name: "Retry start" }));
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
+    expect(fetchSpy.mock.calls[0]?.[0]).toBe("/api/sessions/s-1/acp/spawn");
+    await waitFor(() => expect(getByRole("button", { name: "Start requested" })).toBeDefined());
   });
 });
 

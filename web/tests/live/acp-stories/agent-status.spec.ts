@@ -176,7 +176,7 @@ test("startup banner: native-binary branch + agent-log disclosure", async ({ pag
   expect(msg).toContain("failed to launch");
 
   await page.goto(`${serve.baseUrl}/session/${encodeURIComponent(sessionId)}`);
-  await expect(page.getByText("Structured view agent failed to start")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText("Agent could not start")).toBeVisible({ timeout: 15_000 });
   await expect(page.getByText(/Architecture mismatch/i)).toBeVisible();
   await expect(page.getByText(/aoe acp doctor --fix/)).toHaveCount(0);
 
