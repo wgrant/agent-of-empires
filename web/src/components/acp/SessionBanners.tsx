@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Clock, Eye } from "lucide-react";
 
 import { useRespawnSession, type RespawnState } from "../../hooks/useRespawnSession";
 import type { AcpState } from "../../lib/acpTypes";
@@ -12,6 +13,7 @@ import {
 import { deriveSessionDiagnostics, type PendingAgentOperation } from "./status/sessionDiagnostics";
 import { ActionFeedbackNotice } from "./status/ActionFeedbackNotice";
 import { LifecycleIncidentNotice, type LifecycleNoticeAction } from "./status/LifecycleIncidentNotice";
+import { ConversationNextStepNotice } from "./status/ConversationNextStepNotice";
 import { StartupErrorBanner } from "./StartupErrorBanner";
 import { rateLimitDetail, RateLimitRecoverySection } from "./SystemNotices";
 
@@ -278,39 +280,10 @@ function RateLimitLifecycleBanner({
 
 export function MonitoringBanner({ description }: { description: string | null }) {
   return (
-    <ChipBanner tone="violet" icon="👁" detail={description}>
+    <ConversationNextStepNotice icon={<Eye className="size-3.5" />}>
       Monitoring a background job
-    </ChipBanner>
-  );
-}
-
-const CHIP_TONES = {
-  sky: ["border-sky-900/60 bg-sky-950/40 text-sky-200", "text-sky-300/70"],
-  violet: ["border-violet-900/60 bg-violet-950/40 text-violet-200", "text-violet-300/70"],
-} as const;
-
-function ChipBanner({
-  tone,
-  icon,
-  detail,
-  children,
-}: {
-  tone: keyof typeof CHIP_TONES;
-  icon: string;
-  detail: string | null;
-  children: React.ReactNode;
-}) {
-  const [box, dim] = CHIP_TONES[tone];
-  return (
-    <div className={`flex items-center gap-2 border-b ${box} px-4 py-2 text-xs`}>
-      <span aria-hidden className="text-base leading-none">
-        {icon}
-      </span>
-      <span className="truncate">
-        {children}
-        {detail ? <span className={dim}>: {detail}</span> : null}
-      </span>
-    </div>
+      {description ? <span className="text-text-muted">: {description}</span> : null}
+    </ConversationNextStepNotice>
   );
 }
 
@@ -355,9 +328,10 @@ export function ScheduledWakeupBanner({ wakeAt, reason }: { wakeAt: string; reas
         ? `${Math.floor(remaining / 60)}m ${pad(remaining % 60)}s`
         : `${Math.floor(remaining / 3600)}h ${Math.floor((remaining % 3600) / 60)}m`;
   return (
-    <ChipBanner tone="sky" icon="⏰" detail={reason}>
+    <ConversationNextStepNotice icon={<Clock className="size-3.5" />}>
       {elapsed ? "Waking…" : `Asleep until ${clock} (in ${inText})`}
-    </ChipBanner>
+      {reason ? <span className="text-text-muted">: {reason}</span> : null}
+    </ConversationNextStepNotice>
   );
 }
 
