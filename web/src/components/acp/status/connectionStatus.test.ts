@@ -35,6 +35,7 @@ describe("connection status model", () => {
   it("derives primary status from route, session, and continuity in priority order", () => {
     const cases = [
       [{}, "connected", "connected", "ready", "current"],
+      [{ agentRuntime: { kind: "unknown" } as const }, "agent_unavailable", "connected", "unavailable", "current"],
       [
         { agentRuntime: { kind: "stopped", reason: "user_stopped" } as const },
         "agent_stopped",
@@ -142,6 +143,13 @@ describe("connection status model", () => {
     });
     expect(connectionStatusPresentation(stopped.primary)).toMatchObject({ headline: "Agent stopped", tone: "error" });
     expect(connectionStatusCompactLabel(stopped)).toBe("Agent stopped");
+
+    const unavailable = deriveConnectionDiagnostics({ ...base, agentRuntime: { kind: "unknown" } });
+    expect(connectionStatusPresentation(unavailable.primary)).toMatchObject({
+      headline: "Agent unavailable",
+      tone: "error",
+    });
+    expect(unavailable).toMatchObject({ agent: "failed", serverToAgent: "failed", hasIncident: true });
 
     const retrying = deriveConnectionDiagnostics({ ...base, status: "closed", reconnecting: true, retryCount: 3 });
     expect(connectionStatusPresentation(retrying.primary)).toMatchObject({
