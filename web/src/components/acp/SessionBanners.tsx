@@ -11,6 +11,7 @@ import {
 } from "./status/conversationDiagnostics";
 import { deriveSessionDiagnostics, type PendingAgentOperation } from "./status/sessionDiagnostics";
 import { ActionFeedbackNotice } from "./status/ActionFeedbackNotice";
+import { LifecycleIncidentNotice, type LifecycleNoticeAction } from "./status/LifecycleIncidentNotice";
 import { StartupErrorBanner } from "./StartupErrorBanner";
 import { rateLimitDetail, RateLimitRecoverySection } from "./SystemNotices";
 
@@ -125,17 +126,28 @@ export function ConversationLifecycleNotice({
   rateLimitResumeState?: RespawnState;
   rateLimitResumeError?: string | null;
 }) {
+  const recoverableIncident =
+    incident?.kind === "stopped" || incident?.kind === "unavailable" ? `${incident.kind}:${incident.detail}` : null;
+  const {
+    state: startState,
+    error: startError,
+    respawn: startAgent,
+  } = useRespawnSession(sessionId, recoverableIncident);
   if (!incident) return null;
   if (incident.kind === "failed") return <StartupErrorBanner sessionId={sessionId} message={incident.detail} />;
   if (incident.kind === "restarting" || incident.kind === "transitioning") {
-    return <WorkerRestartingBanner message={incident.detail} />;
+    return <WorkerRestartingBanner title={incident.title} message={incident.detail} />;
   }
   if (incident.kind === "trashed") return <TrashedWorkerStoppedBanner sessionId={sessionId} onRestore={onRestore} />;
   if (incident.kind === "archived") return <ArchivedWorkerStoppedBanner sessionId={sessionId} />;
   if (incident.kind === "snoozed") {
     return <SnoozedWorkerStoppedBanner sessionId={sessionId} snoozedUntil={incident.snoozedUntil} />;
   }
-  if (incident.kind === "stopped") return <WorkerStoppedBanner sessionId={sessionId} />;
+  if (incident.kind === "stopped" || incident.kind === "unavailable") {
+    return (
+      <AgentStartNotice incident={incident} state={startState} error={startError} onStart={() => void startAgent()} />
+    );
+  }
   if (incident.kind === "blocked" && incident.reason === "rate_limited") {
     return (
       <RateLimitLifecycleBanner
@@ -151,6 +163,39 @@ export function ConversationLifecycleNotice({
     );
   }
   return null;
+}
+
+function respawnAction(state: RespawnState, error: string | null, onStart: () => void): LifecycleNoticeAction {
+  return {
+    label: "Start agent",
+    pendingLabel: "Starting…",
+    acceptedLabel: "Start requested",
+    phase: state === "retrying" ? "pending" : state === "ok" ? "accepted" : state,
+    error: state === "failed" ? `Start failed: ${error ?? "unknown error"}` : null,
+    onInvoke: onStart,
+  };
+}
+
+function AgentStartNotice({
+  incident,
+  state,
+  error,
+  onStart,
+}: {
+  incident: Extract<SessionIncident, { kind: "stopped" | "unavailable" }>;
+  state: RespawnState;
+  error: string | null;
+  onStart: () => void;
+}) {
+  return (
+    <LifecycleIncidentNotice
+      title={incident.title}
+      detail={incident.detail}
+      tone={incident.kind === "unavailable" ? "error" : "warning"}
+      primaryAction={respawnAction(state, error, onStart)}
+      testId={`acp-agent-${incident.kind}`}
+    />
+  );
 }
 
 function RateLimitLifecycleBanner({
@@ -173,59 +218,47 @@ function RateLimitLifecycleBanner({
   resumeError: string | null;
 }) {
   const resumePending = resumeState === "retrying" || resumeState === "ok";
+  const resumeAction: LifecycleNoticeAction | undefined = onResume
+    ? {
+        label: "Resume now",
+        pendingLabel: "Resuming…",
+        acceptedLabel: "Resume requested",
+        phase: resumeState === "retrying" ? "pending" : resumeState === "ok" ? "accepted" : resumeState,
+        error: resumeState === "failed" ? `Resume failed: ${resumeError ?? "unknown error"}` : null,
+        onInvoke: onResume,
+      }
+    : undefined;
   return (
-    <div className="border-b border-status-warning/30 bg-status-warning/10 px-4 py-3 text-status-warning">
-      <div className="text-sm font-medium">{incident.title}</div>
-      <div className="mt-1 text-xs text-status-warning/90">
-        {rateLimit ? rateLimitDetail(rateLimit) : incident.detail}
-      </div>
-      {(onResume || onSwitchAgent || autoResume !== undefined || retriesExhausted) && (
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          {onResume && (
-            <button
-              type="button"
-              onClick={onResume}
-              disabled={resumePending}
-              className="rounded-md border border-status-warning/40 bg-status-warning/20 px-2 py-1 text-[10px] font-mono uppercase tracking-wide text-status-warning hover:bg-status-warning/30 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {resumeState === "retrying" ? "Resuming…" : resumeState === "ok" ? "Resume requested" : "Resume now"}
-            </button>
-          )}
-          {onSwitchAgent && (
-            <button
-              type="button"
-              onClick={onSwitchAgent}
-              className="rounded-md border border-status-warning/40 bg-status-warning/20 px-2 py-1 text-[10px] font-mono uppercase tracking-wide text-status-warning hover:bg-status-warning/30"
-            >
-              Continue in another agent
-            </button>
-          )}
-          {autoResume === true && !retriesExhausted && (
-            <span className="basis-full text-xs text-text-muted">
-              Auto-resume is armed; the session resumes when the window clears.
-            </span>
-          )}
-          {autoResume === false && (
-            <span className="basis-full text-xs text-text-muted">
-              Auto-resume is off for this profile; use Resume now, or enable acp.rate_limit_auto_resume.
-            </span>
-          )}
-          {retriesExhausted && (
-            <span className="basis-full text-xs text-status-warning">
-              Auto-resume stopped after repeated attempts. Resume manually or send a new prompt.
-            </span>
-          )}
-          {resumeState === "ok" && (
-            <span className="basis-full text-xs text-text-muted">
-              Resume requested. New events should start streaming shortly.
-            </span>
-          )}
-          {resumeState === "failed" && resumeError && (
-            <span className="basis-full text-xs text-status-error">Resume failed: {resumeError}</span>
-          )}
+    <LifecycleIncidentNotice
+      title={incident.title}
+      detail={rateLimit ? rateLimitDetail(rateLimit) : incident.detail}
+      tone="warning"
+      primaryAction={resumeAction}
+      secondaryAction={
+        onSwitchAgent
+          ? { label: "Continue in another agent", pendingLabel: "Switching…", onInvoke: onSwitchAgent }
+          : undefined
+      }
+    >
+      {autoResume === true && !retriesExhausted && (
+        <div className="mt-2 text-xs text-text-muted">
+          Auto-resume is armed; the session resumes when the window clears.
         </div>
       )}
-    </div>
+      {autoResume === false && (
+        <div className="mt-2 text-xs text-text-muted">
+          Auto-resume is off for this profile; use Resume now, or enable acp.rate_limit_auto_resume.
+        </div>
+      )}
+      {retriesExhausted && (
+        <div className="mt-2 text-xs text-status-warning">
+          Auto-resume stopped after repeated attempts. Resume manually or send a new prompt.
+        </div>
+      )}
+      {resumePending && resumeState === "ok" && (
+        <div className="mt-2 text-xs text-text-muted">Resume requested. New events should start streaming shortly.</div>
+      )}
+    </LifecycleIncidentNotice>
   );
 }
 
@@ -234,21 +267,6 @@ export function MonitoringBanner({ description }: { description: string | null }
     <ChipBanner tone="violet" icon="👁" detail={description}>
       Monitoring a background job
     </ChipBanner>
-  );
-}
-
-const PULSE_TONES = {
-  warning: ["border-status-warning/30 bg-status-warning/10 text-status-warning", "bg-status-warning"],
-  sky: ["border-sky-900/60 bg-sky-950/40 text-sky-200", "bg-sky-400"],
-} as const;
-
-function PulseBanner({ tone = "warning", children }: { tone?: keyof typeof PULSE_TONES; children: React.ReactNode }) {
-  const [box, dot] = PULSE_TONES[tone];
-  return (
-    <div className={`flex items-center gap-2 border-b ${box} px-4 py-2 text-xs`}>
-      <span className={`inline-block h-2 w-2 animate-pulse rounded-full ${dot}`} aria-hidden />
-      <span>{children}</span>
-    </div>
   );
 }
 
@@ -282,8 +300,8 @@ function ChipBanner({
   );
 }
 
-export function WorkerRestartingBanner({ message }: { message: string }) {
-  return <PulseBanner tone="sky">{message}</PulseBanner>;
+export function WorkerRestartingBanner({ title = "Restarting agent", message }: { title?: string; message: string }) {
+  return <LifecycleIncidentNotice title={title} detail={message} tone="info" working />;
 }
 
 // A real wake flips `turnActive` within seconds, so this only clears a stale
@@ -329,68 +347,6 @@ export function ScheduledWakeupBanner({ wakeAt, reason }: { wakeAt: string; reas
   );
 }
 
-const WARNING_BUTTON =
-  "shrink-0 rounded-md border border-status-warning/40 bg-status-warning/20 px-3 py-1 text-xs font-medium text-status-warning hover:bg-status-warning/30 disabled:cursor-not-allowed disabled:opacity-60";
-
-function StoppedPanel({
-  testId,
-  title,
-  action,
-  footer,
-  children,
-}: {
-  testId?: string;
-  title: string;
-  action?: React.ReactNode;
-  footer?: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  return (
-    <div
-      className="border-b border-status-warning/30 bg-status-warning/10 px-4 py-3 text-status-warning"
-      data-testid={testId}
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex-1 min-w-0">
-          <div className="text-sm font-medium">{title}</div>
-          <div className="mt-1 text-xs text-status-warning/90">{children}</div>
-        </div>
-        {action}
-      </div>
-      {footer}
-    </div>
-  );
-}
-
-function WorkerStoppedBanner({ sessionId }: { sessionId: string }) {
-  const { state: retryState, error: retryError, respawn: handleReconnect } = useRespawnSession(sessionId);
-  return (
-    <StoppedPanel
-      title="Structured view worker stopped"
-      action={
-        <button type="button" onClick={handleReconnect} disabled={retryState === "retrying"} className={WARNING_BUTTON}>
-          {retryState === "retrying" ? "Reconnecting…" : "Reconnect"}
-        </button>
-      }
-      footer={
-        <>
-          {retryState === "ok" && (
-            <div className="mt-2 text-xs text-emerald-200/90">
-              Spawn requested. The composer will re-enable when the agent is back online.
-            </div>
-          )}
-          {retryState === "failed" && retryError && (
-            <div className="mt-2 text-xs text-status-warning/90">Reconnect failed: {retryError}</div>
-          )}
-        </>
-      }
-    >
-      The agent was terminated via <code className="rounded bg-status-warning/30 px-1">aoe acp stop</code> or an
-      equivalent external teardown. New prompts are disabled until you reconnect.
-    </StoppedPanel>
-  );
-}
-
 export function TrashedWorkerStoppedBanner({
   sessionId,
   onRestore,
@@ -411,30 +367,33 @@ export function TrashedWorkerStoppedBanner({
     );
   };
   return (
-    <StoppedPanel
-      testId={`acp-trashed-banner-${sessionId}`}
+    <LifecycleIncidentNotice
       title="Session in trash"
-      action={
-        onRestore && (
-          <button type="button" onClick={handleRestore} disabled={restoring} className={WARNING_BUTTON}>
-            {restoring ? "Restoring…" : "Restore"}
-          </button>
-        )
+      detail="This session is in the trash. Its transcript and workspace are kept and shown here read-only, but the worker is stopped and will not respawn. Restore it to resume, or delete it permanently from the Trash section in the sidebar."
+      tone="warning"
+      testId={`acp-trashed-banner-${sessionId}`}
+      primaryAction={
+        onRestore
+          ? {
+              label: "Restore",
+              pendingLabel: "Restoring…",
+              phase: restoring ? "pending" : "idle",
+              onInvoke: handleRestore,
+            }
+          : undefined
       }
-    >
-      This session is in the trash. Its transcript and workspace are kept and shown here read-only, but the worker is
-      stopped and will not respawn. Restore it to resume, or delete it permanently from the Trash section in the
-      sidebar.
-    </StoppedPanel>
+    />
   );
 }
 
 export function ArchivedWorkerStoppedBanner({ sessionId }: { sessionId: string }) {
   return (
-    <StoppedPanel testId={`acp-archived-banner-${sessionId}`} title="Session archived">
-      This session is parked. The structured view worker was shut down and the reconciler will not respawn it. Unarchive
-      from the sidebar (right-click the row, then Unarchive) to bring it back.
-    </StoppedPanel>
+    <LifecycleIncidentNotice
+      title="Session archived"
+      detail="This session is parked. The structured view worker was shut down and the reconciler will not respawn it. Unarchive from the sidebar (right-click the row, then Unarchive) to bring it back."
+      tone="warning"
+      testId={`acp-archived-banner-${sessionId}`}
+    />
   );
 }
 
@@ -442,10 +401,17 @@ export function SnoozedWorkerStoppedBanner({ sessionId, snoozedUntil }: { sessio
   const target = new Date(snoozedUntil);
   const wallClock = Number.isFinite(target.getTime()) ? target.toLocaleString() : snoozedUntil;
   return (
-    <StoppedPanel testId={`acp-snoozed-banner-${sessionId}`} title="Session snoozed">
-      The structured view worker was shut down until <span className="font-mono">{wallClock}</span>. The reconciler will
-      respawn it automatically once the snooze expires, or you can Unsnooze from the sidebar (right-click the row) to
-      wake it sooner.
-    </StoppedPanel>
+    <LifecycleIncidentNotice
+      title="Session snoozed"
+      detail={
+        <>
+          The structured view worker was shut down until <span className="font-mono">{wallClock}</span>. The reconciler
+          will respawn it automatically once the snooze expires, or you can Unsnooze from the sidebar (right-click the
+          row) to wake it sooner.
+        </>
+      }
+      tone="warning"
+      testId={`acp-snoozed-banner-${sessionId}`}
+    />
   );
 }
