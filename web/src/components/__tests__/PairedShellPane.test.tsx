@@ -59,7 +59,7 @@ describe("PairedShellPane", () => {
     // LiveTerminalView placeholder branch stays mounted.
     ensureTerminal.mockReturnValue(new Promise(() => {}));
     render(<PairedShellPane session={makeSession()} sessionId="sess-rp-1" />);
-    expect(screen.getByText(/Starting session/i)).toBeDefined();
+    expect(screen.getByText("Starting terminal")).toBeDefined();
   });
 
   it("renders the shell mode picker with Host preselected", () => {

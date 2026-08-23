@@ -6,6 +6,7 @@ import { MobileTerminalToolbar } from "./MobileTerminalToolbar";
 import { MobileLiveTerminal } from "./MobileLiveTerminal";
 import { KeyboardFab } from "./KeyboardFab";
 import { ConnectionIncidentBubble } from "./connection/ConnectionStatusView";
+import { LifecycleIncidentNotice } from "./acp/status/LifecycleIncidentNotice";
 import {
   deriveTerminalConnectionDiagnostics,
   selectConnectionDiagnostics,
@@ -256,22 +257,31 @@ export function LiveTerminalView({ session, active = true, surface = "agent", te
   }, [inputFocused]);
 
   if (ensureState === "pending") {
+    const target = surface === "agent" ? "agent" : "terminal";
     return (
-      <div className="flex-1 flex items-center justify-center bg-surface-950 text-text-dim">
-        <span className="text-xs">Starting session...</span>
+      <div className="flex-1 bg-surface-950">
+        <LifecycleIncidentNotice
+          title={`Starting ${target}`}
+          detail={`AoE is preparing the ${target}. This view will connect when it is ready.`}
+          tone="info"
+          working
+          testId="terminal-starting-notice"
+        />
       </div>
     );
   }
 
   if (ensureState === "error") {
+    const target = surface === "agent" ? "Agent" : "Terminal";
     return (
-      <div className="flex-1 flex flex-col items-center justify-center bg-surface-950 gap-2 px-4 text-center">
-        <span className="text-xs text-status-error max-w-md break-words">
-          {ensureError ?? "Could not start session."}
-        </span>
-        <button onClick={retryEnsure} className="text-xs text-brand-500 hover:text-brand-400 cursor-pointer underline">
-          Retry
-        </button>
+      <div className="flex-1 bg-surface-950">
+        <LifecycleIncidentNotice
+          title={`${target} could not start`}
+          detail={ensureError ?? "Could not start session."}
+          tone="error"
+          primaryAction={{ label: "Retry start", pendingLabel: "Retrying…", onInvoke: retryEnsure }}
+          testId="terminal-start-failed-notice"
+        />
       </div>
     );
   }

@@ -72,13 +72,14 @@ afterEach(() => {
   mockedClearCtrlRef.current = null;
 });
 
-describe("TerminalView early-return states", () => {
-  it("renders the 'Starting session...' placeholder while ensure is pending", () => {
+describe("TerminalView lifecycle states", () => {
+  it("renders the shared starting notice while ensure is pending", () => {
     // Never-resolving promise keeps ensureState at "pending" so the
     // placeholder branch stays mounted.
     ensureSession.mockReturnValue(new Promise(() => {}));
     render(<TerminalView session={makeSession()} />);
-    expect(screen.getByText(/Starting session/i)).toBeDefined();
+    expect(screen.getByTestId("terminal-starting-notice")).toBeDefined();
+    expect(screen.getByText("Starting agent")).toBeDefined();
   });
 
   it("renders the error message + Retry button when ensure rejects", async () => {
@@ -90,7 +91,8 @@ describe("TerminalView early-return states", () => {
     await waitFor(() => {
       expect(screen.getByText("boom")).toBeDefined();
     });
-    const retry = screen.getByRole("button", { name: /retry/i });
+    expect(screen.getByText("Agent could not start")).toBeDefined();
+    const retry = screen.getByRole("button", { name: "Retry start" });
     expect(retry).toBeDefined();
   });
 
