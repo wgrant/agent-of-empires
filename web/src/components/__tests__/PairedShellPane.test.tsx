@@ -54,13 +54,21 @@ afterEach(() => {
 });
 
 describe("PairedShellPane", () => {
-  it("shows the pending placeholder with Host preselected, or a prompt with no session", () => {
-    // Never-resolving promise pins ensureState at "pending".
+  it("renders the ensure-pending placeholder while the shell starts", () => {
+    // Never-resolving promise pins ensureState at "pending" so the
+    // LiveTerminalView placeholder branch stays mounted.
     ensureTerminal.mockReturnValue(new Promise(() => {}));
     render(<PairedShellPane session={makeSession()} sessionId="sess-rp-1" />);
-    expect(screen.getByText(/Starting session/i)).toBeDefined();
+    expect(screen.getByText("Starting terminal")).toBeDefined();
+  });
+
+  it("renders the shell mode picker with Host preselected", () => {
+    ensureTerminal.mockReturnValue(new Promise(() => {}));
+    render(<PairedShellPane session={makeSession()} sessionId="sess-rp-1" />);
     expect(screen.getAllByRole("button", { name: /^Host$/ }).length).toBeGreaterThan(0);
-    cleanup();
+  });
+
+  it("renders 'Select a session' when sessionId is null", () => {
     render(<PairedShellPane session={null} sessionId={null} />);
     expect(screen.getByText(/Select a session/i)).toBeDefined();
   });

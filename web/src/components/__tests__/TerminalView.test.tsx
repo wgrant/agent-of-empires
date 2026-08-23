@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, act } from "@testing-library/react";
 
 import type { SessionResponse } from "../../lib/types";
 import { makeSession as baseSession } from "./fixtures";
@@ -75,17 +75,36 @@ afterEach(() => {
   mockedClearCtrlRef.current = null;
 });
 
-describe("TerminalView early-return states", () => {
-  it("shows a placeholder while pending and the error, or generic copy, when ensure fails", async () => {
-    // Never-resolving promise keeps ensureState at "pending".
+describe("TerminalView lifecycle states", () => {
+  it("renders the shared starting notice while ensure is pending", () => {
+    // Never-resolving promise keeps ensureState at "pending" so the
+    // placeholder branch stays mounted.
     ensureSession.mockReturnValue(new Promise(() => {}));
     render(<TerminalView session={makeSession()} />);
-    expect(screen.getByText(/Starting session/i)).toBeDefined();
-    cleanup();
+    expect(screen.getByTestId("terminal-starting-notice")).toBeDefined();
+    expect(screen.getByText("Starting agent")).toBeDefined();
+  });
 
+  it("renders the error message + Retry button when ensure rejects", async () => {
+    ensureSession.mockResolvedValueOnce({
+      ok: false,
+      message: "boom",
+    });
+    render(<TerminalView session={makeSession()} />);
+    await waitFor(() => {
+      expect(screen.getByText("boom")).toBeDefined();
+    });
+    expect(screen.getByText("Agent could not start")).toBeDefined();
+    const retry = screen.getByRole("button", { name: "Retry start" });
+    expect(retry).toBeDefined();
+  });
+
+  it("falls back to the generic error copy when ensure omits a message", async () => {
     ensureSession.mockResolvedValueOnce({ ok: false });
     render(<TerminalView session={makeSession()} />);
-    await waitFor(() => expect(screen.getByText(/Could not start session/i)).toBeDefined());
+    await waitFor(() => {
+      expect(screen.getByText(/Could not start session/i)).toBeDefined();
+    });
   });
 
   // #4116: an archived or trashed session stays refused, so there is nothing to retry.
@@ -128,7 +147,6 @@ describe("TerminalView early-return states", () => {
     await waitFor(() => {
       expect(screen.getByText("first fail")).toBeDefined();
     });
-    expect(screen.getByRole("button", { name: /retry/i })).toBeDefined();
     ensureSession.mockResolvedValueOnce({ ok: false, message: "second fail" });
     // The error branch only ever renders one button.
     const retry = container.querySelector("button");
