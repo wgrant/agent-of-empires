@@ -216,7 +216,7 @@ export function connectionStatusPresentation(primary: PrimaryConnectionStatus): 
     case "agent_stopped":
       return { headline: "Agent stopped", description: "Agent worker stopped.", tone: "error", working: false };
     case "agent_failed":
-      return { headline: "Agent failed", description: "Agent session could not start.", tone: "error", working: false };
+      return { headline: "Start failed", description: "Agent could not start.", tone: "error", working: false };
     case "agent_unavailable":
       return {
         headline: "Agent unavailable",
