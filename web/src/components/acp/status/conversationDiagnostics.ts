@@ -25,7 +25,7 @@ export type SessionAction =
   | "restore"
   | "unarchive"
   | "unsnooze"
-  | "reconnect"
+  | "start_agent"
   | "retry_start"
   | "switch_agent"
   | "wait";
@@ -45,7 +45,8 @@ export type SessionIncident =
       action: "retry_start";
       category: "startup" | "compatibility";
     })
-  | (SessionIncidentBase & { kind: "stopped"; action: "reconnect" })
+  | (SessionIncidentBase & { kind: "stopped"; action: "start_agent" })
+  | (SessionIncidentBase & { kind: "unavailable"; action: "start_agent" })
   | (SessionIncidentBase & { kind: "blocked"; action: "switch_agent"; reason: "rate_limited" })
   | (SessionIncidentBase & {
       kind: "transitioning";
@@ -151,9 +152,9 @@ export function deriveSessionIncident(snapshot: ConversationDiagnosticsSnapshot)
     case "stopped":
       return {
         kind: "stopped",
-        action: "reconnect",
+        action: "start_agent",
         title: "Agent stopped",
-        detail: "Reconnect to start the agent again.",
+        detail: "Start the agent when you are ready to continue.",
       };
     case "transitioning":
       if (agent.operation === "restart" || agent.operation === "recover") {
@@ -186,6 +187,13 @@ export function deriveSessionIncident(snapshot: ConversationDiagnosticsSnapshot)
       };
     case "dormant":
       return null;
+    case "unknown":
+      return {
+        kind: "unavailable",
+        action: "start_agent",
+        title: "Agent unavailable",
+        detail: agent.detail ?? "No agent worker is running and no start is in progress.",
+      };
     default:
       return null;
   }
