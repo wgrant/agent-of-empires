@@ -8,7 +8,10 @@ import { rateLimitDetail } from "./SystemNotices";
 import { composerAvailabilityNoticeLabel } from "./StructuredView";
 import type { SessionIncident } from "./status/conversationDiagnostics";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 describe("ConversationLifecycleNotice", () => {
   it("selects one composer status notice with reconnect precedence", () => {
@@ -105,6 +108,24 @@ describe("ConversationLifecycleNotice", () => {
       expect(result.getByText(expected)).toBeDefined();
       result.unmount();
     }
+  });
+
+  it("surfaces an absent unstarted agent with one explicit start action", async () => {
+    const fetchSpy = vi.fn<typeof fetch>().mockResolvedValue(new Response("{}", { status: 202 }));
+    vi.stubGlobal("fetch", fetchSpy);
+    const incident: SessionIncident = {
+      kind: "unavailable",
+      action: "start_agent",
+      title: "Agent unavailable",
+      detail: "No worker is running and no start is in progress.",
+    };
+    const result = render(<ConversationLifecycleNotice sessionId="session-1" incident={incident} />);
+
+    expect(result.getByText("Agent unavailable")).toBeDefined();
+    fireEvent.click(result.getByRole("button", { name: "Start agent" }));
+    await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
+    expect(fetchSpy.mock.calls[0]?.[0]).toBe("/api/sessions/session-1/acp/spawn");
+    await vi.waitFor(() => expect(result.getByRole("button", { name: "Start requested" })).toBeDefined());
   });
 
   it("owns rate-limit detail and recovery actions", () => {
