@@ -24,6 +24,13 @@ describe("triage worker-stopped banners", () => {
     expect(screen.queryByTestId("acp-archived-banner-beta")).toBeNull();
   });
 
+  it("unarchives in place", async () => {
+    const onUnarchive = vi.fn().mockResolvedValue(true);
+    render(<ArchivedWorkerStoppedBanner sessionId="alpha" onUnarchive={onUnarchive} />);
+    fireEvent.click(screen.getByRole("button", { name: "Unarchive" }));
+    await waitFor(() => expect(onUnarchive).toHaveBeenCalledOnce());
+  });
+
   it.each([
     ["2099-01-01T00:00:00Z", /2099|2098/],
     // Unparseable timestamps render raw instead of "Invalid Date".
@@ -34,6 +41,15 @@ describe("triage worker-stopped banners", () => {
     expect(banner.textContent).toContain("Session snoozed");
     expect(banner.textContent).toContain("Unsnooze");
     expect(banner.textContent).toMatch(wake);
+  });
+
+  it("unsnoozes in place", async () => {
+    const onUnsnooze = vi.fn().mockResolvedValue(true);
+    render(
+      <SnoozedWorkerStoppedBanner sessionId="alpha" snoozedUntil="2099-01-01T00:00:00Z" onUnsnooze={onUnsnooze} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Unsnooze" }));
+    await waitFor(() => expect(onUnsnooze).toHaveBeenCalledOnce());
   });
 });
 

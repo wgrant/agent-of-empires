@@ -87,6 +87,8 @@ interface Props {
   trashedAt: string | null;
   /** Restore the trashed workspace; resolves false on failure. */
   onRestore?: () => Promise<boolean> | void;
+  onUnarchive?: () => Promise<boolean> | void;
+  onUnsnooze?: () => Promise<boolean> | void;
   onOpenFileRef?: (ref: FileRef) => void;
   fileRefSession?: FileRefSession | null;
   isSandboxed?: boolean;
@@ -342,6 +344,8 @@ function AcpChrome({
         rateLimitAutoResume={view.rateLimitAutoResume}
         onRecoveryPrefill={(text) => setPrimerPrefill({ id: `rate-limit-recovery-${Date.now()}`, text })}
         onRestore={view.onRestore}
+        onUnarchive={view.onUnarchive}
+        onUnsnooze={view.onUnsnooze}
         dismissError={ctx.dismissError}
       />
 

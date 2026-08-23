@@ -1787,7 +1787,7 @@ function AppContent({
     async (id: string, action: SessionStateAction) => {
       if (action === "snooze") {
         setSnoozeTargetId(id);
-        return;
+        return true;
       }
       const run: Record<Exclude<SessionStateAction, "snooze">, () => Promise<SessionResponse | null>> = {
         pin: () => setSessionPin(id, true),
@@ -1801,6 +1801,7 @@ function AppContent({
       const result = await run[action]();
       if (result) applySession(result);
       else reportError(`Failed to ${action} session`);
+      return result !== null;
     },
     [applySession],
   );
@@ -1920,6 +1921,17 @@ function AppContent({
           activeSession={activeSession ?? null}
           activeSessionId={activeSessionId}
           pendingAgentOperation={activeSessionId ? (effectivePendingAgentOperations[activeSessionId] ?? null) : null}
+          onRestore={
+            activeSession.trashed_at
+              ? () => handleRestoreSession(trashedWorkspaceRestoreIds(workspaces, activeSession.id))
+              : undefined
+          }
+          onUnarchive={
+            activeSession.archived_at ? () => handleSessionStateAction(activeSession.id, "unarchive") : undefined
+          }
+          onUnsnooze={
+            activeSession.snoozed_until ? () => handleSessionStateAction(activeSession.id, "unsnooze") : undefined
+          }
           sessions={sessions}
           webSettings={webSettings}
           selectedFilePath={selectedFilePath}
@@ -2024,6 +2036,16 @@ function AppContent({
                         onRestore={
                           activeSession.trashed_at
                             ? () => handleRestoreSession(trashedWorkspaceRestoreIds(workspaces, activeSessionId!))
+                            : undefined
+                        }
+                        onUnarchive={
+                          activeSession.archived_at
+                            ? () => handleSessionStateAction(activeSession.id, "unarchive")
+                            : undefined
+                        }
+                        onUnsnooze={
+                          activeSession.snoozed_until
+                            ? () => handleSessionStateAction(activeSession.id, "unsnooze")
                             : undefined
                         }
                         onOpenFileRef={handleOpenFileRef}
