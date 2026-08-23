@@ -137,6 +137,20 @@ describe("ACP session diagnostics", () => {
         },
       },
       {
+        name: "a running supervisor does not hide an uncleared handshake failure",
+        changes: {
+          workerState: "running",
+          sessionStatus: "Error",
+          state: { ...emptyAcpState(), startupError: "initialize failed" },
+        },
+        expected: {
+          operational: {
+            kind: "active",
+            agent: { kind: "failed", category: "startup", message: "initialize failed" },
+          },
+        },
+      },
+      {
         name: "accepted stop outranks a briefly live old worker",
         changes: {
           pendingOperation: {
