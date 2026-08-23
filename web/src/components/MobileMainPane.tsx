@@ -29,6 +29,9 @@ interface Props {
   activeSession: SessionResponse | null;
   activeSessionId: string | null;
   pendingAgentOperation: PendingAgentOperation | null;
+  onRestore?: () => Promise<boolean> | void;
+  onUnarchive?: () => Promise<boolean> | void;
+  onUnsnooze?: () => Promise<boolean> | void;
   sessions: SessionResponse[];
   webSettings: { persistentTerminals: boolean; maxPersistentTerminals: number };
   selectedFilePath: string | null;
@@ -72,6 +75,9 @@ export function MobileMainPane({
   activeSession,
   activeSessionId,
   pendingAgentOperation,
+  onRestore,
+  onUnarchive,
+  onUnsnooze,
   sessions,
   webSettings,
   selectedFilePath,
@@ -144,6 +150,9 @@ export function MobileMainPane({
                 archivedAt={activeSession.archived_at ?? null}
                 snoozedUntil={activeSession.snoozed_until ?? null}
                 trashedAt={activeSession.trashed_at ?? null}
+                onRestore={onRestore}
+                onUnarchive={onUnarchive}
+                onUnsnooze={onUnsnooze}
                 onOpenFileRef={onOpenFileRef}
                 fileRefSession={activeSession}
                 onOpenAgentsPane={onOpenAgentsPane}
