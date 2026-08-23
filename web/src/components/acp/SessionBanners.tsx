@@ -32,6 +32,8 @@ export function SessionBanners({
   rateLimitAutoResume,
   onRecoveryPrefill,
   onRestore,
+  onUnarchive,
+  onUnsnooze,
   dismissError,
 }: {
   sessionId: string;
@@ -49,6 +51,8 @@ export function SessionBanners({
   rateLimitAutoResume?: boolean;
   onRecoveryPrefill: (text: string) => void;
   onRestore?: () => Promise<boolean> | void;
+  onUnarchive?: () => Promise<boolean> | void;
+  onUnsnooze?: () => Promise<boolean> | void;
   dismissError: () => void;
 }) {
   const diagnostics = deriveSessionDiagnostics({
@@ -80,6 +84,8 @@ export function SessionBanners({
             sessionId={sessionId}
             incident={incident}
             onRestore={onRestore}
+            onUnarchive={onUnarchive}
+            onUnsnooze={onUnsnooze}
             rateLimit={state.rateLimit}
             rateLimitAutoResume={rateLimitAutoResume}
             rateLimitRetriesExhausted={state.rateLimitRetriesExhausted}
@@ -107,6 +113,8 @@ export function ConversationLifecycleNotice({
   sessionId,
   incident,
   onRestore,
+  onUnarchive,
+  onUnsnooze,
   rateLimit = null,
   rateLimitAutoResume,
   rateLimitRetriesExhausted = false,
@@ -118,6 +126,8 @@ export function ConversationLifecycleNotice({
   sessionId: string;
   incident: SessionIncident | null;
   onRestore?: () => Promise<boolean> | void;
+  onUnarchive?: () => Promise<boolean> | void;
+  onUnsnooze?: () => Promise<boolean> | void;
   rateLimit?: AcpState["rateLimit"];
   rateLimitAutoResume?: boolean;
   rateLimitRetriesExhausted?: boolean;
@@ -139,9 +149,13 @@ export function ConversationLifecycleNotice({
     return <WorkerRestartingBanner title={incident.title} message={incident.detail} />;
   }
   if (incident.kind === "trashed") return <TrashedWorkerStoppedBanner sessionId={sessionId} onRestore={onRestore} />;
-  if (incident.kind === "archived") return <ArchivedWorkerStoppedBanner sessionId={sessionId} />;
+  if (incident.kind === "archived") {
+    return <ArchivedWorkerStoppedBanner sessionId={sessionId} onUnarchive={onUnarchive} />;
+  }
   if (incident.kind === "snoozed") {
-    return <SnoozedWorkerStoppedBanner sessionId={sessionId} snoozedUntil={incident.snoozedUntil} />;
+    return (
+      <SnoozedWorkerStoppedBanner sessionId={sessionId} snoozedUntil={incident.snoozedUntil} onUnsnooze={onUnsnooze} />
+    );
   }
   if (incident.kind === "stopped" || incident.kind === "unavailable") {
     return (
@@ -386,32 +400,75 @@ export function TrashedWorkerStoppedBanner({
   );
 }
 
-export function ArchivedWorkerStoppedBanner({ sessionId }: { sessionId: string }) {
+export function ArchivedWorkerStoppedBanner({
+  sessionId,
+  onUnarchive,
+}: {
+  sessionId: string;
+  onUnarchive?: () => Promise<boolean> | void;
+}) {
+  const action = useSessionRecoveryAction("Unarchive", "Unarchiving…", "Could not unarchive session.", onUnarchive);
   return (
     <LifecycleIncidentNotice
       title="Session archived"
-      detail="This session is parked. The structured view worker was shut down and the reconciler will not respawn it. Unarchive from the sidebar (right-click the row, then Unarchive) to bring it back."
+      detail="This session is parked. Its agent will remain stopped until you Unarchive it."
       tone="warning"
       testId={`acp-archived-banner-${sessionId}`}
+      primaryAction={action}
     />
   );
 }
 
-export function SnoozedWorkerStoppedBanner({ sessionId, snoozedUntil }: { sessionId: string; snoozedUntil: string }) {
+export function SnoozedWorkerStoppedBanner({
+  sessionId,
+  snoozedUntil,
+  onUnsnooze,
+}: {
+  sessionId: string;
+  snoozedUntil: string;
+  onUnsnooze?: () => Promise<boolean> | void;
+}) {
   const target = new Date(snoozedUntil);
   const wallClock = Number.isFinite(target.getTime()) ? target.toLocaleString() : snoozedUntil;
+  const action = useSessionRecoveryAction("Unsnooze", "Waking…", "Could not wake session.", onUnsnooze);
   return (
     <LifecycleIncidentNotice
       title="Session snoozed"
       detail={
         <>
           The structured view worker was shut down until <span className="font-mono">{wallClock}</span>. The reconciler
-          will respawn it automatically once the snooze expires, or you can Unsnooze from the sidebar (right-click the
-          row) to wake it sooner.
+          will respawn it automatically once the snooze expires. You can also Unsnooze it now.
         </>
       }
       tone="warning"
       testId={`acp-snoozed-banner-${sessionId}`}
+      primaryAction={action}
     />
   );
+}
+
+function useSessionRecoveryAction(
+  label: string,
+  pendingLabel: string,
+  failureLabel: string,
+  invoke?: () => Promise<boolean> | void,
+): LifecycleNoticeAction | undefined {
+  const [phase, setPhase] = useState<"idle" | "pending" | "failed">("idle");
+  if (!invoke) return undefined;
+  return {
+    label,
+    pendingLabel,
+    phase,
+    error: phase === "failed" ? failureLabel : null,
+    onInvoke: () => {
+      if (phase === "pending") return;
+      setPhase("pending");
+      void Promise.resolve(invoke()).then(
+        (ok) => {
+          if (ok === false) setPhase("failed");
+        },
+        () => setPhase("failed"),
+      );
+    },
+  };
 }
