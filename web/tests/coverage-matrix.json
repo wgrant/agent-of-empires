@@ -2015,12 +2015,15 @@
         "src/components/acp/status/connectionStatus.test.ts",
         "src/components/acp/status/sessionDiagnostics.test.ts",
         "src/components/acp/status/conversationDiagnostics.test.ts",
+        "src/components/acp/status/LifecycleIncidentNotice.test.tsx",
+        "src/components/acp/ConversationLifecycleNotice.test.tsx",
         "src/lib/connectionDiagnosticsContext.test.tsx",
         "src/components/connection/ConnectionStatusView.test.tsx"
       ],
       "components": [
         "web/src/hooks/useConnectionIncidentVisibility.ts",
         "web/src/components/acp/status/connectionStatus.ts",
+        "web/src/components/acp/status/LifecycleIncidentNotice.tsx",
         "web/src/components/connection/ConnectionStatusView.tsx",
         "web/src/components/acp/StructuredView.tsx",
         "web/src/components/TopBar.tsx",
