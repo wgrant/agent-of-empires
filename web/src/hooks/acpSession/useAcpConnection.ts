@@ -43,7 +43,7 @@ type ServerMessage =
   | { kind: "lagged"; skipped?: number }
   | { kind: "heartbeat" }
   | { kind: "reduced_state"; state?: ReducedState; unchanged?: string[] }
-  | { kind: "transcript_snapshot"; rows?: TranscriptRow[] }
+  | { kind: "transcript_snapshot"; rows?: TranscriptRow[]; removed?: string[] }
   | { kind: "transcript_delta"; delta?: TranscriptDelta };
 
 function closeQuietly(ws: WebSocket): void {
@@ -298,8 +298,9 @@ export function useAcpConnection(
         }
         case "transcript_snapshot": {
           const rows = toActivityRows((data as { rows?: TranscriptRow[] }).rows ?? [], sessionId);
+          const removed = (data as { removed?: string[] }).removed ?? [];
           lastActivityRef.current = Date.now();
-          dispatch({ kind: "transcript_snapshot", rows });
+          dispatch({ kind: "transcript_snapshot", rows, removed });
           return;
         }
         case "transcript_delta": {
