@@ -95,11 +95,9 @@ export function AssistantReasoning({ text }: { text: string }) {
   );
 }
 
-function AssistantText({ text }: { text: string }) {
-  // Only the live streaming message smooth-reveals; history renders at once.
-  const isRunning = useAuiState((s) => s.message.status?.type === "running");
+export function AssistantText({ text, status }: { text: string; status?: { type?: string } }) {
   if (!text) return null;
-  return <Markdown text={text} smooth={isRunning} />;
+  return <Markdown text={text} smooth={status?.type === "running"} />;
 }
 
 /** assistant-ui tool-call part; AcpRuntime puts `{ content, endedAt?, stopped? }` in `result`. */

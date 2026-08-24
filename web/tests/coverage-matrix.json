@@ -2650,6 +2650,13 @@
       ]
     },
     {
+      "id": "acp.streaming-tool-order",
+      "kind": "vitest",
+      "risk": "high",
+      "specs": ["src/components/acp/StructuredView.reasoning.test.tsx"],
+      "components": ["web/src/components/acp/StructuredView.tsx", "web/src/components/acp/Markdown.tsx"]
+    },
+    {
       "id": "acp.tool-density",
       "kind": "vitest",
       "risk": "medium",
