@@ -45,6 +45,8 @@ function reducedState(over: Partial<ReducedState> = {}): ReducedState {
     available_commands: [],
     available_modes: [],
     current_mode_id: null,
+    config_options: [],
+    turn_active: false,
     cancelling: false,
     compacting: false,
     ...over,
@@ -108,22 +110,56 @@ describe("applyReducedState (Tier 1.2)", () => {
     expect(next.compacting).toBe(true);
   });
 
-  it("keeps omitted cold fields at their current value", () => {
+  it("replaces present cold fields and keeps omitted ones", () => {
+    const opencodeModel = {
+      id: "model",
+      name: "Model",
+      category: "model" as const,
+      current_value: "zai-coding-plan/glm-5.3",
+      options: [{ value: "zai-coding-plan/glm-5.3", name: "GLM-5.3" }],
+    };
+    const claudeModel = {
+      id: "model",
+      name: "Model",
+      category: "model" as const,
+      current_value: "sonnet",
+      options: [{ value: "sonnet", name: "Sonnet" }],
+    };
     const seeded = applyReducedState(
       emptyAcpState(),
       reducedState({
         available_commands: [{ name: "review", description: "Review", accepts_input: false }],
         available_modes: [{ id: "plan", name: "Plan" }],
+        config_options: [opencodeModel],
       }),
     );
     expect(seeded.availableCommands).toHaveLength(1);
+    expect(seeded.configOptions[0]?.current_value).toBe("zai-coding-plan/glm-5.3");
 
-    const omitted = applyReducedState(seeded, reducedState(), ["available_commands", "available_modes"]);
+    const switched = applyReducedState(
+      seeded,
+      reducedState({
+        agent: "claude",
+        available_commands: seeded.availableCommands,
+        available_modes: seeded.availableModes,
+        config_options: [claudeModel],
+      }),
+    );
+    expect(switched.agent).toBe("claude");
+    expect(switched.configOptions).toEqual([claudeModel]);
+
+    const omitted = applyReducedState(switched, reducedState(), [
+      "available_commands",
+      "available_modes",
+      "config_options",
+    ]);
     expect(omitted.availableCommands).toHaveLength(1);
     expect(omitted.availableModes).toHaveLength(1);
+    expect(omitted.configOptions).toEqual([claudeModel]);
 
-    const cleared = applyReducedState(seeded, reducedState());
+    const cleared = applyReducedState(switched, reducedState());
     expect(cleared.availableCommands).toHaveLength(0);
+    expect(cleared.configOptions).toHaveLength(0);
   });
 
   it("leaves lastSeq alone so the raw-frame dedupe still governs replay", () => {
