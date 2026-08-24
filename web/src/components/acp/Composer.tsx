@@ -332,7 +332,9 @@ export function Composer(props: Props) {
                     : "Queue a follow-up… (sent when current turn ends)"
                   : availability.kind === "blocked"
                     ? "Sending is unavailable; your draft will be preserved"
-                    : "Send a message…  Type @ for files, / for commands"
+                    : availability.kind === "wake_agent"
+                      ? "Send a message… (wakes the dormant agent)"
+                      : "Send a message…  Type @ for files, / for commands"
               }
               onInput={(e) => fitTextarea(e.currentTarget)}
               onFocus={() => {
