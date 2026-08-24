@@ -507,6 +507,7 @@ export interface ReducedState {
   available_modes: Array<{ id: string; name: string; description?: string | null }>;
   current_mode_id: string | null;
   auth_status?: AuthStatus | null;
+  config_options: ConfigOptionDescriptor[];
   turn_active: boolean;
   cancelling: boolean;
   compacting: boolean;
@@ -1315,6 +1316,7 @@ export function applyReducedState(state: AcpState, reduced: ReducedState, unchan
     availableModes: holds("available_modes") ? state.availableModes : reduced.available_modes,
     currentModeId: reduced.current_mode_id,
     authStatus: reduced.auth_status ?? null,
+    configOptions: holds("config_options") ? state.configOptions : reduced.config_options,
     // A false frame cannot suppress a prompt whose POST is still unacknowledged.
     serverTurnActive: reduced.turn_active,
     turnActive: deriveTurnActive({
