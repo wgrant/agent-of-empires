@@ -36,6 +36,7 @@ export type PrimaryConnectionStatus =
   | "agent_starting"
   | "agent_stopping"
   | "agent_restarting"
+  | "agent_dormant"
   | "agent_stopped"
   | "agent_failed"
   | "agent_unavailable"
@@ -45,7 +46,7 @@ export type PrimaryConnectionStatus =
   | "updates_missed"
   | "updates_unavailable";
 
-export type ConnectionStatusTone = "neutral" | "warning" | "error";
+export type ConnectionStatusTone = "neutral" | "dormant" | "warning" | "error";
 
 export interface ConnectionStatusPresentation {
   headline: string;
@@ -213,6 +214,13 @@ export function connectionStatusPresentation(primary: PrimaryConnectionStatus): 
         tone: "warning",
         working: true,
       };
+    case "agent_dormant":
+      return {
+        headline: "Dormant",
+        description: "The agent stopped after being idle.",
+        tone: "dormant",
+        working: false,
+      };
     case "agent_stopped":
       return { headline: "Agent stopped", description: "Agent worker stopped.", tone: "error", working: false };
     case "agent_failed":
@@ -290,6 +298,7 @@ function primaryStatus({
   if (session === "starting") return "agent_starting";
   if (session === "stopping") return "agent_stopping";
   if (session === "restarting") return "agent_restarting";
+  if (session === "dormant") return "agent_dormant";
   if (continuity === "unavailable") return "updates_unavailable";
   if (continuity === "missed") return "updates_missed";
   if (continuity === "delayed") return "updates_delayed";
@@ -450,7 +459,9 @@ export function deriveConnectionDiagnostics(input: ConnectionStatusInput): Conne
     retriesExhausted,
     retryCount: input.retryCount,
     maxRetries: input.maxRetries,
-    hasIncident: primary !== "connected",
+    // Dormancy is useful selected-session status, but it is an expected,
+    // recoverable parked state rather than a connection incident.
+    hasIncident: primary !== "connected" && primary !== "agent_dormant",
     sections: [
       { id: "device", label: "Device", observations: [{ label: "Dashboard", state: "ready", value: "Active" }] },
       {

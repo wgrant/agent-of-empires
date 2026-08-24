@@ -113,6 +113,20 @@ describe("ConnectionRoute", () => {
     expect(button.querySelector(".hidden.xl\\:inline")?.textContent).toBe("Reconnecting · 1/7");
   });
 
+  it("summarizes an expected dormant agent without presenting a connection incident", () => {
+    const diagnostics = deriveConnectionDiagnostics({
+      ...base,
+      agentRuntime: { kind: "dormant", reason: "idle_auto_stop" },
+    });
+    const { getByRole } = render(<GlobalConnectionStatusButton snapshot={snapshot(diagnostics)} />);
+    const button = getByRole("button", { name: "Show connection status" });
+
+    expect(button.className).toContain("text-status-dormant");
+    expect(button.querySelector(".bg-status-dormant")).not.toBeNull();
+    expect(button.querySelector(".hidden.xl\\:inline")?.textContent).toBe("Dormant");
+    expect(diagnostics.hasIncident).toBe(false);
+  });
+
   it("dismisses expanded connection details when pressing outside the control", () => {
     const diagnostics = deriveConnectionDiagnostics(base);
     const { getByRole } = render(<GlobalConnectionStatusButton snapshot={snapshot(diagnostics)} />);
