@@ -77,7 +77,7 @@ describe("connection status model", () => {
       ],
       [
         { agentRuntime: { kind: "dormant", reason: "idle_auto_stop" } as const },
-        "connected",
+        "agent_dormant",
         "connected",
         "dormant",
         "current",
@@ -144,6 +144,14 @@ describe("connection status model", () => {
     expect(connectionStatusPresentation(stopped.primary)).toMatchObject({ headline: "Agent stopped", tone: "error" });
     expect(connectionStatusCompactLabel(stopped)).toBe("Agent stopped");
 
+    const dormant = deriveConnectionDiagnostics({
+      ...base,
+      agentRuntime: { kind: "dormant", reason: "idle_auto_stop" },
+    });
+    expect(connectionStatusPresentation(dormant.primary)).toMatchObject({ headline: "Dormant", tone: "dormant" });
+    expect(connectionStatusCompactLabel(dormant)).toBe("Dormant");
+    expect(dormant.hasIncident).toBe(false);
+
     const unavailable = deriveConnectionDiagnostics({ ...base, agentRuntime: { kind: "unknown" } });
     expect(connectionStatusPresentation(unavailable.primary)).toMatchObject({
       headline: "Agent unavailable",
@@ -171,6 +179,9 @@ describe("connection status model", () => {
 
   it("only creates an incident for a non-connected primary state", () => {
     expect(deriveConnectionIncident(base)).toBeNull();
+    expect(
+      deriveConnectionIncident({ ...base, agentRuntime: { kind: "dormant", reason: "idle_auto_stop" } }),
+    ).toBeNull();
     expect(deriveConnectionIncident({ ...base, lagged: true })?.primary).toBe("updates_missed");
   });
 
