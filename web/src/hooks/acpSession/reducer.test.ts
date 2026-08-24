@@ -154,6 +154,28 @@ describe("in-flight prompt settlement", () => {
   });
 });
 
+describe("transcript reconnect reconciliation", () => {
+  it("updates and removes rows changed after the reconnect cursor", () => {
+    const existing: ActivityRow[] = [
+      { id: "msg-4", kind: "message", text: "hello", at: "2026-01-01T00:00:00Z" },
+      { id: "start-question", kind: "tool_start", text: "question", at: "2026-01-01T00:00:01Z" },
+    ];
+    const patched: ActivityRow = {
+      id: "msg-4",
+      kind: "message",
+      text: "hello world",
+      at: "2026-01-01T00:00:00Z",
+    };
+
+    const next = reducer(
+      { ...empty(), activity: existing },
+      { kind: "transcript_snapshot", rows: [patched], removed: ["start-question"] },
+    );
+
+    expect(next.activity).toEqual([patched]);
+  });
+});
+
 describe("prompt queue", () => {
   const serverRow = (id: string, seq: number, text: string, atts?: ServerQueuedPrompt["attachments"]) => ({
     id,

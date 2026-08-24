@@ -319,9 +319,9 @@ async fn drain_replay_into_socket(
             }
         };
     let mut sent = 0usize;
-    let to_forward = fold_connect_history(entries, since, folds);
+    let replay = fold_connect_history(entries, since, folds);
     let snapshot_seq = folds.last_applied_seq.max(since);
-    for (seq, event) in to_forward {
+    for (seq, event) in replay.to_forward {
         if !forward_frames {
             continue;
         }
@@ -345,8 +345,14 @@ async fn drain_replay_into_socket(
     }
     // Connect snapshot.
     let _ = send_reduced_state(socket, session_id, snapshot_seq, folds.reduced, folds.cold).await;
-    // Transcript connect snapshot.
-    let _ = send_transcript_snapshot(socket, session_id, snapshot_seq, folds.transcript).await;
+    let _ = send_transcript_snapshot(
+        socket,
+        session_id,
+        snapshot_seq,
+        &replay.transcript_rows,
+        &replay.transcript_removed,
+    )
+    .await;
     sent
 }
 
@@ -361,8 +367,6 @@ const COLD_STATE_FIELDS: [&str; 5] = [
     "background_agents",
 ];
 
-/// Fold a session's stored history into the connection's projections and return the entries
-/// the client still needs as raw frames.
 async fn seed_identity(state: &AppState, session_id: &str) -> (AgentName, Option<String>) {
     let instances = state.instances.read().await;
     instances
@@ -377,22 +381,58 @@ async fn seed_identity(state: &AppState, session_id: &str) -> (AgentName, Option
         .unwrap_or_else(|| (AgentName(String::new()), None))
 }
 
+struct ConnectReplay {
+    to_forward: Vec<(u64, Event)>,
+    transcript_rows: Vec<crate::acp::transcript::TranscriptRow>,
+    transcript_removed: Vec<String>,
+}
+
 fn fold_connect_history(
     entries: Vec<(u64, Event)>,
     since: u64,
     folds: &mut ConnectionFolds<'_>,
-) -> Vec<(u64, Event)> {
+) -> ConnectReplay {
     let mut to_forward = Vec::new();
+    let mut changed_ids = std::collections::HashSet::new();
+    let mut removed_ids = std::collections::HashSet::new();
     for (seq, event) in entries {
         let _ = folds.reduced.apply_event(event.clone());
         folds.last_applied_seq = seq;
-        if seq <= since {
-            continue;
+        let deltas = folds.transcript.apply_event(seq, &event);
+        if seq > since {
+            for delta in deltas {
+                match delta {
+                    crate::acp::transcript::TranscriptDelta::Append(row) => {
+                        removed_ids.remove(&row.id);
+                        changed_ids.insert(row.id);
+                    }
+                    crate::acp::transcript::TranscriptDelta::Patch { id, .. } => {
+                        removed_ids.remove(&id);
+                        changed_ids.insert(id);
+                    }
+                    crate::acp::transcript::TranscriptDelta::Remove(id) => {
+                        changed_ids.remove(&id);
+                        removed_ids.insert(id);
+                    }
+                }
+            }
+            to_forward.push((seq, event));
         }
-        folds.transcript.apply_event(seq, &event);
-        to_forward.push((seq, event));
     }
-    to_forward
+    let transcript_rows = folds
+        .transcript
+        .rows()
+        .iter()
+        .filter(|row| changed_ids.contains(&row.id))
+        .cloned()
+        .collect();
+    let mut transcript_removed: Vec<_> = removed_ids.into_iter().collect();
+    transcript_removed.sort();
+    ConnectReplay {
+        to_forward,
+        transcript_rows,
+        transcript_removed,
+    }
 }
 
 /// The three folds a connection maintains over the event stream.
@@ -471,19 +511,19 @@ async fn send_reduced_state(
     }
 }
 
-/// Serialize and send the full transcript row list as a `kind`-tagged `transcript_snapshot`
-/// frame on connect.
 async fn send_transcript_snapshot(
     socket: &mut WebSocket,
     session_id: &str,
     seq: u64,
-    transcript: &TranscriptModel,
+    rows: &[crate::acp::transcript::TranscriptRow],
+    removed: &[String],
 ) -> bool {
     let frame = serde_json::json!({
         "kind": "transcript_snapshot",
         "session_id": session_id,
         "seq": seq,
-        "rows": transcript.rows(),
+        "rows": rows,
+        "removed": removed,
     });
     match serde_json::to_string(&frame) {
         Ok(payload) => socket.send(Message::Text(payload.into())).await.is_ok(),
@@ -787,13 +827,14 @@ mod tests {
             cold: &mut cold,
             last_applied_seq: 0,
         };
-        let forwarded = fold_connect_history(history.clone(), 4, &mut folds);
+        let replay = fold_connect_history(history.clone(), 4, &mut folds);
 
-        assert!(forwarded.is_empty(), "nothing new to forward");
+        assert!(replay.to_forward.is_empty(), "nothing new to forward");
+        assert!(replay.transcript_rows.is_empty());
         assert_eq!(folds.last_applied_seq, 4);
         assert!(
-            folds.transcript.rows().is_empty(),
-            "transcript stays scoped to since; the client holds those rows"
+            !folds.transcript.rows().is_empty(),
+            "transcript retains context for streamed suffixes"
         );
         // The control state is whole-session regardless of the cursor.
         let reduced = &folds.reduced;
@@ -821,11 +862,42 @@ mod tests {
             cold: &mut cold_cache,
             last_applied_seq: 0,
         };
-        let forwarded = fold_connect_history(history, 0, &mut cold_folds);
-        assert_eq!(forwarded.len(), 4);
+        let replay = fold_connect_history(history, 0, &mut cold_folds);
+        assert_eq!(replay.to_forward.len(), 4);
+        assert_eq!(replay.transcript_rows.len(), 1);
         assert!(!cold_folds.transcript.rows().is_empty());
         assert_eq!(cold_folds.reduced.available_commands.len(), 1);
         assert_eq!(cold_folds.reduced.pending_approvals.len(), 1);
+
+        let split_history = vec![
+            (
+                4,
+                Event::AgentMessageChunk {
+                    text: "hello".into(),
+                },
+            ),
+            (
+                5,
+                Event::AgentMessageChunk {
+                    text: " world".into(),
+                },
+            ),
+        ];
+        let mut split_state =
+            AcpState::new(AcpSessionId("s-1".into()), AgentName("claude".into()), None);
+        let mut split_transcript = TranscriptModel::new();
+        let mut split_cache = ColdFieldCache::default();
+        let mut split_folds = ConnectionFolds {
+            reduced: &mut split_state,
+            transcript: &mut split_transcript,
+            cold: &mut split_cache,
+            last_applied_seq: 0,
+        };
+        let replay = fold_connect_history(split_history, 4, &mut split_folds);
+        assert_eq!(replay.to_forward.len(), 1);
+        assert_eq!(replay.transcript_rows.len(), 1);
+        assert_eq!(replay.transcript_rows[0].id, "msg-4");
+        assert_eq!(replay.transcript_rows[0].text, "hello world");
     }
 
     /// Prompt dispatch (Tier 3) reads the daemon's own control state through

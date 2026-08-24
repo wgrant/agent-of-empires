@@ -33,7 +33,7 @@ export type Action =
   | { kind: "catchup"; frames: AcpFrame[]; rows: ActivityRow[]; reset: boolean }
   | { kind: "prepend"; rows: ActivityRow[]; oldestSeq: number }
   | { kind: "handshake"; frames: AcpFrame[] }
-  | { kind: "transcript_snapshot"; rows: ActivityRow[] }
+  | { kind: "transcript_snapshot"; rows: ActivityRow[]; removed: string[] }
   | { kind: "transcript_append"; row: ActivityRow }
   | { kind: "transcript_patch"; row: ActivityRow }
   | { kind: "transcript_remove"; id: string }
@@ -165,9 +165,12 @@ export function reducer(state: AcpState, action: Action): AcpState {
       next.activity = mergePrependedActivity(action.rows, state.activity);
       return next;
     }
-    case "transcript_snapshot":
-      if (action.rows.length === 0) return state;
-      return withServerRows(state, mergeServerRows(state.activity, action.rows));
+    case "transcript_snapshot": {
+      if (action.rows.length === 0 && action.removed.length === 0) return state;
+      const retained =
+        action.removed.length === 0 ? state.activity : state.activity.filter((row) => !action.removed.includes(row.id));
+      return withServerRows(state, mergeServerRows(retained, action.rows));
+    }
     case "transcript_append":
       return withServerRows(state, mergeServerRows(state.activity, [action.row]));
     case "transcript_patch":
