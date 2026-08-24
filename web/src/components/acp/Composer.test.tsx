@@ -237,11 +237,24 @@ describe("toolbar and send", () => {
     expect(textarea().value).toBe("keep this draft");
   });
 
-  it("labels resumable session submission clearly", () => {
-    const { textarea } = mount({ availability: { kind: "resume_then_send", reason: "archived" } });
-    fireEvent.change(textarea(), { target: { value: "resume with this" } });
-    const button = screen.getByRole("button", { name: "Send message and resume session" });
-    expect(button.getAttribute("title")).toBe("Send and resume session, Enter");
+  it.each([
+    [
+      { kind: "resume_then_send", reason: "archived" } as const,
+      "Send message and resume session",
+      "Send and resume session, Enter",
+      "Send a message…  Type @ for files, / for commands",
+    ],
+    [
+      { kind: "wake_agent" } as const,
+      "Send message and wake agent",
+      "Send and wake agent, Enter",
+      "Send a message… (wakes the dormant agent)",
+    ],
+  ])("labels %s submission clearly", (availability, buttonName, title, placeholder) => {
+    const { textarea } = mount({ availability });
+    fireEvent.change(textarea(), { target: { value: "continue with this" } });
+    expect(screen.getByRole("button", { name: buttonName }).getAttribute("title")).toBe(title);
+    expect(textarea().getAttribute("placeholder")).toBe(placeholder);
   });
 
   it("applies each plugin draft operation id once", async () => {

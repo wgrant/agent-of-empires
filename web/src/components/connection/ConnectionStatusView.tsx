@@ -223,9 +223,11 @@ export function GlobalConnectionStatusButton({
       ? "text-text-muted"
       : presentation.tone === "error"
         ? "text-status-error"
-        : presentation.tone === "warning"
-          ? "text-status-warning"
-          : "text-text-muted";
+        : presentation.tone === "dormant"
+          ? "text-status-dormant"
+          : presentation.tone === "warning"
+            ? "text-status-warning"
+            : "text-text-muted";
   useEffect(() => {
     if (!expanded) return;
     const onDocumentPointerDown = (event: PointerEvent) => {
@@ -261,9 +263,11 @@ export function GlobalConnectionStatusButton({
                   ? "bg-text-muted"
                   : presentation.tone === "error"
                     ? "bg-status-error"
-                    : presentation.tone === "warning"
-                      ? "bg-status-warning"
-                      : "bg-text-muted"
+                    : presentation.tone === "dormant"
+                      ? "bg-status-dormant"
+                      : presentation.tone === "warning"
+                        ? "bg-status-warning"
+                        : "bg-text-muted"
               }`}
             />
           )}
