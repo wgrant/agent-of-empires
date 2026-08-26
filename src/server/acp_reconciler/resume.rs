@@ -122,7 +122,11 @@ async fn admit(
 ) -> Result<crate::acp::supervisor::ResumeReservation, ResumeOutcome> {
     match state.acp_supervisor.begin_resume(id, kind).await {
         Ok(ResumeReservationOutcome::Reserved(r)) => Ok(r),
-        Ok(ResumeReservationOutcome::AlreadyPresent) => Err(ResumeOutcome::SpawnFinished),
+        Ok(ResumeReservationOutcome::AlreadyPresent) => Err(if kind == ResumeKind::Attach {
+            ResumeOutcome::Attached
+        } else {
+            ResumeOutcome::SpawnFinished
+        }),
         Err(e @ SupervisorError::CapacityFull { .. }) => Err(ResumeOutcome::CapacityDeferred {
             message: e.to_string(),
         }),
@@ -211,6 +215,10 @@ pub(super) async fn resume_one(state: Arc<AppState>, target: ResumeTarget) -> Re
                     }
                     Ok(Err(SupervisorError::SpawnCancelled(_))) => {
                         return ResumeOutcome::SpawnFinished
+                    }
+                    Ok(Err(SupervisorError::AlreadyRunning(_))) => {
+                        tracing::debug!(target: "acp.supervisor", session = %id, "another resume path owns the worker");
+                        return ResumeOutcome::Attached;
                     }
                     Ok(Err(e)) => {
                         tracing::warn!(target: "acp.supervisor", session = %id, "attach failed; terminating the worker and falling back to fresh spawn: {e}");
@@ -656,6 +664,42 @@ mod tests {
             crate::daemon::AcpWorkerState::Absent
         );
         assert!(state.acp_event_store.replay_from(id, 0).is_empty());
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn concurrent_resume_keeps_the_winning_workers_registry_record() {
+        use crate::process::worker_registry::WorkerRecord;
+
+        let id = "s-concurrent-resume";
+        let (_home, state, project) = test_state(id);
+        state.acp_supervisor.test_insert_worker(id).await;
+
+        let socket_path = worker_registry::socket_path_for(id).unwrap();
+        worker_registry::touch_live_socket(&socket_path);
+        let record = WorkerRecord::new(
+            id.to_string(),
+            std::process::id(),
+            socket_path,
+            "codex-acp".to_string(),
+            "codex".to_string(),
+            project.path().to_path_buf(),
+            None,
+            Vec::new(),
+            Vec::new(),
+            None,
+            Some("default".to_string()),
+        );
+        worker_registry::save(&record).unwrap();
+
+        let target = ResumeTarget::from_instance(&structured_instance(
+            id,
+            &project.path().to_string_lossy(),
+        ));
+        let outcome = resume_one(state, target).await;
+
+        assert!(matches!(outcome, ResumeOutcome::Attached));
+        assert!(worker_registry::load(id).unwrap().is_some());
     }
 
     #[tokio::test]
