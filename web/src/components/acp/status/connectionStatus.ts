@@ -378,7 +378,15 @@ export function deriveConnectionDiagnostics(input: ConnectionStatusInput): Conne
         : input.liveUpdatesStale
           ? "delayed"
           : "current";
-  const primary = primaryStatus({ route, session, continuity });
+  // Dormancy is current server-owned lifecycle state from the sessions API,
+  // not an inference from the conversation socket. When AoE is known
+  // reachable, an initial socket dial must not mask that stable resting state
+  // with a permanent yellow "Connecting" spinner. Keep reconnect and outage
+  // routes authoritative; those describe a connection that was actually lost.
+  const primary =
+    route === "connecting" && input.serverReachability === "reachable" && session === "dormant"
+      ? "agent_dormant"
+      : primaryStatus({ route, session, continuity });
   // The dashboard's shared reachability probe survives a session switch. A
   // new conversation socket may still be connecting while the established
   // device-to-AoE route remains known good; its own progress lives in the
