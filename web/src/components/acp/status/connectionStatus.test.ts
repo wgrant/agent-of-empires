@@ -82,6 +82,18 @@ describe("connection status model", () => {
         "dormant",
         "current",
       ],
+      [
+        {
+          status: "connecting" as const,
+          hasEverOpened: false,
+          serverReachability: "reachable" as const,
+          agentRuntime: { kind: "dormant", reason: "idle_auto_stop" } as const,
+        },
+        "agent_dormant",
+        "connecting",
+        "dormant",
+        "unavailable",
+      ],
       [{ lagged: true }, "updates_missed", "connected", "ready", "missed"],
       [{ liveUpdatesStale: true }, "updates_delayed", "connected", "ready", "delayed"],
       [{ serverReachability: "unreachable" as const }, "updates_unavailable", "connected", "ready", "unavailable"],
