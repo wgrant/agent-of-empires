@@ -37,10 +37,10 @@ describe("deriveConversationNextStep", () => {
         { kind: "catching_up" },
       ],
       [
-        "reconnect suppresses ready work",
+        "reconnect reports catch-up instead of stale work",
         "reconnect",
         online({ kind: "running", activity: "thinking", tool: null }),
-        null,
+        { kind: "catching_up" },
       ],
       ["recovery suppresses stale work", "idle", restarting, null],
       ["approval card stands alone", "idle", online({ kind: "awaiting_user", request: "approval" }), null],
