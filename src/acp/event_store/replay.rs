@@ -39,6 +39,46 @@ impl EventStore {
         self.replay_page(session_id, since, None).events
     }
 
+    /// Consecutive streamed text immediately before a page whose first event
+    /// continues the same run. This preserves the run's deterministic row id.
+    pub fn replay_stream_context_before(
+        &self,
+        session_id: &str,
+        before: u64,
+        first_event: &Event,
+    ) -> Vec<(u64, Event)> {
+        let Some(wanted) = stream_kind(first_event) else {
+            return Vec::new();
+        };
+        let rows = events::scan(
+            &self.conn(),
+            &self.schema,
+            session_id,
+            SeqBound::Before(before),
+            Order::Desc,
+            None,
+        );
+        let mut context = Vec::new();
+        for (seq, json) in rows {
+            let Ok(event) = serde_json::from_str::<Event>(&json) else {
+                break;
+            };
+            if stream_kind(&event) != Some(wanted) {
+                break;
+            }
+            let snapshot = matches!(
+                event,
+                Event::AgentMessageSnapshot { .. } | Event::AgentThoughtSnapshot { .. }
+            );
+            context.push((seq, event));
+            if snapshot {
+                break;
+            }
+        }
+        context.reverse();
+        context
+    }
+
     /// Up to `limit` events with `seq > since`, oldest first.
     pub fn replay_page(&self, session_id: &str, since: u64, limit: Option<usize>) -> ReplayPage {
         let page = self.page(session_id, SeqBound::After(since), Order::Asc, limit);
@@ -114,6 +154,24 @@ impl EventStore {
             highest_seq,
             lowest_seq,
         }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum StreamKind {
+    Message,
+    Thought,
+}
+
+fn stream_kind(event: &Event) -> Option<StreamKind> {
+    match event {
+        Event::AgentMessageChunk { .. } | Event::AgentMessageSnapshot { .. } => {
+            Some(StreamKind::Message)
+        }
+        Event::AgentThoughtChunk { .. } | Event::AgentThoughtSnapshot { .. } => {
+            Some(StreamKind::Thought)
+        }
+        _ => None,
     }
 }
 
