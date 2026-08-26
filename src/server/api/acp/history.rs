@@ -247,10 +247,38 @@ pub async fn acp_replay(
     );
     let (frames, rows) = if q.view.as_deref() == Some("rows") {
         let mut model = crate::acp::transcript::TranscriptModel::new();
-        for (seq, event) in &page.events {
-            model.apply_event(*seq, event);
+        if let Some((first_seq, first_event)) = page.events.first() {
+            for (seq, event) in
+                state
+                    .acp_event_store
+                    .replay_stream_context_before(&id, *first_seq, first_event)
+            {
+                model.apply_event(seq, &event);
+            }
         }
-        (Vec::new(), Some(model.rows().to_vec()))
+        let mut changed_ids = std::collections::HashSet::new();
+        for (seq, event) in &page.events {
+            for delta in model.apply_event(*seq, event) {
+                match delta {
+                    crate::acp::transcript::TranscriptDelta::Append(row) => {
+                        changed_ids.insert(row.id);
+                    }
+                    crate::acp::transcript::TranscriptDelta::Patch { id, .. } => {
+                        changed_ids.insert(id);
+                    }
+                    crate::acp::transcript::TranscriptDelta::Remove(id) => {
+                        changed_ids.remove(&id);
+                    }
+                }
+            }
+        }
+        let rows = model
+            .rows()
+            .iter()
+            .filter(|row| changed_ids.contains(&row.id))
+            .cloned()
+            .collect();
+        (Vec::new(), Some(rows))
     } else {
         let frames = page
             .events
@@ -432,11 +460,11 @@ mod tests {
                 .expect("record");
         }
 
-        let read = |view: Option<&str>| {
+        let read = |since: u64, view: Option<&str>| {
             let state = Arc::clone(&state);
             let id = id.clone();
             let q = ReplayQuery {
-                since: 0,
+                since,
                 limit: Some(2),
                 before: None,
                 view: view.map(str::to_string),
@@ -452,12 +480,12 @@ mod tests {
             }
         };
 
-        let frames_resp = read(None).await;
+        let frames_resp = read(0, None).await;
         assert_eq!(frames_resp.frames.len(), 2);
         assert!(frames_resp.rows.is_none());
         assert!(frames_resp.has_more);
 
-        let rows_resp = read(Some("rows")).await;
+        let rows_resp = read(0, Some("rows")).await;
         assert!(rows_resp.frames.is_empty());
         assert_eq!(
             rows_resp
@@ -474,5 +502,11 @@ mod tests {
         assert_eq!(rows_resp.highest_seq, frames_resp.highest_seq);
         assert_eq!(rows_resp.lowest_seq, frames_resp.lowest_seq);
         assert_eq!(rows_resp.lost, frames_resp.lost);
+
+        let second_rows = read(2, Some("rows")).await;
+        let rows = second_rows.rows.expect("rows present");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].id, "msg-2");
+        assert_eq!(rows[0].text, "hi there");
     }
 }
