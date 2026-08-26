@@ -4,7 +4,7 @@
 
 import { useLayoutEffect, useRef, useState } from "react";
 import { ThreadPrimitive } from "@assistant-ui/react";
-import { ChevronDown, RotateCcw } from "lucide-react";
+import { ChevronDown, LoaderCircle, RotateCcw } from "lucide-react";
 
 import { useIsWideViewport } from "../../hooks/useIsWideViewport";
 import { useConnectionIncidentVisibility } from "../../hooks/useConnectionIncidentVisibility";
@@ -424,6 +424,13 @@ function AcpChrome({
                     lastActivityRef={ctx.lastActivityRef}
                     onForceEndTurn={ctx.forceEndTurn}
                   />
+                </div>
+              )}
+              {conversationNextStep?.kind === "catching_up" && conversationSync !== "initial" && (
+                <div className="mt-3">
+                  <ConversationNextStepNotice icon={<LoaderCircle className="size-3.5 animate-spin" />}>
+                    {conversationSync === "history" ? "Loading earlier messages…" : "Catching up with new activity…"}
+                  </ConversationNextStepNotice>
                 </div>
               )}
               {conversationNextStep?.kind === "scheduled_wakeup" && (

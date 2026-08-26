@@ -23,8 +23,7 @@ export function deriveConversationNextStep({
   sync: ConversationSyncStatus;
   diagnostics: SessionDiagnostics;
 }): ConversationNextStep {
-  if (sync === "initial" || sync === "history") return { kind: "catching_up" };
-  if (sync === "reconnect") return null;
+  if (sync !== "idle") return { kind: "catching_up" };
 
   const operational = diagnostics.operational;
   if (operational.kind !== "active" || operational.agent.kind !== "online") return null;
