@@ -1,11 +1,13 @@
 // REST replay of ACP history: recent-first cold open, forward top-up, and older pages.
 
-import type { AcpFrame, TranscriptRow } from "../../lib/acpTypes";
+import { emptyAcpState, type AcpFrame, type TranscriptRow } from "../../lib/acpTypes";
 import { toActivityRows, type Action } from "./reducer";
+import { cacheGet, coldResumeState } from "./stateCache";
 
 // Re-request this many seqs behind lastSeq; the reducer's seq dedupe makes the overlap idempotent.
 const REPLAY_OVERLAP = 50;
 const REPLAY_PAGE_SIZE = 1000;
+const MAX_FORWARD_CATCHUP_EVENTS = 10_000;
 // Above every real seq, so `before=` returns the newest page.
 const TAIL_BEFORE = Number.MAX_SAFE_INTEGER;
 // The handshake lands in the first few events of a session.
@@ -51,7 +53,7 @@ export async function fetchReplay(
     if (lastSeq.current === 0) {
       await fetchTail(sid, lastSeq, dispatch, setHasMoreOlder, setLastTransportDiagnostic);
     } else {
-      await fetchForward(sid, lastSeq, dispatch, setLastTransportDiagnostic);
+      await fetchForward(sid, lastSeq, dispatch, setHasMoreOlder, setLastTransportDiagnostic);
     }
   } catch {
     setLastTransportDiagnostic?.({
@@ -68,6 +70,7 @@ async function fetchTail(
   dispatch: Dispatch,
   setHasMoreOlder: (value: boolean) => void,
   setLastTransportDiagnostic?: (value: TransportDiagnostic) => void,
+  replacementState?: ReturnType<typeof emptyAcpState>,
 ): Promise<void> {
   const [tailRes, tailRowsRes] = await getReplayPair(sid, `before=${TAIL_BEFORE}&limit=${REPLAY_PAGE_SIZE}`);
   if (!tailRes.ok || !tailRowsRes.ok) {
@@ -85,9 +88,10 @@ async function fetchTail(
     return;
   }
   const rows = toActivityRows(await readRows(tailRowsRes), sid);
+  if (replacementState) dispatch({ kind: "hydrate", state: replacementState });
   dispatch({ kind: "frames", frames: tail.frames ?? [], rows, oldestSeq: tail.next_cursor ?? 0 });
   setHasMoreOlder(tail.has_more ?? false);
-  if (tail.highest_seq > lastSeq.current) lastSeq.current = tail.highest_seq;
+  if (tail.highest_seq > lastSeq.current || replacementState) lastSeq.current = tail.highest_seq;
   if ((tail.has_more ?? false) && (tail.next_cursor ?? 0) > 1) {
     const hsRes = await getReplay(sid, `since=0&limit=${HANDSHAKE_PREFIX_SIZE}`);
     if (hsRes.ok) {
@@ -102,6 +106,7 @@ async function fetchForward(
   sid: string,
   lastSeq: { current: number },
   dispatch: Dispatch,
+  setHasMoreOlder: (value: boolean) => void,
   setLastTransportDiagnostic?: (value: TransportDiagnostic) => void,
 ): Promise<void> {
   const firstSince = Math.max(0, lastSeq.current - REPLAY_OVERLAP);
@@ -127,6 +132,15 @@ async function fetchForward(
       target = data.highest_seq;
       // The server's log is behind our cursor (e.g. it was reset), so start over.
       if (data.highest_seq < firstSince) reset = true;
+      else if (data.highest_seq - lastSeq.current > MAX_FORWARD_CATCHUP_EVENTS) {
+        const cached = cacheGet(sid) ?? emptyAcpState();
+        const replacementState = {
+          ...coldResumeState(cached),
+          queuedPrompts: cached.queuedPrompts.filter((prompt) => prompt.pending),
+        };
+        await fetchTail(sid, lastSeq, dispatch, setHasMoreOlder, setLastTransportDiagnostic, replacementState);
+        return;
+      }
     }
     if (data.lost) {
       dispatch({ kind: "lagged", skipped: data.highest_seq });
