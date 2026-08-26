@@ -116,6 +116,8 @@ describe("ConnectionRoute", () => {
   it("summarizes an expected dormant agent without presenting a connection incident", () => {
     const diagnostics = deriveConnectionDiagnostics({
       ...base,
+      status: "connecting",
+      hasEverOpened: false,
       agentRuntime: { kind: "dormant", reason: "idle_auto_stop" },
     });
     const { getByRole } = render(<GlobalConnectionStatusButton snapshot={snapshot(diagnostics)} />);
@@ -124,6 +126,7 @@ describe("ConnectionRoute", () => {
     expect(button.className).toContain("text-status-dormant");
     expect(button.querySelector(".bg-status-dormant")).not.toBeNull();
     expect(button.querySelector(".hidden.xl\\:inline")?.textContent).toBe("Dormant");
+    expect(button.querySelector(".animate-spin")).toBeNull();
     expect(diagnostics.hasIncident).toBe(false);
   });
 
