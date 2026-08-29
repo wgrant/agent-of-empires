@@ -195,10 +195,16 @@ impl<S: BroadcastSink> Supervisor<S> {
         option_id: Option<String>,
     ) -> Result<(), SupervisorError> {
         let client = self.client_for_session(session_id).await?;
-        client
-            .resolve_permission(nonce, decision, option_id)
-            .await?;
-        Ok(())
+        match client
+            .resolve_permission(nonce.clone(), decision, option_id)
+            .await
+        {
+            Ok(()) => Ok(()),
+            Err(AcpError::UnknownNonce) if self.cancel_orphaned_approval(session_id, &nonce) => {
+                Ok(())
+            }
+            Err(error) => Err(error.into()),
+        }
     }
 
     /// The user dismissed the approval card without answering it.
@@ -208,8 +214,32 @@ impl<S: BroadcastSink> Supervisor<S> {
         nonce: Nonce,
     ) -> Result<(), SupervisorError> {
         let client = self.client_for_session(session_id).await?;
-        client.cancel_permission(nonce).await?;
-        Ok(())
+        match client.cancel_permission(nonce.clone()).await {
+            Ok(()) => Ok(()),
+            Err(AcpError::UnknownNonce) if self.cancel_orphaned_approval(session_id, &nonce) => {
+                Ok(())
+            }
+            Err(error) => Err(error.into()),
+        }
+    }
+
+    fn cancel_orphaned_approval(&self, session_id: &str, nonce: &Nonce) -> bool {
+        if !self
+            .sink
+            .unresolved_approval_nonces(session_id)
+            .iter()
+            .any(|candidate| candidate == nonce)
+        {
+            return false;
+        }
+        self.publish_next(
+            session_id,
+            &Event::ApprovalResolved {
+                nonce: nonce.clone(),
+                decision: ApprovalDecision::Cancelled,
+            },
+        );
+        true
     }
 
     pub async fn resolve_elicitation(
@@ -231,6 +261,23 @@ mod tests {
     use super::*;
     use crate::acp::state::AcpSessionId;
     use crate::daemon::AcpWorkerState;
+
+    #[test]
+    fn orphaned_approval_resolution_is_durable() {
+        let sink = VecSink::new();
+        *sink.stale_nonces.lock().unwrap() = vec![Nonce("nonce-a".into())];
+        let supervisor = Supervisor::new(sink.clone());
+
+        assert!(supervisor.cancel_orphaned_approval("session", &Nonce("nonce-a".into())));
+        assert!(!supervisor.cancel_orphaned_approval("session", &Nonce("nonce-b".into())));
+        let frames = sink.frames.lock().unwrap();
+        assert_eq!(frames.len(), 1);
+        assert!(matches!(
+            &frames[0].2,
+            Event::ApprovalResolved { nonce, decision }
+                if nonce.0 == "nonce-a" && matches!(decision, ApprovalDecision::Cancelled)
+        ));
+    }
 
     #[tokio::test(start_paused = true)]
     async fn wait_for_worker_blocks_on_a_reservation_until_it_drops() {
