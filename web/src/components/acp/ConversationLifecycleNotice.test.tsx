@@ -193,4 +193,61 @@ describe("ConversationLifecycleNotice", () => {
     expect((result.getByRole("button", { name: /resume requested/i }) as HTMLButtonElement).disabled).toBe(true);
     expect(result.getByText(/Resume requested\. New events should start streaming shortly/i)).toBeDefined();
   });
+
+  it("reports rate-limit auto-resume policy and exhausted retries", () => {
+    const incident: SessionIncident = {
+      kind: "blocked",
+      action: "switch_agent",
+      title: "Agent is rate limited",
+      detail: "The provider is not accepting work for this session.",
+      reason: "rate_limited",
+    };
+    const rateLimit = { status: "limited", resets_at: null, kind: "usage" };
+    const result = render(
+      <ConversationLifecycleNotice
+        sessionId="session-1"
+        incident={incident}
+        rateLimit={rateLimit}
+        rateLimitAutoResume
+      />,
+    );
+    expect(result.getByText(/Auto-resume is armed/i)).toBeDefined();
+
+    result.rerender(
+      <ConversationLifecycleNotice
+        sessionId="session-1"
+        incident={incident}
+        rateLimit={rateLimit}
+        rateLimitAutoResume={false}
+      />,
+    );
+    expect(result.getByText(/Auto-resume is off for this profile/i)).toBeDefined();
+
+    result.rerender(
+      <ConversationLifecycleNotice
+        sessionId="session-1"
+        incident={incident}
+        rateLimit={rateLimit}
+        rateLimitRetriesExhausted
+        onResumeRateLimit={vi.fn()}
+        onSwitchAgent={vi.fn()}
+      />,
+    );
+    expect(result.getByText(/same prompt was re-sent too many times/i)).toBeDefined();
+    expect(result.getByRole("button", { name: /resume now/i })).toBeDefined();
+    expect(result.getByRole("button", { name: /continue in another agent/i })).toBeDefined();
+  });
+
+  it("keeps an exhausted-retries notice after the rate-limit snapshot clears", () => {
+    const result = render(
+      <ConversationLifecycleNotice
+        sessionId="session-1"
+        incident={null}
+        rateLimitRetriesExhausted
+        onResumeRateLimit={vi.fn()}
+      />,
+    );
+    expect(result.getByText(/same prompt was re-sent too many times/i)).toBeDefined();
+    expect(result.queryByRole("button", { name: /resume now/i })).toBeNull();
+  });
 });

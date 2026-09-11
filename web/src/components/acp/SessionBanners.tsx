@@ -145,6 +145,24 @@ export function ConversationLifecycleNotice({
     error: startError,
     respawn: startAgent,
   } = useRespawnSession(sessionId, recoverableIncident);
+  if (!incident && rateLimitRetriesExhausted) {
+    return (
+      <RateLimitLifecycleBanner
+        incident={{
+          kind: "blocked",
+          action: "switch_agent",
+          title: "Agent is rate limited",
+          detail: "The provider is not accepting work for this session.",
+          reason: "rate_limited",
+        }}
+        rateLimit={null}
+        autoResume={rateLimitAutoResume}
+        retriesExhausted
+        resumeState="idle"
+        resumeError={null}
+      />
+    );
+  }
   if (!incident) return null;
   if (incident.kind === "failed") return <StartupErrorBanner sessionId={sessionId} message={incident.detail} />;
   if (incident.kind === "restarting" || incident.kind === "transitioning") {
@@ -268,7 +286,7 @@ function RateLimitLifecycleBanner({
       )}
       {retriesExhausted && (
         <div className="mt-2 text-xs text-status-warning">
-          Auto-resume stopped after repeated attempts. Resume manually or send a new prompt.
+          Auto-resume stopped: the same prompt was re-sent too many times. Resume manually or send a new prompt.
         </div>
       )}
       {resumePending && resumeState === "ok" && (
