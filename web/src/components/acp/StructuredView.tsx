@@ -35,6 +35,7 @@ import { ConfigOptionSwitchFailedNotice } from "./SessionConfigControls";
 import { StartupErrorScreen } from "./StartupErrorScreen";
 import { deriveStructuredConnectionDiagnostics, SystemNotices } from "./SystemNotices";
 import { ComposerActionRail } from "./status/ComposerActionRail";
+import { ConversationNextStepNotice } from "./status/ConversationNextStepNotice";
 import {
   selectConnectionDiagnostics,
   type ConnectionStatusSnapshot,
