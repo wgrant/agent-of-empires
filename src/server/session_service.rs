@@ -1355,7 +1355,7 @@ impl SessionService {
     }
 
     /// Whether the session is parked on the redelivery cap.
-    async fn is_rate_limit_exhausted_park(&self, id: &str) -> bool {
+    pub(crate) async fn is_rate_limit_exhausted_park(&self, id: &str) -> bool {
         let store = Arc::clone(&self.acp_event_store);
         let id = id.to_string();
         tokio::task::spawn_blocking(move || {
