@@ -288,13 +288,14 @@ pub async fn queue_send_now(
         return (StatusCode::NOT_FOUND, "session not found").into_response();
     }
     let running = state.acp_supervisor.is_running(&id).await;
+    let rate_limit_parked = !running && state.session_service.is_rate_limit_parked(&id).await;
     let control = state.session_service.fold_control_state(&id).await;
     let dispatch = crate::acp::dispatch::decide(
         &control,
         crate::acp::dispatch::WorkerLiveness {
             running,
             idle_dormant: false,
-            rate_limit_exhausted: false,
+            rate_limit_parked,
         },
     );
     if matches!(
