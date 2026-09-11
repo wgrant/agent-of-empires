@@ -1482,7 +1482,7 @@ impl SessionService {
     }
 
     /// See [`crate::acp::dispatch::WorkerLiveness::rate_limit_parked`].
-    async fn is_rate_limit_parked(&self, id: &str) -> bool {
+    pub(crate) async fn is_rate_limit_parked(&self, id: &str) -> bool {
         let store = Arc::clone(&self.acp_event_store);
         let id = id.to_string();
         tokio::task::spawn_blocking(move || store.rate_limit_park(&id).is_some())
