@@ -5,18 +5,20 @@ import {
   DEFAULT_HISTORY_WINDOW,
   historyWindow,
   historyWindowStart,
+  initialHistoryWindow,
   nextHistoryWindowSize,
 } from "../lib/acpHistoryWindow";
 
 const MAX_REMEMBERED_HISTORY_WINDOWS = 50;
 const rememberedHistoryWindows = new Map<string, number>();
 
-function rememberedHistoryWindow(sessionId: string): number {
+function rememberedHistoryWindow(sessionId: string, activity: readonly ActivityRow[]): number {
+  const initial = initialHistoryWindow(activity);
   const value = rememberedHistoryWindows.get(sessionId);
-  if (value === undefined) return DEFAULT_HISTORY_WINDOW;
+  if (value === undefined) return initial;
   rememberedHistoryWindows.delete(sessionId);
   rememberedHistoryWindows.set(sessionId, value);
-  return Math.min(value, MAX_HISTORY_WINDOW);
+  return Math.max(initial, Math.min(value, MAX_HISTORY_WINDOW));
 }
 
 function rememberHistoryWindow(sessionId: string, visibleRows: number): void {
@@ -97,7 +99,7 @@ export function useHistoryWindow(
   showClearedTurns: boolean,
   preserveStartOnGrowth = true,
 ): HistoryWindowState {
-  const [visibleRows, setVisibleRows] = useState(() => rememberedHistoryWindow(sessionId));
+  const [visibleRows, setVisibleRows] = useState(() => rememberedHistoryWindow(sessionId, activity));
   const [windowEnd, setWindowEnd] = useState(() => activity.length);
   // The normal row budget is re-cut at a user-turn boundary. Preserve the
   // actual cut while this range follows a live tail, otherwise a huge prior
@@ -112,7 +114,7 @@ export function useHistoryWindow(
   }));
   if (windowSessionId !== sessionId) {
     setWindowSessionId(sessionId);
-    setVisibleRows(rememberedHistoryWindow(sessionId));
+    setVisibleRows(rememberedHistoryWindow(sessionId, activity));
     setWindowEnd(activity.length);
     setPinnedStart(null);
     setGeneration(0);
@@ -131,6 +133,7 @@ export function useHistoryWindow(
       // React render. There is no prior row identity to classify that change
       // as an append, but the new transcript is still tail-anchored.
       setWindowEnd(activity.length);
+      setVisibleRows(rememberedHistoryWindow(sessionId, activity));
       setPinnedStart(null);
     } else if (prepended) {
       // Keep the reader on the same rows when an older server page is added.
