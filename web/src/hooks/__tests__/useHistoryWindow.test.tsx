@@ -247,7 +247,7 @@ describe("useHistoryWindow", () => {
     const ids = result.current.windowedActivity.map((row) => row.id);
     expect(ids).toContain(topBefore);
     expect(ids).toContain("new-user");
-    expect(result.current.windowedActivity).toHaveLength(DEFAULT_HISTORY_WINDOW + 1);
+    expect(result.current.windowedActivity).toHaveLength(activity.length + 1);
   });
 
   it("re-anchors initial catch-up at the tail, then preserves live appends", () => {
