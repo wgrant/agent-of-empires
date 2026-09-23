@@ -1,4 +1,5 @@
 import { isServerDown } from "./connectionState";
+import { createClientId } from "./clientId";
 import { getOrCreateDeviceBindingSecret } from "./deviceBinding";
 import { reportError } from "./toastBus";
 import { clearToken, getToken, saveToken } from "./token";
@@ -64,7 +65,7 @@ export function installFetchErrorToasts(): void {
     let patchedInit = attachAuthHeader(sameOrigin, init);
     if (sameOrigin && isApi) {
       try {
-        const requestId = crypto.randomUUID();
+        const requestId = createClientId();
         const h = new Headers(patchedInit?.headers ?? init?.headers);
         if (!h.has("X-Request-Id")) {
           h.set("X-Request-Id", requestId);
