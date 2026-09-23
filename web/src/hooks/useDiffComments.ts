@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DiffComment, DiffCommentDraft, DiffCommentsStorageV1 } from "../components/diff/comments/types";
 import { EMPTY_STORAGE, loadComments, saveComments } from "../components/diff/comments/storage";
+import { createClientId } from "../lib/clientId";
 import { listen } from "./domEvents";
 import { useLatestRef } from "./useLatestRef";
 
@@ -57,7 +58,7 @@ export function useDiffComments(sessionId: string | null): UseDiffCommentsResult
   const addComment = useCallback(
     (draft: DiffCommentDraft): DiffComment => {
       const created: DiffComment = {
-        id: globalThis.crypto.randomUUID(),
+        id: createClientId(),
         createdAt: new Date().toISOString(),
         ...draft,
       };

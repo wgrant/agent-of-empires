@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { resolvePluginOptions } from "../../lib/api";
+import { createClientId } from "../../lib/clientId";
 import type { SettingsObjectField, SettingsOptionSource } from "../../lib/types";
 import { validateCron } from "./cronValidation";
 import { NumberField, SelectField, TextField, ToggleField } from "./FormFields";
@@ -14,9 +15,7 @@ const strings = (obj: Record<string, unknown>, keys: string[]) => keys.map((k) =
 
 /** A stable item id; the host only needs a unique non-empty string. */
 function newItemId(): string {
-  const c = globalThis.crypto;
-  if (c && typeof c.randomUUID === "function") return c.randomUUID();
-  return `id-${Math.random().toString(36).slice(2)}-${Date.now().toString(36)}`;
+  return createClientId();
 }
 
 /** Host-resolved options, refetched when dependency values change; stale responses are dropped. */
