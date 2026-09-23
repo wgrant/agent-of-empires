@@ -23,9 +23,26 @@ beforeEach(() => {
 });
 afterEach(() => {
   vi.useRealTimers();
+  vi.unstubAllGlobals();
 });
 
 describe("useDiffComments", () => {
+  it("adds comments when randomUUID is unavailable on plain HTTP", () => {
+    vi.stubGlobal("crypto", {
+      getRandomValues: (bytes: Uint8Array) => {
+        bytes.fill(0);
+        return bytes;
+      },
+    });
+    const { result } = renderHook(() => useDiffComments("sess-http"));
+
+    act(() => result.current.addComment(draft("works over HTTP")));
+
+    expect(result.current.comments).toEqual([
+      expect.objectContaining({ id: "00000000-0000-4000-8000-000000000000", body: "works over HTTP" }),
+    ]);
+  });
+
   it("keeps each session's comments and drafts to itself across switches", () => {
     const { result, rerender } = renderHook(({ id }: { id: string }) => useDiffComments(id), {
       initialProps: { id: "sess-A" },
