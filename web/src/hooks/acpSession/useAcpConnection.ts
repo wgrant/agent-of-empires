@@ -233,6 +233,8 @@ export function useAcpConnection(
     lastSeqRef.current = cached?.lastSeq ?? 0;
     oldestSeqRef.current = cached?.oldestSeq ?? 0;
     hasMoreOlderRef.current = mayHaveOlderHistory;
+    // Session replacement resets the paging cursor before opening its socket.
+    // eslint-disable-next-line react-hooks/set-state-in-effect, react-you-might-not-need-an-effect/no-adjust-state-on-prop-change
     setHasMoreOlder(mayHaveOlderHistory);
     if (!sessionId) return;
     dispatch({ kind: "hydrate", state: cached ?? emptyAcpState() });
@@ -396,6 +398,8 @@ export function useAcpConnection(
       })();
     };
     connectRef.current = connect;
+    // This effect owns the WebSocket subscription for the selected session.
+    // eslint-disable-next-line react-you-might-not-need-an-effect/no-external-store-subscription
     connect();
 
     return () => {
@@ -406,7 +410,7 @@ export function useAcpConnection(
       wsRef.current = null;
       connectRef.current = null;
     };
-  }, [sessionId, dispatch, clearRetryTimers, lastSeqRef, oldestSeqRef]);
+  }, [sessionId, dispatch, clearRetryTimers, lastSeqRef, oldestSeqRef, hasMoreOlderRef]);
 
   const manualReconnect = useCallback(() => {
     setReconnecting(false);
