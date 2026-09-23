@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 // Structured view composer: assistant-ui's ComposerPrimitive with `@` file and
 // `/` command trigger popovers, attachments, queue recall, and draft persistence.
 
