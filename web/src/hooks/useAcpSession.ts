@@ -22,6 +22,7 @@ import {
   setSessionArchive,
   setSessionSnooze,
 } from "../lib/api";
+import { createClientId } from "../lib/clientId";
 import { classifyResolveResponse, reducer, type Action } from "./acpSession/reducer";
 import { ACP_MAX_RETRIES, useAcpConnection } from "./acpSession/useAcpConnection";
 export type { ConnectionStatus, TransportDiagnostic } from "./acpSession/useAcpConnection";
@@ -85,18 +86,6 @@ async function postReportingErrors(
     onFail?.();
     dispatch({ kind: "error", message: `Network error ${gerund}: ${describeError(e)}` });
   }
-}
-
-// A UUID v4 even on plain-HTTP LAN hosts, where `crypto.randomUUID` is unavailable.
-function optimisticPromptId(): string {
-  const c = globalThis.crypto;
-  if (c && typeof c.randomUUID === "function") return c.randomUUID();
-  if (c && typeof c.getRandomValues === "function") {
-    return "10000000-1000-4000-8000-100000000000".replace(/[018]/g, (digit) =>
-      (Number(digit) ^ (c.getRandomValues(new Uint8Array(1))[0]! & (15 >> (Number(digit) / 4)))).toString(16),
-    );
-  }
-  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 }
 
 export function useAcpSession(
@@ -173,7 +162,7 @@ export function useAcpSession(
         size: Math.floor((a.dataB64.length * 3) / 4),
         url: `data:${a.mimeType};base64,${a.dataB64}`,
       }));
-      const promptId = optimisticPromptId();
+      const promptId = createClientId();
       dispatch({ kind: "user_prompt", id: promptId, text, attachments: previews.length > 0 ? previews : undefined });
       lastActivityRef.current = Date.now();
       try {

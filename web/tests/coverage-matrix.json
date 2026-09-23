@@ -1821,6 +1821,13 @@
       ]
     },
     {
+      "id": "diff-comments.insecure-context-ids",
+      "kind": "vitest",
+      "risk": "high",
+      "specs": ["src/lib/clientId.test.ts", "src/hooks/useDiffComments.test.tsx"],
+      "components": ["web/src/lib/clientId.ts", "web/src/hooks/useDiffComments.ts"]
+    },
+    {
       "id": "diff-comments.typed-event",
       "kind": "vitest",
       "risk": "high",
