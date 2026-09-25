@@ -1137,6 +1137,7 @@ impl SessionService {
                 woke_idle_dormant: false,
                 prompt_id: Some(row.id.clone()),
                 synthesized: false,
+                no_revive: false,
             },
         )
         .await?;
