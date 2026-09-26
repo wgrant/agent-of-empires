@@ -287,6 +287,22 @@ pub fn supports_steering(expected: ExpectedAgent, init: &InitializeResponse) -> 
         .is_some_and(|version| version >= floor(CLAUDE_AGENT_ACP_STEERING_MIN_VERSION))
 }
 
+/// `_meta` for session/new, load, and fork. claude-agent-acp hands
+/// `claudeCode.options.extraArgs` to Claude Code as CLI flags. Recent models
+/// default the thinking display to "omitted", which streams thinking with no
+/// text, so ask for summaries and let the dashboard decide what to show. Only
+/// the display changes; the thinking type and budget stay the adapter's.
+pub fn session_meta(expected: ExpectedAgent) -> Option<serde_json::Map<String, serde_json::Value>> {
+    if expected != ExpectedAgent::ClaudeAgentAcp {
+        return None;
+    }
+    serde_json::json!({
+        "claudeCode": { "options": { "extraArgs": { "thinking-display": "summarized" } } }
+    })
+    .as_object()
+    .cloned()
+}
+
 /// The ACP binary name aoe expects for this agent, or `None` for agents
 /// with no fixed binary (`AoeAgent`, `Other`).
 fn binary_for(expected: ExpectedAgent) -> Option<&'static str> {
@@ -344,7 +360,24 @@ pub fn version_gates() -> impl Iterator<Item = VersionGate> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use agent_client_protocol::schema::v1::Implementation;
+    use agent_client_protocol::schema::v1::{Implementation, NewSessionRequest};
+
+    #[test]
+    fn only_claude_sessions_request_summarized_thinking() {
+        let req = NewSessionRequest::new("/tmp").meta(session_meta(ExpectedAgent::ClaudeAgentAcp));
+        let wire = serde_json::to_value(req).unwrap();
+        assert_eq!(
+            wire.pointer("/_meta/claudeCode/options/extraArgs/thinking-display"),
+            Some(&serde_json::json!("summarized")),
+        );
+        for other in [
+            ExpectedAgent::CodexAcp,
+            ExpectedAgent::OpenCode,
+            ExpectedAgent::Other,
+        ] {
+            assert!(session_meta(other).is_none(), "{other:?}");
+        }
+    }
 
     fn init(info: Option<(&str, &str)>) -> InitializeResponse {
         let init = InitializeResponse::new(ProtocolVersion::V1);
