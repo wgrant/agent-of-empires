@@ -102,20 +102,7 @@ async fn observe_parked_turn(
     ]);
     let (socket_path, _runner) =
         spawn_runner_with_shim(preseed, &[("SHIM_PRESEED_SESSION_ID", preseed.to_string())]).await;
-    let mut client = AcpClient::attach(
-        socket_path,
-        std::env::temp_dir(),
-        vec![],
-        preseed.to_string(),
-        false,
-        AcpSessionId(preseed.into()),
-        None,
-        "claude".into(),
-        None,
-        Vec::new(),
-    )
-    .await
-    .expect("attach to the parked runner");
+    let mut client = attach(socket_path, preseed).await;
     client.send_prompt(prompt, &[]).await.expect("send prompt");
 
     let mut outcome = TurnOutcome::default();
@@ -130,6 +117,23 @@ async fn observe_parked_turn(
         .await;
     let _ = client.shutdown().await;
     outcome
+}
+
+async fn attach(socket_path: std::path::PathBuf, preseed: &str) -> AcpClient {
+    AcpClient::attach(
+        socket_path,
+        std::env::temp_dir(),
+        vec![],
+        preseed.to_string(),
+        false,
+        AcpSessionId(preseed.into()),
+        None,
+        "claude".into(),
+        None,
+        Vec::new(),
+    )
+    .await
+    .expect("attach to the parked runner")
 }
 
 macro_rules! skip_without_shim {
@@ -170,6 +174,56 @@ async fn cost_bearing_wrap_up_without_response_ends_as_prompt_complete() {
         Some("prompt_complete"),
         "a turn that wrapped up its accounting must end cleanly, not be cancelled as an orphan"
     );
+}
+
+/// The adapter still holds the first `session/prompt` after the watchdog ends
+/// its turn, as Claude does for a subagent it only announces on finishing. The
+/// next prompt must run on the same connection, not fail on the stale waiter
+/// and restart the worker.
+#[tokio::test]
+#[serial]
+async fn prompt_after_watchdog_wrap_up_runs_normally() {
+    skip_without_shim!();
+    let preseed = "silent-orphan-follow-up";
+    let _env = EnvGuard::from_pairs(&[
+        ("AOE_SILENT_ORPHAN_GRACE_MS", "60000"),
+        ("AOE_SILENT_ORPHAN_FAST_GRACE_MS", "300"),
+        ("AOE_SILENT_ORPHAN_CHECK_INTERVAL_MS", "50"),
+    ]);
+    let (socket_path, _runner) =
+        spawn_runner_with_shim(preseed, &[("SHIM_PRESEED_SESSION_ID", preseed.to_string())]).await;
+    let mut client = attach(socket_path, preseed).await;
+
+    let mut first = TurnOutcome::default();
+    client
+        .send_prompt("COST_THEN_SILENCE trigger", &[])
+        .await
+        .expect("send prompt");
+    first
+        .drain_turn(&mut client, Instant::now() + Duration::from_secs(15))
+        .await;
+    assert_eq!(first.stopped.as_deref(), Some("prompt_complete"));
+
+    client
+        .send_prompt("hello", &[])
+        .await
+        .expect("send follow-up");
+    let reply = tokio::time::timeout(Duration::from_secs(15), async {
+        let mut reply = String::new();
+        loop {
+            match client.next_event().await {
+                Some(Event::AgentMessageChunk { text }) => reply.push_str(&text),
+                Some(Event::Stopped { reason }) => return (reply, reason),
+                Some(_) => {}
+                None => panic!("connection ended instead of running the follow-up"),
+            }
+        }
+    })
+    .await
+    .expect("follow-up turn ends");
+    assert_eq!(reply.1, "prompt_complete");
+    assert!(reply.0.contains("done"), "follow-up reply: {:?}", reply.0);
+    let _ = client.shutdown().await;
 }
 
 /// The genuine wedge: a chunk and a cost-less mid-turn `usage_update`, then

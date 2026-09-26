@@ -85,6 +85,8 @@ struct TurnFlags {
     prompt_cancelled: bool,
     orphan_cancel_sent: bool,
     cancelling: bool,
+    /// The adapter answered `session/prompt`, successfully or not.
+    prompt_settled: bool,
 }
 
 struct Turn {
@@ -251,6 +253,11 @@ impl Session {
                 break;
             }
         }
+        if !turn.flags.prompt_settled {
+            if let Some(control) = self.control.as_ref() {
+                control.abandon_prompt();
+            }
+        }
         let shutdown = turn.flags.shutdown;
         self.finish_turn(turn, prompt_started_at_ms).await;
         Ok(shutdown)
@@ -301,6 +308,7 @@ impl Session {
         turn: &mut Turn,
         res: AcpResult<PromptResponse>,
     ) -> AcpResult<Flow> {
+        turn.flags.prompt_settled = true;
         let e = match res {
             Ok(resp) => {
                 turn.flags.prompt_cancelled = matches!(resp.stop_reason, StopReason::Cancelled);
