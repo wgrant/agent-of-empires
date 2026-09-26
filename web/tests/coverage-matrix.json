@@ -4106,6 +4106,13 @@
       "components": ["web/src/components/WorkspaceSidebar.tsx"]
     },
     {
+      "id": "sidebar.agent-generated-title",
+      "kind": "live-playwright",
+      "risk": "low",
+      "specs": ["tests/live/acp-prompt-lifecycle.spec.ts"],
+      "components": ["web/src/components/WorkspaceSidebar.tsx"]
+    },
+    {
       "id": "sidebar.smart-rename-chip-render",
       "kind": "vitest",
       "risk": "low",

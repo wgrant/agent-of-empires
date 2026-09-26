@@ -8,6 +8,7 @@ use crate::acp::state::{
     ToolCall, UsageCost,
 };
 use agent_client_protocol::schema::v1::{ContentBlock, MessageId, SessionUpdate};
+use agent_client_protocol::schema::MaybeUndefined;
 use tracing::debug;
 
 use super::config_options::map_acp_config_option;
@@ -452,10 +453,17 @@ pub(super) fn map_update_to_events(
             );
             vec![Event::ConfigOptionsUpdated { options }]
         }
-        // AoE owns automatic renaming, so agent titles are ignored.
-        ref info @ SessionUpdate::SessionInfoUpdate(_) => extension_update(info)
-            .map(extension_events)
-            .unwrap_or_default(),
+        ref info @ SessionUpdate::SessionInfoUpdate(ref fields) => match extension_update(info) {
+            Some(update) => extension_events(update),
+            None => match &fields.title {
+                MaybeUndefined::Value(title) if !title.trim().is_empty() => {
+                    vec![Event::SessionTitleSuggested {
+                        title: title.clone(),
+                    }]
+                }
+                _ => Vec::new(),
+            },
+        },
         other => vec![raw_event(&other)],
     }
 }
@@ -955,6 +963,23 @@ mod tests {
         assert!(!update("Monitor", Some(serde_json::json!({})))
             .iter()
             .any(|e| matches!(e, Event::MonitorArmed { .. })));
+    }
+
+    #[test]
+    fn session_info_titles_become_suggestions() {
+        use agent_client_protocol::schema::v1::SessionInfoUpdate;
+        let events = claude(SessionUpdate::SessionInfoUpdate(
+            SessionInfoUpdate::new().title("Fix the flaky test".to_string()),
+        ));
+        assert!(
+            matches!(events.as_slice(), [Event::SessionTitleSuggested { title }] if title == "Fix the flaky test")
+        );
+        for info in [
+            SessionInfoUpdate::new().title("  ".to_string()),
+            SessionInfoUpdate::new().updated_at("2026-06-25T00:00:00Z".to_string()),
+        ] {
+            assert!(claude(SessionUpdate::SessionInfoUpdate(info)).is_empty());
+        }
     }
 
     #[test]
