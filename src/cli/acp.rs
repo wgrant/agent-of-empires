@@ -1138,6 +1138,7 @@ fn event_kind(event: &crate::acp::Event) -> &'static str {
         Event::ConversationCompacted => "conversation_compacted",
         Event::ConversationCompactionFailed => "conversation_compaction_failed",
         Event::ConversationCompactionSummary { .. } => "conversation_compaction_summary",
+        Event::ConversationCompactionEnded { .. } => "conversation_compaction_ended",
         Event::AgentNotice { .. } => "agent_notice",
         Event::TurnTokenUsage { .. } => "turn_token_usage",
         Event::SubagentSpawned { .. } => "subagent_spawned",

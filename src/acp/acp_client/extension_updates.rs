@@ -119,6 +119,21 @@ fn notice(severity: &str, title: &str, description: Option<&str>) -> Event {
     }
 }
 
+/// A terminal compaction update, with the facts claude-agent-acp reports in
+/// `_meta.contextCompaction`.
+fn compaction_ended(status: &str, update: &Value) -> Event {
+    let facts = update.pointer("/_meta/contextCompaction");
+    let number = |key: &str| facts.and_then(|f| f.get(key)).and_then(Value::as_u64);
+    Event::ConversationCompactionEnded {
+        status: status.to_string(),
+        error: owned(update, "error"),
+        trigger: facts.and_then(|f| owned(f, "trigger")),
+        pre_tokens: number("preTokens"),
+        post_tokens: number("postTokens"),
+        duration_ms: number("durationMs"),
+    }
+}
+
 /// The retained summary a completed compaction carries, when it is text.
 fn compaction_summary(update: &Value) -> Option<String> {
     let text: Vec<&str> = update
@@ -140,19 +155,17 @@ pub(super) fn extension_events(update: &Value) -> Vec<Event> {
         )],
         Some("compaction_update") => match field(update, "status") {
             Some("in_progress") => vec![Event::ConversationCompactionStarted],
-            Some("completed") => {
-                let mut events = compaction_completed_events();
-                if let Some(text) = compaction_summary(update) {
-                    events.push(Event::ConversationCompactionSummary { text });
+            Some(status @ ("completed" | "failed" | "cancelled")) => {
+                let mut events = Vec::new();
+                if status == "completed" {
+                    events.extend(compaction_completed_events());
+                    if let Some(text) = compaction_summary(update) {
+                        events.push(Event::ConversationCompactionSummary { text });
+                    }
                 }
+                events.push(compaction_ended(status, update));
                 events
             }
-            Some("failed") => vec![notice(
-                "warning",
-                "Compaction failed",
-                field(update, "error"),
-            )],
-            Some("cancelled") => vec![notice("info", "Compaction cancelled", None)],
             _ => Vec::new(),
         },
         Some("subagent_spawned") => field(update, "subagentSessionId")
@@ -237,17 +250,28 @@ mod tests {
                     "ConversationCompacted",
                     "PlanUpdated",
                     "ConversationCompactionSummary:Kept: the plan.",
+                    "ConversationCompactionEnded:completed:::::",
+                ],
+                Some("CompactionCompleted"),
+            ),
+            // claude-agent-acp repeats the terminal status to add its measurements.
+            (
+                json!({"sessionUpdate": "compaction_update", "compactionId": "c1", "status": "completed", "_meta": {"contextCompaction": {"version": 1, "trigger": "automatic", "preTokens": 966795, "postTokens": 10147, "durationMs": 72000}}}),
+                vec![
+                    "ConversationCompacted",
+                    "PlanUpdated",
+                    "ConversationCompactionEnded:completed::automatic:966795:10147:72000",
                 ],
                 Some("CompactionCompleted"),
             ),
             (
                 json!({"sessionUpdate": "compaction_update", "compactionId": "c1", "status": "failed", "error": "too long"}),
-                vec!["AgentNotice:warning:Compaction failed:too long"],
+                vec!["ConversationCompactionEnded:failed:too long::::"],
                 Some("CompactionFailed"),
             ),
             (
                 json!({"sessionUpdate": "compaction_update", "compactionId": "c1", "status": "cancelled"}),
-                vec!["AgentNotice:info:Compaction cancelled:"],
+                vec!["ConversationCompactionEnded:cancelled:::::"],
                 Some("CompactionFailed"),
             ),
             (
@@ -302,6 +326,24 @@ mod tests {
                     }
                     Event::ConversationCompactionStarted => "ConversationCompactionStarted".into(),
                     Event::ConversationCompacted => "ConversationCompacted".into(),
+                    Event::ConversationCompactionEnded {
+                        status,
+                        error,
+                        trigger,
+                        pre_tokens,
+                        post_tokens,
+                        duration_ms,
+                    } => {
+                        let n = |v: &Option<u64>| v.map(|v| v.to_string()).unwrap_or_default();
+                        format!(
+                            "ConversationCompactionEnded:{status}:{}:{}:{}:{}:{}",
+                            error.as_deref().unwrap_or(""),
+                            trigger.as_deref().unwrap_or(""),
+                            n(pre_tokens),
+                            n(post_tokens),
+                            n(duration_ms),
+                        )
+                    }
                     Event::PlanUpdated { .. } => "PlanUpdated".into(),
                     Event::SubagentSpawned {
                         id,
