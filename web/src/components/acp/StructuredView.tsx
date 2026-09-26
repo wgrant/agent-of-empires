@@ -8,6 +8,7 @@ import { ChevronDown, LoaderCircle, RotateCcw } from "lucide-react";
 import { useIsWideViewport } from "../../hooks/useIsWideViewport";
 import { useConnectionIncidentVisibility } from "../../hooks/useConnectionIncidentVisibility";
 import { useMobileKeyboard } from "../../hooks/useMobileKeyboard";
+import { useSessionThinkingDisplay } from "../../hooks/useSessionThinkingDisplay";
 import { useWebSettings } from "../../hooks/useWebSettings";
 import { useDashboardConnectionDiagnostics } from "../../lib/connectionState";
 import { lastClearIndex } from "../../lib/acpHistoryWindow";
@@ -16,6 +17,7 @@ import { derivePromptOutbox } from "../../lib/acpPromptOutbox";
 import { AgentProfileProvider } from "../../lib/agentProfileContext";
 import { conversationFontSizeRem } from "../../lib/conversationFontSize";
 import type { FileRef, FileRefSession } from "../../lib/fileRef";
+import { ThinkingDisplayContext } from "../../lib/thinkingDisplay";
 import type { SessionStatus } from "../../lib/types";
 import { topInsetScrollAdjustment } from "../../lib/historyScroll";
 import { ChromeCollapseHandle, CollapsibleRegion } from "../CollapsibleChrome";
@@ -108,11 +110,13 @@ export function StructuredView(props: Props) {
   const { sessionId, tool, clearAliases, archivedAt, snoozedUntil, onOpenFileRef, fileRefSession } = props;
   const [showClearedTurns, setShowClearedTurns] = useState(false);
   const [toolDensity, toggleToolDensity] = useToolDensityPref();
+  const thinkingDisplay = useSessionThinkingDisplay(sessionId).effective;
   return (
     <AcpFileRefContext.Provider value={{ onOpenFileRef, fileRefSession }}>
       <AgentProfileProvider toolKey={tool} clearAliases={clearAliases}>
         <ToolDisplayModeProvider density={toolDensity}>
           <ToolExpansionProvider>
+          <ThinkingDisplayContext.Provider value={thinkingDisplay}>
             <AcpRuntime
               sessionId={sessionId}
               archivedAt={archivedAt}
@@ -121,7 +125,10 @@ export function StructuredView(props: Props) {
             >
               {(ctx) => (
                 <BackgroundAgentsContext.Provider
-                  value={{ agents: ctx.state.backgroundAgents, openPane: props.onOpenAgentsPane }}
+                  value={{
+                    agents: ctx.state.backgroundAgents,
+                    openPane: props.onOpenAgentsPane,
+                  }}
                 >
                   <AcpChrome
                     view={props}
@@ -134,6 +141,7 @@ export function StructuredView(props: Props) {
                 </BackgroundAgentsContext.Provider>
               )}
             </AcpRuntime>
+          </ThinkingDisplayContext.Provider>
           </ToolExpansionProvider>
         </ToolDisplayModeProvider>
       </AgentProfileProvider>

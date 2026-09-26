@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { cleanup, fireEvent, render } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { StructuredViewDisplaySettings } from "../StructuredViewDisplaySettings";
 import { getWebSettingsSnapshot } from "../../../hooks/useWebSettings";
 
@@ -70,5 +70,17 @@ describe("StructuredViewDisplaySettings localStorage contract", () => {
       );
       cleanup();
     }
+  });
+});
+
+describe("StructuredViewDisplaySettings thinking default", () => {
+  it("stores the chosen default and normalizes unknown stored values", () => {
+    window.localStorage.setItem(KEY, JSON.stringify({ thinkingDisplay: "verbose" }));
+    render(<StructuredViewDisplaySettings />);
+    const select = screen.getByDisplayValue("Collapsed") as HTMLSelectElement;
+
+    fireEvent.change(select, { target: { value: "hidden" } });
+    expect(readStored().thinkingDisplay).toBe("hidden");
+    expect(getWebSettingsSnapshot().thinkingDisplay).toBe("hidden");
   });
 });

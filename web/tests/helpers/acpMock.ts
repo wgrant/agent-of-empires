@@ -107,16 +107,19 @@ function foldEventToRow(
     return null;
   }
   const ev = event as Record<string, Record<string, unknown>>;
-  if (ev.AgentMessageChunk) {
-    const text = String(ev.AgentMessageChunk.text ?? "");
-    if (openMessage.row) {
+  // Consecutive chunks of one kind extend a row; switching between message and thought opens a new one.
+  const chunk = ev.AgentMessageChunk ?? ev.AgentThoughtChunk;
+  if (chunk) {
+    const rowKind = ev.AgentMessageChunk ? "message" : "thinking";
+    const text = String(chunk.text ?? "");
+    if (openMessage.row?.kind === rowKind) {
       openMessage.row = { ...openMessage.row, text: String(openMessage.row.text ?? "") + text };
       return { kind: "patch", row: openMessage.row };
     }
     openMessage.row = {
-      id: `msg-${seq}`,
+      id: `${rowKind === "message" ? "msg" : "thinking"}-${seq}`,
       group_id: nextGroup(),
-      kind: "message",
+      kind: rowKind,
       at: now,
       text,
     };
@@ -433,6 +436,10 @@ export async function waitForComposerConnected(page: Page) {
 
 export function agentMessageChunk(text: string) {
   return { AgentMessageChunk: { text } };
+}
+
+export function agentThoughtChunk(text: string) {
+  return { AgentThoughtChunk: { text } };
 }
 
 export function stopped(reason = "end_turn") {
