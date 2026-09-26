@@ -17,7 +17,7 @@ const ALWAYS_ENTRIES: Entry[] = [
 // one except "terminal", which is desktop's multi-instance extra-terminal
 // dock and has no single-pane mobile equivalent). Gated by `availablePanes`.
 const GATED_ENTRIES: Entry[] = [
-  { view: "agents", label: "Sub agents", hint: "Background async sub-agents" },
+  { view: "agents", label: "Background", hint: "Sub-agents, workflows, and background shells" },
   { view: "diff", label: "Diff", hint: "Changed files and review" },
   { view: "files", label: "Files", hint: "Browse the repo tree" },
 ];

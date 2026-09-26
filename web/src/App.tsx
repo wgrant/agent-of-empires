@@ -698,7 +698,7 @@ function AppContent({
     },
     [toggleKind, togglePlugin, pluginPaneById],
   );
-  // Open (or focus) the Sub agents pane. Used by an inline async
+  // Open (or focus) the Background pane. Used by an inline async
   // sub-agent card to jump to its panel entry.
   const openAgentsPane = useCallback(() => {
     const dock = dockOf(paneLayout, "agents");
