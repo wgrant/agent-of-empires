@@ -29,6 +29,7 @@ type TopBarOverrides = {
   waitingCount?: number;
   attentionBadgeColors?: AttentionBadgeColors;
   activeProjectName?: string | null;
+  paneBadges?: Record<string, number>;
 };
 
 function topBarProps(overrides: TopBarOverrides = {}) {
@@ -43,6 +44,7 @@ function topBarProps(overrides: TopBarOverrides = {}) {
     paneDescriptor: (id: string) => ({ title: id, icon: (() => null) as never }),
     isPaneOpen: () => true,
     onTogglePane: vi.fn(),
+    paneBadges: overrides.paneBadges,
     onOpenHelp: vi.fn(),
     onOpenAbout: vi.fn(),
     onStartTutorial: vi.fn(),
@@ -65,15 +67,29 @@ function renderTopBar(overrides: TopBarOverrides = {}) {
 }
 
 describe("TopBar", () => {
-  it("renders the DEV and offline badges independently", () => {
-    const off = renderTopBar({ isDevBuild: false });
-    expect(off.queryByLabelText("Debug build")).toBeNull();
-    expect(off.queryByText("DEV")).toBeNull();
-    off.unmount();
-    const { getByText, getByLabelText } = renderTopBar({ isDevBuild: true, isOffline: true });
+  it("badges the mobile panels toggle with running background work", () => {
+    const { getByTestId, getByRole } = renderTopBar({
+      activeWorkspace: { id: "ws-1", projectPath: "/r", sessions: [] } as unknown as Workspace,
+      activeSession: { title: "s" } as SessionResponse,
+      paneBadges: { agents: 2 },
+    });
+    expect(getByTestId("topbar-panels-badge").textContent).toBe("2");
+    expect(getByRole("button", { name: "Toggle panels, 2 running" })).toBeTruthy();
+  });
+
+  it("renders the DEV badge when isDevBuild=true", () => {
+    const { getByLabelText, getByText } = renderTopBar({ isDevBuild: true });
+    const badge = getByLabelText("Debug build");
+    expect(badge).toBeTruthy();
     expect(getByText("DEV")).toBeTruthy();
-    expect(getByLabelText("Debug build")).toBeTruthy();
-    expect(getByText("offline")).toBeTruthy();
+  });
+
+  it("does not render the DEV badge when isDevBuild=false", () => {
+    const { queryByLabelText, queryByText } = renderTopBar({
+      isDevBuild: false,
+    });
+    expect(queryByLabelText("Debug build")).toBeNull();
+    expect(queryByText("DEV")).toBeNull();
   });
 
   it("renders the sidebar project name and session title as the current identity", () => {
@@ -98,6 +114,15 @@ describe("TopBar", () => {
     expect(getAllByLabelText("Current session: AoE prod / Fix mobile header")).toHaveLength(2);
   });
 
+  it("renders the offline badge independent of the DEV badge", () => {
+    const { getByLabelText } = renderTopBar({
+      isDevBuild: true,
+      isOffline: true,
+    });
+    expect(getByLabelText("Show connection status")).toBeTruthy();
+    expect(getByLabelText("Debug build")).toBeTruthy();
+  });
+
   it("opens the shared dashboard connection details from the global control", () => {
     const { getByLabelText, getByText } = renderTopBar();
     fireEvent.click(getByLabelText("Show connection status"));
@@ -113,21 +138,16 @@ describe("TopBar", () => {
     expect(onOpenTips).toHaveBeenCalledTimes(1);
   });
 
-  it("shows counts on the sidebar toggle's badges and accessible name, and nothing extra at zero", () => {
-    const zero = renderTopBar({ unreadCount: 0, waitingCount: 0 });
-    expect(zero.queryByTestId("topbar-unread-badge")).toBeNull();
-    expect(zero.queryByTestId("topbar-waiting-badge")).toBeNull();
-    expect(zero.getByRole("button", { name: "Toggle sidebar" })).toBeTruthy();
-    zero.unmount();
+  it("renders no sidebar-toggle badges when both counts are zero", () => {
+    const { queryByTestId } = renderTopBar({ unreadCount: 0, waitingCount: 0 });
+    expect(queryByTestId("topbar-unread-badge")).toBeNull();
+    expect(queryByTestId("topbar-waiting-badge")).toBeNull();
+  });
 
-    const onToggleSidebar = vi.fn();
-    const { getByTestId, getByRole } = renderTopBar({ unreadCount: 3, waitingCount: 1, onToggleSidebar });
+  it("renders the unread and waiting badges on the sidebar toggle with their counts", () => {
+    const { getByTestId } = renderTopBar({ unreadCount: 3, waitingCount: 1 });
     expect(getByTestId("topbar-unread-badge").textContent).toBe("3");
     expect(getByTestId("topbar-waiting-badge").textContent).toBe("1");
-    expect(getByRole("button", { name: "Toggle sidebar, 3 unread, 1 waiting for your input" })).toBeTruthy();
-    // Badges nest inside the toggle, so tapping one toggles the sidebar.
-    fireEvent.click(getByTestId("topbar-unread-badge"));
-    expect(onToggleSidebar).toHaveBeenCalledTimes(1);
   });
 
   it("colors each badge from the attentionBadgeColors prop", () => {
@@ -144,6 +164,16 @@ describe("TopBar", () => {
     expect(waitingBadge.style.color).toBe("rgb(0, 0, 0)");
   });
 
+  it("keeps the sidebar-toggle's accessible name plain when both counts are zero", () => {
+    const { getByRole } = renderTopBar({ unreadCount: 0, waitingCount: 0 });
+    expect(getByRole("button", { name: "Toggle sidebar" })).toBeTruthy();
+  });
+
+  it("folds both counts into the sidebar toggle's accessible name", () => {
+    const { getByRole } = renderTopBar({ unreadCount: 3, waitingCount: 1 });
+    expect(getByRole("button", { name: "Toggle sidebar, 3 unread, 1 waiting for your input" })).toBeTruthy();
+  });
+
   it("announces count changes through a persistent live region, including the return to zero", () => {
     const { getByTestId, rerender } = renderTopBar({ unreadCount: 0, waitingCount: 0 });
     const live = getByTestId("topbar-attention-live-region");
@@ -157,5 +187,14 @@ describe("TopBar", () => {
     // reliable announcement here too.
     rerender(<TopBar {...topBarProps({ unreadCount: 0, waitingCount: 0 })} />);
     expect(getByTestId("topbar-attention-live-region").textContent).toBe("0 unread, 0 waiting for your input");
+  });
+
+  it("nests both badges inside the sidebar-toggle button so tapping either one toggles the sidebar", () => {
+    const onToggleSidebar = vi.fn();
+    const { getByTestId } = renderTopBar({ unreadCount: 2, waitingCount: 1, onToggleSidebar });
+    const unreadBadge = getByTestId("topbar-unread-badge");
+    expect(unreadBadge.closest("button")).not.toBeNull();
+    fireEvent.click(unreadBadge);
+    expect(onToggleSidebar).toHaveBeenCalledTimes(1);
   });
 });

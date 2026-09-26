@@ -19,6 +19,7 @@ interface Props {
   // follows the desktop dock's capability and session gating.
   availablePanes: string[];
   describePane: (id: string) => PaneDisplay;
+  badges?: Readonly<Record<string, number>>;
   onSelect: (view: RightPanelView) => void;
   onClose: () => void;
 }
@@ -34,11 +35,13 @@ function Section({ label, children }: { label: string; children: ReactNode }) {
 
 function Row({
   display,
+  badge = 0,
   view,
   active,
   onSelect,
 }: {
   display: PaneDisplay;
+  badge?: number;
   view: RightPanelView;
   active: boolean;
   onSelect: (view: RightPanelView) => void;
@@ -59,6 +62,7 @@ function Row({
           className={`h-4 w-4 shrink-0 ${active ? "text-brand-500" : "text-text-dim"}`}
         />
         <span className="truncate">{display.title}</span>
+        {badge > 0 && <span className="ml-auto text-xs text-text-dim">{badge} running</span>}
       </button>
     </li>
   );
@@ -73,6 +77,7 @@ export function MobileRightPanelPicker({
   sessionTitle,
   availablePanes,
   describePane,
+  badges = {},
   onSelect,
   onClose,
 }: Props) {
@@ -123,6 +128,7 @@ export function MobileRightPanelPicker({
                 <Row
                   key={id}
                   display={describePane(id)}
+                  badge={badges[id]}
                   view={id as RightPanelView}
                   active={id === active}
                   onSelect={onSelect}

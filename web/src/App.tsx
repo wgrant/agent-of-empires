@@ -15,6 +15,7 @@ import { IDLE_DECAY_WINDOW_MS } from "./lib/session";
 import { diffSelectionStale } from "./lib/diffSelection";
 import { useSessions } from "./hooks/useSessions";
 import { useAttentionCounts } from "./hooks/useAttentionCounts";
+import { useRunningBackgroundCount } from "./hooks/useRunningBackgroundCount";
 import { useDashboardPresence } from "./hooks/useDashboardPresence";
 import { clearAcpCache } from "./hooks/useAcpSession";
 import { clearDraft, sweepOrphanDrafts } from "./lib/acpDrafts";
@@ -416,6 +417,8 @@ function AppContent({
   const trashedWorkspaces = useMemo(() => workspaces.filter(workspaceIsTrashed), [workspaces]);
 
   const { unreadCount, waitingCount } = useAttentionCounts(sessions, activeSessionId);
+  const runningBackground = useRunningBackgroundCount(activeSessionId);
+  const paneBadges = useMemo(() => ({ agents: runningBackground }), [runningBackground]);
   const attentionBadgeColors = useMemo(() => getAttentionBadgeColors(resolvedTheme), [resolvedTheme]);
 
   // Remember the active session and restore it on a PWA relaunch (#2103).
@@ -2456,6 +2459,7 @@ function AppContent({
             paneDescriptor={paneDescriptor}
             isPaneOpen={isPaneOpen}
             onTogglePane={togglePaneAny}
+            paneBadges={paneBadges}
             onOpenHelp={handleOpenHelp}
             onOpenAbout={handleOpenAbout}
             onStartTutorial={tour.startTour}
@@ -2675,6 +2679,7 @@ function AppContent({
             sessionTitle={activeSession.title}
             availablePanes={mobilePaneIds}
             describePane={paneDescriptor}
+            badges={paneBadges}
             onSelect={handlePickView}
             onClose={closePicker}
           />
