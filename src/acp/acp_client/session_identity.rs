@@ -4,12 +4,14 @@ use agent_client_protocol::schema::v1::{RequestId, SessionId, SessionNotificatio
 use agent_client_protocol::{
     Agent, ConnectionTo, JsonRpcMessage, JsonRpcNotification, JsonRpcRequest, UntypedMessage,
 };
+use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::sync::Mutex as StateMutex;
 use tokio::sync::{oneshot, Mutex, MutexGuard, Notify};
 
 use super::errors::acp_internal_error;
+use super::subagents::{spawned_child, MAX_SUBAGENTS};
 use crate::acp::control_protocol::{
     PromptCompletedMarker, SessionReplayed, MAX_CONTROL_QUEUE_BYTES, MAX_CONTROL_QUEUE_FRAMES,
 };
@@ -139,6 +141,15 @@ impl SessionIngressNotification {
     }
 }
 
+/// Admit the child an admitted session's `subagent_spawned` announces.
+fn admit_child(children: &mut HashSet<SessionId>, notification: &SessionNotification) {
+    if let Some(child) = spawned_child(&notification.update) {
+        if children.len() < MAX_SUBAGENTS {
+            children.insert(child);
+        }
+    }
+}
+
 #[derive(Default)]
 pub(super) struct SessionIngress {
     state: StateMutex<IdentityState>,
@@ -150,6 +161,8 @@ pub(super) struct SessionIngress {
 #[derive(Default)]
 struct IdentityState {
     current: Option<SessionId>,
+    /// Native subagent sessions announced under `current`, admitted alongside it.
+    children: HashSet<SessionId>,
     pending: Option<Establishment>,
     generation: u64,
     failed: bool,
@@ -245,8 +258,17 @@ impl SessionIngress {
             .take()
             .map(|pending| pending.updates)
             .unwrap_or_default();
-        updates.retain(|notification| Some(&notification.session_id) == id.as_ref());
+        let mut children = HashSet::new();
+        updates.retain(|notification| {
+            let admitted = Some(&notification.session_id) == id.as_ref()
+                || children.contains(&notification.session_id);
+            if admitted {
+                admit_child(&mut children, notification);
+            }
+            admitted
+        });
         state.current = id;
+        state.children = children;
         drop(state);
         self.changed.notify_waiters();
         Ok(updates)
@@ -305,7 +327,17 @@ impl SessionIngress {
             pending.updates.push(notification);
             return Ok(None);
         }
-        Ok((state.current.as_ref() == Some(&notification.session_id)).then_some(notification))
+        let admitted = state.current.as_ref() == Some(&notification.session_id)
+            || state.children.contains(&notification.session_id);
+        if admitted {
+            admit_child(&mut state.children, &notification);
+        }
+        Ok(admitted.then_some(notification))
+    }
+
+    /// Whether `id` is an admitted subagent session rather than the main one.
+    pub(super) fn is_subagent(&self, id: &SessionId) -> bool {
+        self.state.lock().unwrap().children.contains(id)
     }
 
     fn request_admission(&self, id: &SessionId) -> RequestAdmission {
@@ -320,7 +352,7 @@ impl SessionIngress {
                 RequestAdmission::Reject
             };
         }
-        if state.current.as_ref() == Some(id) {
+        if state.current.as_ref() == Some(id) || state.children.contains(id) {
             RequestAdmission::Active
         } else {
             RequestAdmission::Reject
@@ -536,5 +568,50 @@ mod tests {
                 assert!(ingress.route(notif("s"), None).is_err());
             }
         }
+    }
+
+    fn spawned(on: &str, child: &str) -> SessionNotification {
+        let mut params = serde_json::json!({
+            "sessionId": on,
+            "update": {"sessionUpdate": "subagent_spawned", "subagentSessionId": child,
+                       "name": "n", "task": "t", "capabilities": {}},
+        });
+        super::super::extension_updates::tunnel_extension_update(&mut params);
+        serde_json::from_value(params).unwrap()
+    }
+
+    #[test]
+    fn announced_subagents_are_admitted_live_and_in_replay() {
+        let admitted = |ingress: &SessionIngress, n| ingress.route(n, None).unwrap().is_some();
+        let id = |s: &str| SessionId::from(s.to_string());
+        let ingress = SessionIngress::new(Some(id("root")));
+        assert!(!admitted(&ingress, notif("child")), "unannounced");
+        assert!(admitted(&ingress, spawned("root", "child")));
+        assert!(admitted(&ingress, notif("child")));
+        assert!(admitted(&ingress, spawned("child", "grandchild")));
+        assert!(admitted(&ingress, notif("grandchild")));
+        assert!(!admitted(&ingress, spawned("stranger", "x")));
+        assert!(
+            !admitted(&ingress, notif("x")),
+            "announced by an unadmitted session"
+        );
+        assert!(ingress.is_subagent(&id("grandchild")) && !ingress.is_subagent(&id("root")));
+        assert!(ingress.request_admission(&id("child")) == RequestAdmission::Active);
+
+        // A replay keeps a child's updates only after its announcement, and
+        // children of the previous session do not carry over.
+        ingress.begin();
+        for n in [
+            notif("child"),
+            spawned("root", "child"),
+            notif("child"),
+            notif("x"),
+        ] {
+            ingress.route(n, None).unwrap();
+        }
+        let replay = ingress.finish(Some(id("root"))).unwrap();
+        let sessions: Vec<&str> = replay.iter().map(|n| n.session_id.0.as_ref()).collect();
+        assert_eq!(sessions, ["root", "child"]);
+        assert!(ingress.is_subagent(&id("child")) && !ingress.is_subagent(&id("grandchild")));
     }
 }

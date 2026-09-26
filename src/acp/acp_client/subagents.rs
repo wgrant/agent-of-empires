@@ -1,0 +1,119 @@
+//! Native subagent sessions (ACP RFD #1992). With `clientCapabilities.subagents`
+//! declared, an adapter announces each child with `subagent_spawned` on its
+//! parent's session, then streams the child's work under the child's own
+//! session id on the same connection.
+
+use agent_client_protocol::schema::v1::{SessionId, SessionUpdate};
+use serde_json::Value;
+
+use super::extension_updates::extension_update;
+use crate::acp::state::Event;
+
+/// Children admitted per native session; later announcements are ignored.
+pub(super) const MAX_SUBAGENTS: usize = 256;
+
+/// The child a tunnelled `subagent_spawned` announces.
+pub(super) fn spawned_child(update: &SessionUpdate) -> Option<SessionId> {
+    let update = extension_update(update)?;
+    (update.get("sessionUpdate")?.as_str()? == "subagent_spawned")
+        .then(|| update.get("subagentSessionId")?.as_str())
+        .flatten()
+        .filter(|id| !id.is_empty())
+        .map(|id| SessionId::new(id.to_string()))
+}
+
+/// Tag a transcript event with the subagent it came from, if any.
+pub(super) fn scoped(subagent: Option<&str>, event: Event) -> Event {
+    match subagent {
+        Some(id) => Event::SubagentUpdate {
+            id: id.to_string(),
+            event: Box::new(event),
+        },
+        None => event,
+    }
+}
+
+/// A child session's events as the parent records them: its transcript is
+/// wrapped so it never merges into the main reply, a nested spawn names its
+/// parent, and session-wide state (usage, commands, config, titles) is the
+/// main agent's alone.
+pub(super) fn child_events(id: &str, events: Vec<Event>) -> Vec<Event> {
+    events
+        .into_iter()
+        .filter_map(|event| match event {
+            Event::SubagentSpawned {
+                id: child,
+                name,
+                task,
+                ..
+            } => Some(Event::SubagentSpawned {
+                id: child,
+                parent: Some(id.to_string()),
+                name,
+                task,
+            }),
+            Event::SubagentStateChanged { .. } => Some(event),
+            Event::AgentMessageChunk { .. }
+            | Event::AgentMessageSnapshot { .. }
+            | Event::AgentThoughtChunk { .. }
+            | Event::AgentThoughtSnapshot { .. }
+            | Event::ToolCallStarted { .. }
+            | Event::ToolCallUpdated { .. }
+            | Event::ToolCallContent { .. }
+            | Event::ToolCallCompleted { .. }
+            | Event::DiffEmitted { .. }
+            | Event::PlanUpdated { .. }
+            | Event::TodoListUpdated { .. }
+            | Event::AgentNotice { .. } => Some(scoped(Some(id), event)),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The `clientCapabilities` additions that opt in: the canonical field, and the
+/// JetBrains AIR `_meta` form for SDKs that strip unknown capability fields.
+pub(super) fn declare_capability(client_capabilities: &mut Value) {
+    client_capabilities["subagents"] = serde_json::json!({});
+    client_capabilities["_meta"]["jetbrains"]["air"] = serde_json::json!({
+        "version": 1,
+        "capabilities": ["nativeSubagentSessions"],
+    });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn child_events_keep_the_transcript_apart_and_drop_session_state() {
+        let spawn = Event::SubagentSpawned {
+            id: "grandchild".into(),
+            parent: None,
+            name: "n".into(),
+            task: "t".into(),
+        };
+        let events = child_events(
+            "child",
+            vec![
+                Event::AgentMessageChunk { text: "hi".into() },
+                spawn,
+                Event::SubagentStateChanged {
+                    id: "grandchild".into(),
+                    state: "completed".into(),
+                },
+                Event::ThinkingStarted,
+                Event::SessionTitleSuggested { title: "t".into() },
+            ],
+        );
+        assert!(matches!(
+            &events[0],
+            Event::SubagentUpdate { id, event } if id == "child"
+                && matches!(event.as_ref(), Event::AgentMessageChunk { text } if text == "hi")
+        ));
+        assert!(
+            matches!(&events[1], Event::SubagentSpawned { parent: Some(p), .. } if p == "child")
+        );
+        assert!(matches!(&events[2], Event::SubagentStateChanged { .. }));
+        assert_eq!(events.len(), 3);
+    }
+}

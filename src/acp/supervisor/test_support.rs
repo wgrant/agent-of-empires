@@ -291,6 +291,7 @@ pub(super) fn runner_config(socket_path: PathBuf) -> SpawnConfig {
         host_environment: vec![],
         default_effort: None,
         default_effort_explicit: false,
+        native_subagents: false,
         default_mode: None,
         default_model: None,
         socket_path: Some(socket_path),

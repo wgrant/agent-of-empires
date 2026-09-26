@@ -43,15 +43,19 @@ pub(super) fn build_initialize_request() -> InitializeRequest {
         )
 }
 
-/// The initialize request as sent through the runner: the typed request plus the
-/// `session.notices` and `session.compaction` capabilities the ACP crate cannot
-/// express yet; `extension_updates` handles what they unlock.
-pub(super) fn initialize_params() -> serde_json::Value {
+/// The initialize request as sent through the runner: the typed request plus
+/// the capabilities the ACP crate cannot express yet, `session.notices`,
+/// `session.compaction`, and optionally native subagents; `extension_updates`
+/// handles what they unlock.
+pub(super) fn initialize_params(native_subagents: bool) -> serde_json::Value {
     let mut params =
         serde_json::to_value(build_initialize_request()).expect("initialize request serializes");
-    let session = &mut params["clientCapabilities"]["session"];
-    session["notices"] = serde_json::json!({});
-    session["compaction"] = serde_json::json!({});
+    let capabilities = &mut params["clientCapabilities"];
+    capabilities["session"]["notices"] = serde_json::json!({});
+    capabilities["session"]["compaction"] = serde_json::json!({});
+    if native_subagents {
+        super::subagents::declare_capability(capabilities);
+    }
     params
 }
 
@@ -114,13 +118,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn initialize_params_advertise_notices_and_compaction_beside_typed_capabilities() {
-        let params = initialize_params();
+    fn initialize_params_advertise_extensions_beside_typed_capabilities() {
+        let params = initialize_params(false);
         let caps = &params["clientCapabilities"];
         assert_eq!(caps["session"]["notices"], serde_json::json!({}));
         assert_eq!(caps["session"]["compaction"], serde_json::json!({}));
         assert_eq!(caps["terminal"], true);
+        assert!(caps.get("subagents").is_none());
         assert_eq!(params["clientInfo"]["name"], "agent-of-empires");
+
+        let caps = initialize_params(true)["clientCapabilities"].clone();
+        assert_eq!(caps["subagents"], serde_json::json!({}));
+        assert_eq!(
+            caps["_meta"]["jetbrains"]["air"]["capabilities"],
+            serde_json::json!(["nativeSubagentSessions"])
+        );
+        assert_eq!(caps["terminal"], true);
     }
 
     /// #2767: a strict backend rejects an empty client_name/client_version.

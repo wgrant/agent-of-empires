@@ -514,6 +514,13 @@ pub struct AcpConfig {
     #[serde(default)]
     #[setting(label = "Wrap tool output", widget = "toggle")]
     pub wrap_tool_output: bool,
+    /// Ask agents to run subagents as native child sessions, the draft ACP
+    /// subagent extension Claude and Codex implement, so a subagent's
+    /// messages, thinking, and tools stream in. Experimental; takes effect
+    /// when an agent next starts.
+    #[serde(default)]
+    #[setting(label = "Native subagent sessions", widget = "toggle", advanced)]
+    pub native_subagents: bool,
     /// Show a dismissable reminder in the structured view once the agent's
     /// context window passes `compaction_reminder_percent`, suggesting
     /// `/compact`. Off by default: the composer's usage chip already
@@ -661,6 +668,7 @@ impl Default for AcpConfig {
             node_path: String::new(),
             show_tool_durations: true,
             wrap_tool_output: false,
+            native_subagents: false,
             compaction_reminder: false,
             compaction_reminder_percent: default_compaction_reminder_percent(),
             silent_orphan_grace_secs: default_silent_orphan_grace_secs(),

@@ -823,6 +823,26 @@ pub enum Event {
     TurnTokenUsage {
         usage: TurnTokenUsage,
     },
+    /// The agent delegated work to a native subagent session (ACP RFD #1992).
+    SubagentSpawned {
+        /// The child's ACP session id.
+        id: String,
+        /// The subagent that spawned it; `None` for the main agent.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        parent: Option<String>,
+        name: String,
+        task: String,
+    },
+    /// A native subagent ended: `completed`, `failed`, `cancelled`, or `disconnected`.
+    SubagentStateChanged {
+        id: String,
+        state: String,
+    },
+    /// A transcript event from a native subagent's session, kept apart from the main reply.
+    SubagentUpdate {
+        id: String,
+        event: Box<Event>,
+    },
     /// An agent advisory (a warning, deprecation, or failed background step).
     AgentNotice {
         /// `info`, `warning`, or `error`; other values render as `info`.
@@ -1114,6 +1134,9 @@ impl AcpState {
             | Event::ConversationCompactionSummary { .. }
             | Event::AgentNotice { .. }
             | Event::TurnTokenUsage { .. }
+            | Event::SubagentSpawned { .. }
+            | Event::SubagentStateChanged { .. }
+            | Event::SubagentUpdate { .. }
             | Event::WakeupScheduled { .. }
             | Event::MonitorArmed { .. } => {}
         }
