@@ -830,6 +830,23 @@ pub enum Event {
     ConversationCompactionSummary {
         text: String,
     },
+    /// A compaction's terminal report: `completed`, `failed`, or `cancelled`,
+    /// with whatever the agent measured. A completion also records
+    /// `ConversationCompacted`.
+    ConversationCompactionEnded {
+        status: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
+        /// `automatic` or `manual`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        trigger: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pre_tokens: Option<u64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        post_tokens: Option<u64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        duration_ms: Option<u64>,
+    },
     /// Token counts from the prompt response that ended a turn.
     TurnTokenUsage {
         usage: TurnTokenUsage,
@@ -1100,6 +1117,7 @@ impl AcpState {
                 self.pending_elicitations = Vec::new();
             }
             Event::ConversationCompactionStarted => self.compacting = true,
+            Event::ConversationCompactionEnded { .. } => self.compacting = false,
             Event::ConversationCompacted => {
                 self.compacting = false;
                 self.usage = None;

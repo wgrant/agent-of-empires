@@ -7,7 +7,7 @@ import type { ThreadMessageLike } from "@assistant-ui/react";
 
 import { hasTodoArrayArgsText, parseJsonObject } from "../../lib/acpArgs";
 import { lastClearIndex } from "../../lib/acpHistoryWindow";
-import type { ActivityRow, ToolCall, ToolOutputBlock } from "../../lib/acpTypes";
+import type { ActivityRow, CompactionInfo, ToolCall, ToolOutputBlock } from "../../lib/acpTypes";
 import { type AgentProfile, DEFAULT_AGENT_PROFILE, isSubagentToolName } from "../../lib/agentProfiles";
 
 /** Synthetic part for a subagent Task with its child tool calls. */
@@ -18,6 +18,13 @@ export const TOOL_GROUP_NAME = "_aoe_tool_group";
 export const TODO_GROUP_NAME = "_aoe_todo_group";
 /** Synthetic part for a native subagent session and its own transcript. */
 export const NATIVE_SUBAGENT_NAME = "_aoe_native_subagent";
+/** Synthetic part for a compaction and the summary it kept. */
+export const COMPACTION_NAME = "_aoe_compaction";
+
+/** What a compaction card renders. */
+export interface Compaction extends CompactionInfo {
+  summary: string;
+}
 
 /** What a native subagent card renders, in its session's order. */
 export type NativeSubagentItem =
@@ -117,11 +124,9 @@ const CALLOUTS: Partial<Record<ActivityRow["kind"], (text: string, row: Activity
   session_cleared: (text) => `> ⚠️ **Conversation cleared**; ${text.replace(/^Conversation cleared,?\s*/, "")}`,
   // `session/load` fallback after a restart: the model's window is empty.
   context_reset: (text) => `> ⚠️ **Conversation context reset**; ${text}`,
-  compacted: (text) => `> ⚠️ **Conversation compacted**; ${text.replace(/^Conversation compacted[;,]?\s*/, "")}`,
   // The banner is capped and retired by the next prompt, so history lives here.
   advisory: (text) => `> ℹ️ **Notice**; ${text}`,
   summary: (text) => `> 📝 **Summary of conversation so far**\n>\n${quoteLines(text)}`,
-  compaction_summary: (text) => `> 📝 **What compaction kept**\n>\n${quoteLines(text)}`,
   // An agent notice is its title, then an optional description.
   agent_notice: (text, row) => {
     const [title, ...description] = text.split("\n");
@@ -209,6 +214,8 @@ export function activityToThreadMessages(
     currentAssistant ??= new AssistantBuilder(row.id, row.at);
     if (row.kind === "subagent") {
       if (row.subagent) currentAssistant.appendSubagent(nativeSubagent(row, rowsByOwner, visiblyBusy));
+    } else if (row.kind === "compacted") {
+      currentAssistant.appendCompaction(row);
     } else if (row.kind === "tool_start" && row.tool) {
       currentAssistant.appendToolCall(row.tool);
     } else if (row.kind === "tool_complete" || row.kind === "tool_error" || row.kind === "tool_stopped") {
@@ -315,6 +322,16 @@ class AssistantBuilder {
       toolCallId: `native-subagent-${subagent.id}`,
       toolName: NATIVE_SUBAGENT_NAME,
       argsText: JSON.stringify(subagent),
+    });
+  }
+
+  appendCompaction(row: ActivityRow) {
+    const compaction: Compaction = { state: "completed", ...row.compaction, summary: row.text };
+    this.parts.push({
+      type: "tool-call",
+      toolCallId: row.id,
+      toolName: COMPACTION_NAME,
+      argsText: JSON.stringify(compaction),
     });
   }
 
@@ -426,7 +443,13 @@ function collapseToolRuns(parts: DraftPart[], todosEnabled: boolean): DraftPart[
     } else if (
       run.length >= TOOL_GROUP_MIN_RUN &&
       // A todo update among real work, or a subagent card, stays inline.
-      !run.some((p) => isTodo(p) || p.toolName === SUBAGENT_TASK_NAME || p.toolName === NATIVE_SUBAGENT_NAME)
+      !run.some(
+        (p) =>
+          isTodo(p) ||
+          p.toolName === SUBAGENT_TASK_NAME ||
+          p.toolName === NATIVE_SUBAGENT_NAME ||
+          p.toolName === COMPACTION_NAME,
+      )
     ) {
       for (let i = 0; i < run.length; i += TOOL_GROUP_MAX_RUN) {
         const chunk = run.slice(i, i + TOOL_GROUP_MAX_RUN);

@@ -1413,6 +1413,15 @@ fn transcript_lines(
                     out.push(Line::default());
                 }
             }
+            TranscriptRowKind::Compacted => {
+                let info = row.compaction.clone().unwrap_or_default();
+                let kind = match info.state.as_str() {
+                    "failed" => NoteKind::Warning,
+                    _ => NoteKind::Info,
+                };
+                out.push(note_line(kind, &info.headline()));
+                out.push(Line::default());
+            }
             TranscriptRowKind::ElicitationAnswered => {
                 if row.elicitation_answers.is_empty() {
                     out.extend(user_message_lines(&row.text, theme));
@@ -1429,8 +1438,6 @@ fn transcript_lines(
             TranscriptRowKind::EmptyOutput
             | TranscriptRowKind::ContextReset
             | TranscriptRowKind::SessionCleared
-            | TranscriptRowKind::Compacted
-            | TranscriptRowKind::CompactionSummary
             | TranscriptRowKind::Summary
             | TranscriptRowKind::Notice
             | TranscriptRowKind::Advisory

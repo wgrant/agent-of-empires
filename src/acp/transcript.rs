@@ -47,6 +47,27 @@ pub struct TranscriptRow {
     /// The subagent a `subagent` row introduces; `text` holds its task.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub subagent: Option<SubagentInfo>,
+    /// The compaction a `compacted` row reports; `text` holds its kept summary.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compaction: Option<CompactionInfo>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct CompactionInfo {
+    /// `running`, then `completed`, `failed`, `cancelled`, or `interrupted`
+    /// when the turn ended without a verdict.
+    pub state: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    /// `automatic` or `manual`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trigger: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pre_tokens: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub post_tokens: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duration_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -64,6 +85,51 @@ pub struct SubagentInfo {
     pub state: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ended_at: Option<DateTime<Utc>>,
+}
+
+impl CompactionInfo {
+    /// One line naming the outcome and what the agent measured.
+    pub fn headline(&self) -> String {
+        let outcome = match self.state.as_str() {
+            "running" => "Compacting context".to_string(),
+            "failed" => match &self.error {
+                Some(error) => format!("Compaction failed: {error}"),
+                None => "Compaction failed".to_string(),
+            },
+            "cancelled" => "Compaction cancelled".to_string(),
+            "interrupted" => "Compaction interrupted".to_string(),
+            _ => "Context compacted".to_string(),
+        };
+        let mut facts = Vec::new();
+        if let Some(trigger) = &self.trigger {
+            facts.push(trigger.clone());
+        }
+        match (self.pre_tokens, self.post_tokens) {
+            (Some(pre), Some(post)) => facts.push(format!(
+                "{} → {} tokens",
+                compact_count(pre),
+                compact_count(post)
+            )),
+            (Some(pre), None) => facts.push(format!("from {} tokens", compact_count(pre))),
+            _ => {}
+        }
+        if let Some(ms) = self.duration_ms {
+            facts.push(format!("{}s", ms.div_ceil(1000)));
+        }
+        if facts.is_empty() {
+            outcome
+        } else {
+            format!("{outcome} ({})", facts.join(", "))
+        }
+    }
+}
+
+fn compact_count(n: u64) -> String {
+    match n {
+        0..1_000 => n.to_string(),
+        1_000..1_000_000 => format!("{}k", n / 1_000),
+        _ => format!("{:.1}M", n as f64 / 1_000_000.0),
+    }
 }
 
 /// The kind discriminant for a [`TranscriptRow`]. Mirrors the web
@@ -84,9 +150,8 @@ pub enum TranscriptRowKind {
     EmptyOutput,
     ContextReset,
     SessionCleared,
+    /// One compaction, from its start to its verdict and kept summary.
     Compacted,
-    /// The summary a compaction kept in the model's context.
-    CompactionSummary,
     Summary,
     /// An error or lifecycle notice the user needs in the timeline.
     Notice,
@@ -148,6 +213,9 @@ pub struct TranscriptModel {
     subagent_text_runs: HashMap<String, (TranscriptRowKind, usize)>,
     /// The subagent whose event is being applied; stamped on the rows it appends.
     scope: Option<String>,
+    /// This turn's latest compaction row per scope, which the compaction's
+    /// later events, and repeats of them, update.
+    compactions: HashMap<Option<String>, usize>,
     group_counter: u64,
     /// Frames at or below this seq are dropped, so replay overlap is harmless.
     last_seq: u64,
@@ -351,6 +419,7 @@ impl TranscriptModel {
             Event::Stopped { .. } => {
                 let empty = self.turn_active && !self.turn_has_output;
                 let mut deltas = self.sweep_open_tools(seq);
+                deltas.extend(self.interrupt_compactions());
                 // Some slash commands produce neither a chunk nor a tool call.
                 if empty {
                     deltas.push(self.push(
@@ -391,12 +460,16 @@ impl TranscriptModel {
                 TranscriptRowKind::SessionCleared,
                 "Conversation cleared, the model no longer remembers earlier turns.".to_string(),
             )],
-            Event::ConversationCompacted => vec![self.push(
-                format!("compacted-{seq}"),
-                TranscriptRowKind::Compacted,
-                "Conversation compacted; earlier turns above are summarised in the model's context."
-                    .to_string(),
-            )],
+            Event::ConversationCompactionStarted => {
+                if self.compaction().is_some_and(|c| c.state == "running") {
+                    return Vec::new();
+                }
+                vec![self.push_compaction(seq, "running", String::new())]
+            }
+            Event::ConversationCompacted => self.update_compaction(seq, |row| {
+                let info = row.compaction.get_or_insert_with(Default::default);
+                (info.state != "completed").then(|| info.state = "completed".into())
+            }),
             Event::SessionContextReset { reason } => {
                 let has_prior_prompt = self.rows.iter().any(|r| {
                     matches!(
@@ -447,11 +520,30 @@ impl TranscriptModel {
                 TranscriptRowKind::Summary,
                 text.clone(),
             )],
-            Event::ConversationCompactionSummary { text } => vec![self.push(
-                format!("compaction-summary-{seq}"),
-                TranscriptRowKind::CompactionSummary,
-                text.clone(),
-            )],
+            Event::ConversationCompactionSummary { text } => self.update_compaction(seq, |row| {
+                (row.text != *text).then(|| row.text = text.clone())
+            }),
+            Event::ConversationCompactionEnded {
+                status,
+                error,
+                trigger,
+                pre_tokens,
+                post_tokens,
+                duration_ms,
+            } => self.update_compaction(seq, |row| {
+                let info = row.compaction.get_or_insert_with(Default::default);
+                let before = info.clone();
+                // A late failure never overturns a reported completion.
+                if info.state != "completed" {
+                    info.state = status.clone();
+                }
+                info.error = error.clone().or(info.error.take());
+                info.trigger = trigger.clone().or(info.trigger.take());
+                info.pre_tokens = pre_tokens.or(info.pre_tokens);
+                info.post_tokens = post_tokens.or(info.post_tokens);
+                info.duration_ms = duration_ms.or(info.duration_ms);
+                (*info != before).then_some(())
+            }),
             Event::AgentNotice {
                 severity,
                 title,
@@ -862,7 +954,68 @@ impl TranscriptModel {
         format!("g{}", self.group_counter)
     }
 
+    fn compaction(&self) -> Option<&CompactionInfo> {
+        let index = *self.compactions.get(&self.scope)?;
+        self.rows[index].compaction.as_ref()
+    }
+
+    fn push_compaction(&mut self, seq: u64, state: &str, text: String) -> TranscriptDelta {
+        self.turn_has_output = true;
+        let mut row = self.grouped_row(
+            format!("compacted-{seq}"),
+            TranscriptRowKind::Compacted,
+            text,
+        );
+        row.compaction = Some(CompactionInfo {
+            state: state.into(),
+            ..Default::default()
+        });
+        self.compactions.insert(self.scope.clone(), self.rows.len());
+        self.append(row)
+    }
+
+    /// Apply a compaction event to this turn's compaction row, or to a new
+    /// completed one when the agent never announced a start; `update` returns
+    /// `None` when nothing changed.
+    fn update_compaction(
+        &mut self,
+        seq: u64,
+        update: impl FnOnce(&mut TranscriptRow) -> Option<()>,
+    ) -> Vec<TranscriptDelta> {
+        let index = match self.compactions.get(&self.scope) {
+            Some(&index) => index,
+            None => {
+                self.push_compaction(seq, "completed", String::new());
+                self.rows.len() - 1
+            }
+        };
+        let fresh = self.rows[index].id == format!("compacted-{seq}");
+        let changed = update(&mut self.rows[index]).is_some();
+        let row = &self.rows[index];
+        if fresh {
+            vec![TranscriptDelta::Append(row.clone())]
+        } else if changed {
+            vec![patch(row)]
+        } else {
+            Vec::new()
+        }
+    }
+
+    /// A turn that ends mid-compaction leaves it with no verdict.
+    fn interrupt_compactions(&mut self) -> Vec<TranscriptDelta> {
+        let mut deltas = Vec::new();
+        for &index in self.compactions.values() {
+            let row = &mut self.rows[index];
+            if let Some(info) = row.compaction.as_mut().filter(|c| c.state == "running") {
+                info.state = "interrupted".into();
+                deltas.push(patch(row));
+            }
+        }
+        deltas
+    }
+
     fn begin_turn(&mut self) {
+        self.compactions.clear();
         let steered_continuation = self.turn_active && self.steering;
         self.turn_active = true;
         if !steered_continuation {
@@ -896,6 +1049,7 @@ impl TranscriptRow {
             severity: None,
             subagent_id: None,
             subagent: None,
+            compaction: None,
         }
     }
 }
@@ -1222,6 +1376,96 @@ mod tests {
     }
 
     #[test]
+    fn a_compaction_folds_into_one_row() {
+        let ended = |status: &str, facts: bool| Event::ConversationCompactionEnded {
+            status: status.into(),
+            error: (status == "failed").then(|| "too long".into()),
+            trigger: facts.then(|| "automatic".into()),
+            pre_tokens: facts.then_some(966_795),
+            post_tokens: facts.then_some(10_147),
+            duration_ms: facts.then_some(71_200),
+        };
+        let summary = || Event::ConversationCompactionSummary {
+            text: "kept the plan".into(),
+        };
+        let stopped = || Event::Stopped {
+            reason: "prompt_complete".into(),
+        };
+        // (events, each compaction row's headline and summary)
+        let cases: Vec<(Vec<Event>, Vec<(&str, &str)>)> = vec![
+            // claude-agent-acp repeats the completion to add its measurements.
+            (
+                vec![
+                    prompt("go"),
+                    Event::ConversationCompactionStarted,
+                    Event::ConversationCompacted,
+                    summary(),
+                    ended("completed", false),
+                    Event::ConversationCompacted,
+                    ended("completed", true),
+                    stopped(),
+                ],
+                vec![(
+                    "Context compacted (automatic, 966k → 10k tokens, 72s)",
+                    "kept the plan",
+                )],
+            ),
+            // No start announced, as a legacy completion or on attach.
+            (
+                vec![prompt("go"), Event::ConversationCompacted],
+                vec![("Context compacted", "")],
+            ),
+            (
+                vec![
+                    prompt("go"),
+                    Event::ConversationCompactionStarted,
+                    ended("failed", false),
+                ],
+                vec![("Compaction failed: too long", "")],
+            ),
+            (
+                vec![
+                    prompt("go"),
+                    Event::ConversationCompactionStarted,
+                    stopped(),
+                ],
+                vec![("Compaction interrupted", "")],
+            ),
+            (
+                vec![prompt("go"), Event::ConversationCompactionStarted],
+                vec![("Compacting context", "")],
+            ),
+            // Each turn's compaction is its own row.
+            (
+                vec![
+                    prompt("one"),
+                    Event::ConversationCompacted,
+                    prompt("two"),
+                    Event::ConversationCompacted,
+                ],
+                vec![("Context compacted", ""), ("Context compacted", "")],
+            ),
+        ];
+        for (events, want) in cases {
+            let m = fold(events);
+            let got: Vec<(String, &str)> = m
+                .rows()
+                .iter()
+                .filter(|r| r.kind == TranscriptRowKind::Compacted)
+                .map(|r| {
+                    let info = r.compaction.as_ref().expect("compaction info");
+                    (info.headline(), r.text.as_str())
+                })
+                .collect();
+            let want: Vec<(String, &str)> = want
+                .into_iter()
+                .map(|(headline, text)| (headline.to_string(), text))
+                .collect();
+            assert_eq!(got, want);
+        }
+    }
+
+    #[test]
     fn notice_divider_and_control_events_render_per_event() {
         let resets_at = at(1_767_225_600);
         let switched = Event::AgentSwitched {
@@ -1302,13 +1546,6 @@ mod tests {
                 "Conversation cleared, the model no longer remembers earlier turns.".to_string(),
             ),
             (
-                Event::ConversationCompacted,
-                "compacted-1",
-                TranscriptRowKind::Compacted,
-                "Conversation compacted; earlier turns above are summarised in the model's context."
-                    .to_string(),
-            ),
-            (
                 Event::ConversationSummary {
                     text: "did the thing".into(),
                     summarized_until_seq: 0,
@@ -1316,14 +1553,6 @@ mod tests {
                 "summary-1",
                 TranscriptRowKind::Summary,
                 "did the thing".to_string(),
-            ),
-            (
-                Event::ConversationCompactionSummary {
-                    text: "kept the plan".into(),
-                },
-                "compaction-summary-1",
-                TranscriptRowKind::CompactionSummary,
-                "kept the plan".to_string(),
             ),
             (
                 Event::AgentNotice {
@@ -1364,10 +1593,9 @@ mod tests {
                 payload: serde_json::json!({"x": 1}),
             },
             Event::TodoListUpdated { todos: Vec::new() },
-            Event::ConversationCompactionStarted,
         ]);
         assert!(m.rows().is_empty());
-        assert_eq!(m.last_seq(), 5);
+        assert_eq!(m.last_seq(), 4);
 
         // A context-reset divider needs a reason or a prior prompt.
         let reset = |reason: &str| Event::SessionContextReset {

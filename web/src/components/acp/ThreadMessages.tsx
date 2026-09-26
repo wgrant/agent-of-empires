@@ -10,12 +10,15 @@ import { AssistantReasoning } from "./AssistantReasoning";
 import { DiffCommentsUserCard } from "../diff/comments/DiffCommentsUserCard";
 import { isDiffCommentsCardPayload, parseDiffCommentsSentinel } from "../diff/comments/buildPrompt";
 import {
+  COMPACTION_NAME,
   NATIVE_SUBAGENT_NAME,
   SUBAGENT_TASK_NAME,
   TODO_GROUP_NAME,
   TOOL_GROUP_NAME,
+  type Compaction,
   type NativeSubagent,
 } from "./activityMessages";
+import { CompactionCard } from "./CompactionCard";
 import { ElicitationAnswerCard } from "./ElicitationAnswerCard";
 import { Markdown } from "./Markdown";
 import { AsyncSubagentCard, SubagentCard, ToolGroupCard } from "./GroupToolCards";
@@ -218,6 +221,10 @@ function AssistantToolCall(props: ToolPart) {
       return <AssistantToolGroup {...props} />;
     case TODO_GROUP_NAME:
       return <AssistantTodoGroup {...props} />;
+    case COMPACTION_NAME: {
+      const compaction = props.argsText ? (parseJsonObject(props.argsText) as Compaction | null) : null;
+      return compaction ? <CompactionCard compaction={compaction} /> : null;
+    }
     case NATIVE_SUBAGENT_NAME: {
       const subagent = props.argsText ? (parseJsonObject(props.argsText) as NativeSubagent | null) : null;
       return subagent ? <NativeSubagentCard subagent={subagent} /> : null;
