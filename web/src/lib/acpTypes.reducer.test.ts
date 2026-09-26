@@ -317,6 +317,33 @@ describe("applyEvent / background agents", () => {
     expect(agent(launched, running, completed)[0]).toMatchObject({ status: "completed", result: "done" });
   });
 
+  it("records a native subagent from its own session's events", () => {
+    const inside = (event: AcpEvent): AcpEvent => ({ SubagentUpdate: { id: "c1", event } });
+    const tool = { id: "t1", name: "Read notes", kind: "read", args_preview: "{}", started_at: "2026-06-27T00:00:01Z" };
+    const events: AcpEvent[] = [
+      { SubagentSpawned: { id: "c1", name: "Explorer", task: "Count lines", at: "2026-06-27T00:00:00Z" } },
+      inside({ ToolCallStarted: { tool_call: tool } }),
+      inside({ ToolCallCompleted: { tool_call_id: "t1", is_error: false, content: "" } }),
+      inside({ AgentMessageChunk: { text: "2 " } }),
+      inside({ AgentMessageChunk: { text: "lines" } }),
+    ];
+    expect(agent(...events)[0]).toMatchObject({
+      description: "Explorer",
+      prompt: "Count lines",
+      status: "running",
+      startedAt: "2026-06-27T00:00:00Z",
+      toolCount: 1,
+      tools: [{ name: "Read notes", ok: true }],
+      lastTool: "Read notes",
+      lastText: "2 lines",
+    });
+    const ended = (state: string) =>
+      agent(...events, { SubagentStateChanged: { id: "c1", state, at: "2026-06-27T00:00:09Z" } })[0];
+    expect(ended("completed")).toMatchObject({ status: "completed", result: "2 lines", warning: null });
+    expect(ended("failed")).toMatchObject({ status: "error", warning: "failed" });
+    expect(ended("cancelled")).toMatchObject({ status: "detached", endedAt: "2026-06-27T00:00:09Z" });
+  });
+
   it("leaves endedAt null on a stall, so the elapsed timer keeps ticking (#4001)", () => {
     const stalled = progress("stalled", 1, "2026-06-27T00:01:30Z");
     expect(agent(launched, stalled)[0]).toMatchObject({ status: "stalled", endedAt: null });

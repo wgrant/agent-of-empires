@@ -35,7 +35,6 @@ export interface NativeSubagent {
   /** No terminal state arrived and nothing is running any more. */
   unresolved: boolean;
   startedAt: string;
-  /** Its last row's time, once it has a terminal state. */
   endedAt?: string;
   items: NativeSubagentItem[];
 }
@@ -54,9 +53,7 @@ function nativeSubagent(
     if (last?.type === type) last.text += text;
     else if (text) items.push({ type, text });
   };
-  let lastAt = header.at;
   for (const row of rowsByOwner.get(info.id) ?? []) {
-    lastAt = row.at;
     if (row.kind === "subagent" && row.subagent) {
       items.push({ type: "subagent", subagent: nativeSubagent(row, rowsByOwner, visiblyBusy) });
     } else if (row.kind === "tool_start" && row.tool) {
@@ -80,7 +77,7 @@ function nativeSubagent(
     state,
     unresolved: state === null && !visiblyBusy,
     startedAt: header.at,
-    ...(state === null ? {} : { endedAt: lastAt }),
+    ...(info.ended_at ? { endedAt: info.ended_at } : {}),
     items,
   };
 }

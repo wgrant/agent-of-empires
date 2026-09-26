@@ -207,6 +207,17 @@ test("notices, structured compaction, a truncated turn, and turn usage reach the
   }
 });
 
+const asyncLaunch = (agentId: string) => ({
+  sessionUpdate: "tool_call_update",
+  toolCallId: `launch-${agentId}`,
+  _meta: {
+    claudeCode: {
+      toolName: "Agent",
+      toolResponse: { isAsync: true, status: "async_launched", agentId, description: "d", prompt: "p" },
+    },
+  },
+});
+
 test("native subagent sessions reach the event store apart from the main reply", async ({ spawnServe }) => {
   const child = "fake-child-session";
   const { serve, sessionId } = await startAcpSession(spawnServe, {
@@ -227,6 +238,9 @@ test("native subagent sessions reach the event store apart from the main reply",
           echoDecision: true,
           toolCall: { toolCallId: "child-tool", title: "Child edit", kind: "edit" },
         },
+        // claude-agent-acp also reports a native subagent as an async launch; only the other one is tailed.
+        asyncLaunch(child),
+        asyncLaunch("tailed-agent"),
         { sessionUpdate: "subagent_state_update", subagentSessionId: child, state: "completed" },
         // Never announced, so refused.
         { ...chunk("STRANGER_TEXT"), onSession: "stranger-session" },
@@ -249,11 +263,12 @@ test("native subagent sessions reach the event store apart from the main reply",
       ? [JSON.stringify((e as { SubagentUpdate: { id: string; event: object } }).SubagentUpdate)]
       : [],
   );
-  expect(top("SubagentSpawned")).toEqual([
-    JSON.stringify({ SubagentSpawned: { id: child, name: "Explorer", task: "Find it" } }),
+  expect(top("SubagentSpawned").map((e) => JSON.parse(e).SubagentSpawned)).toEqual([
+    expect.objectContaining({ id: child, name: "Explorer", task: "Find it" }),
   ]);
-  expect(top("SubagentStateChanged")).toEqual([
-    JSON.stringify({ SubagentStateChanged: { id: child, state: "completed" } }),
+  expect(top("SubagentStateChanged").map((e) => JSON.parse(e).SubagentStateChanged.state)).toEqual(["completed"]);
+  expect(top("BackgroundAgentLaunched").map((e) => JSON.parse(e).BackgroundAgentLaunched.agent_id)).toEqual([
+    "tailed-agent",
   ]);
   // The child's text, permission tool card, and its echoed decision stay inside the child.
   expect(nested.some((e) => e.includes("CHILD_TEXT"))).toBe(true);

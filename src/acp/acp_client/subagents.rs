@@ -45,12 +45,14 @@ pub(super) fn child_events(id: &str, events: Vec<Event>) -> Vec<Event> {
                 id: child,
                 name,
                 task,
+                at,
                 ..
             } => Some(Event::SubagentSpawned {
                 id: child,
                 parent: Some(id.to_string()),
                 name,
                 task,
+                at,
             }),
             Event::SubagentStateChanged { .. } => Some(event),
             Event::AgentMessageChunk { .. }
@@ -91,6 +93,7 @@ mod tests {
             parent: None,
             name: "n".into(),
             task: "t".into(),
+            at: chrono::Utc::now(),
         };
         let events = child_events(
             "child",
@@ -100,6 +103,7 @@ mod tests {
                 Event::SubagentStateChanged {
                     id: "grandchild".into(),
                     state: "completed".into(),
+                    at: chrono::Utc::now(),
                 },
                 Event::ThinkingStarted,
                 Event::SessionTitleSuggested { title: "t".into() },
