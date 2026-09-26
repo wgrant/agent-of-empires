@@ -2,7 +2,7 @@
 // Shiki is mocked so HighlightedBlock renders a plain <pre> synchronously.
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 
 vi.mock("../../lib/snippetHighlighter", () => ({
   highlightSnippet: vi.fn().mockResolvedValue(null),
@@ -32,6 +32,7 @@ import { buildSkillIndex, type SkillIndex } from "../../lib/skillProvenance";
 import { AcpFileRefContext } from "./AcpFileRefContext";
 import { BackgroundAgentsContext } from "./backgroundAgentsContext";
 import { AsyncSubagentCard, extractTaskResult, SubagentCard, ToolGroupCard } from "./GroupToolCards";
+import { requestCardFocus } from "../../hooks/useCardFocus";
 import { NativeSubagentCard } from "./NativeSubagentCard";
 import { TodoGroupCard } from "./TodoCards";
 import { formatDurationMs, formatDurationSeconds } from "./ToolCardChrome";
@@ -729,6 +730,14 @@ describe("NativeSubagentCard", () => {
     for (const text of ["Count the lines", "src/lines.ts", "a.txt has 2 lines"]) {
       expect(container.textContent).toContain(text);
     }
+  });
+
+  it("opens and marks itself when the Background pane asks for it", () => {
+    const { container } = render(<NativeSubagentCard subagent={subagent({ state: "completed" })} />);
+    expect(container.textContent).not.toContain("Count the lines");
+    act(() => requestCardFocus("native-subagent-c1"));
+    expect(container.textContent).toContain("Count the lines");
+    expect(container.firstElementChild!.className).toContain("border-brand-500");
   });
 
   it.each([

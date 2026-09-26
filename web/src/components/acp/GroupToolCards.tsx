@@ -3,6 +3,7 @@
 
 import { Layers, Sparkles } from "lucide-react";
 
+import { useCardFocus } from "../../hooks/useCardFocus";
 import { pickStr } from "../../lib/acpArgs";
 import type { BackgroundAgentStatus, ToolCall } from "../../lib/acpTypes";
 import { useBackgroundAgentFor, useOpenBackgroundAgentsPane } from "./backgroundAgentsContext";
@@ -103,6 +104,8 @@ export function AsyncSubagentCard({ tool }: { tool: ToolCall }) {
   const { description } = useTaskDescription(tool);
   const agent = useBackgroundAgentFor(tool.id);
   const openPane = useOpenBackgroundAgentsPane();
+  // Its detail lives in the Background pane, so a focus request only brings it into view.
+  const focus = useCardFocus(`subagent-${tool.id}`, () => {});
 
   const [status, fallbackMeta] = agent ? ASYNC_STATUS[agent.status] : (["ok", "runs in background"] as const);
   let metaText = fallbackMeta;
@@ -116,6 +119,8 @@ export function AsyncSubagentCard({ tool }: { tool: ToolCall }) {
   return (
     <CardChrome
       status={status}
+      anchorRef={focus.ref}
+      highlighted={focus.flash}
       neutralOnDone={!agent || agent.status === "stalled" || agent.status === "detached"}
       icon={<Sparkles className={ICON} />}
       label="subagent"
@@ -147,10 +152,13 @@ export function SubagentCard({ tool, result, children }: ToolCardProps & { child
   const status: Status =
     result === undefined || children.some((c) => !c.result) ? "running" : result.kind === "tool_error" ? "err" : "ok";
   const [open, setOpen] = useToolCardExpansion(status);
+  const focus = useCardFocus(`subagent-${tool.id}`, () => setOpen(true));
 
   return (
     <CardChrome
       status={status}
+      anchorRef={focus.ref}
+      highlighted={focus.flash}
       {...spanTimes([{ tool, result }, ...children])}
       icon={<Sparkles className={ICON} />}
       label="subagent"

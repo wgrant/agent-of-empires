@@ -263,7 +263,7 @@ export function MobileMainPane({
             className="absolute inset-0 z-10 flex flex-col min-h-0 overflow-hidden bg-surface-900"
             style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
           >
-            <BackgroundAgentsPanel sessionId={activeSessionId} />
+            <BackgroundAgentsPanel sessionId={activeSessionId} onShowInTranscript={onBackToAgent} />
           </div>
         )}
 
