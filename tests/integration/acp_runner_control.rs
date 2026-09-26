@@ -745,6 +745,7 @@ for line in sys.stdin:
                 None,
                 "fake-agent".into(),
                 None,
+                Vec::new(),
             ),
         )
         .await
@@ -1430,6 +1431,7 @@ for line in sys.stdin:
         None,
         "review-agent".into(),
         None,
+        Vec::new(),
     )
     .await
     .unwrap();
@@ -1598,6 +1600,7 @@ for line in sys.stdin:
         None,
         "stream-agent".into(),
         None,
+        Vec::new(),
     )
     .await
     .unwrap();
@@ -1743,6 +1746,7 @@ for line in sys.stdin:
             None,
             "review-agent".into(),
             None,
+            Vec::new(),
         )
         .await
         .unwrap();
@@ -1973,4 +1977,181 @@ for line in sys.stdin:
         );
         std::thread::sleep(Duration::from_millis(10));
     }
+}
+
+/// A native subagent still running when the daemon restarts must stay
+/// admitted on reattach: its announcement is gone from what the runner
+/// flushes, so without the event store's record its queued update would be
+/// dropped and its later permission request refused as another session's.
+#[tokio::test]
+#[serial_test::parallel]
+async fn reattach_readmits_a_running_native_subagent() {
+    use agent_of_empires::acp::approvals::ApprovalDecision;
+    use agent_of_empires::acp::control_protocol::{self, ControlBody};
+    use agent_of_empires::acp::state::Event;
+
+    let Some(python3) = find_python3() else {
+        return;
+    };
+    let scratch = Scratch::new("subagent-reattach");
+    let home = scratch.0.join("home");
+    let xdg = scratch.0.join("xdg");
+    std::fs::create_dir_all(&home).unwrap();
+    std::fs::create_dir_all(&xdg).unwrap();
+    let spawned = scratch.0.join("spawned");
+    let release = scratch.0.join("release");
+    let attached = scratch.0.join("attached");
+    let outcome = scratch.0.join("outcome");
+    let agent = scratch.0.join("agent.py");
+    std::fs::write(&agent, r#"import json, sys, pathlib, time
+spawned, release, attached, outcome = map(pathlib.Path, sys.argv[1:])
+def send(msg):
+    print(json.dumps(msg), flush=True)
+def update(sid, update):
+    send({"jsonrpc":"2.0","method":"session/update","params":{"sessionId":sid,"update":update}})
+for line in sys.stdin:
+    msg = json.loads(line)
+    method = msg.get("method")
+    if method == "initialize":
+        send({"jsonrpc":"2.0","id":msg["id"],"result":{"protocolVersion":1,"agentCapabilities":{}}})
+    elif method == "session/new":
+        send({"jsonrpc":"2.0","id":msg["id"],"result":{"sessionId":"root"}})
+    elif method == "session/prompt":
+        update("root", {"sessionUpdate":"subagent_spawned","subagentSessionId":"kid","name":"n","task":"t","capabilities":{}})
+        spawned.write_text("spawned")
+        while not release.exists(): time.sleep(0.01)
+        update("kid", {"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"AFTER_RESTART"}})
+        # A request while no daemon is attached is cancelled by the runner, so ask after reattach.
+        while not attached.exists(): time.sleep(0.01)
+        send({"jsonrpc":"2.0","id":900,"method":"session/request_permission","params":{"sessionId":"kid","toolCall":{"toolCallId":"kid-tool","title":"Edit"},"options":[{"optionId":"allow","name":"Allow","kind":"allow_once"}]}})
+        for reply in sys.stdin:
+            reply = json.loads(reply)
+            if reply.get("id") == 900 and "method" not in reply:
+                outcome.write_text(json.dumps(reply))
+                break
+        send({"jsonrpc":"2.0","id":msg["id"],"result":{"stopReason":"end_turn"}})
+"#).unwrap();
+    let session = "subagent-reattach";
+    let socket = scratch.0.join(format!("{session}.sock"));
+    let control = agent_of_empires::process::worker::control_socket_sibling(&socket);
+    let _runner = KillOnDrop(
+        Command::new(env!("CARGO_BIN_EXE_aoe"))
+            .args([
+                "__acp-runner",
+                "--socket",
+                socket.to_str().unwrap(),
+                "--session-id",
+                session,
+                "--agent-name",
+                "review-agent",
+                "--cwd",
+                home.to_str().unwrap(),
+                "--",
+                python3.to_str().unwrap(),
+                agent.to_str().unwrap(),
+                spawned.to_str().unwrap(),
+                release.to_str().unwrap(),
+                attached.to_str().unwrap(),
+                outcome.to_str().unwrap(),
+            ])
+            .env("HOME", &home)
+            .env("XDG_CONFIG_HOME", &xdg)
+            .spawn()
+            .unwrap(),
+    );
+    wait_for(&control, "control socket");
+    // The first daemon: establish the session and start a turn that spawns the subagent.
+    let mut first = tokio::net::UnixStream::connect(&control).await.unwrap();
+    assert!(matches!(
+        control_protocol::read_frame(&mut first).await.unwrap(),
+        Some(ControlBody::Hello { .. })
+    ));
+    for frame in [
+        ControlBody::Attach {
+            control_protocol_version: control_protocol::CONTROL_PROTOCOL_VERSION,
+        },
+        ControlBody::Initialize {
+            request: serde_json::json!({"protocolVersion":1}),
+        },
+    ] {
+        control_protocol::write_frame(&mut first, &frame)
+            .await
+            .unwrap();
+    }
+    assert!(matches!(
+        control_protocol::read_frame(&mut first).await.unwrap(),
+        Some(ControlBody::Initialized { .. })
+    ));
+    control_protocol::write_frame(
+        &mut first,
+        &ControlBody::EstablishSession {
+            method: "session/new".into(),
+            request: serde_json::json!({"cwd":home,"mcpServers":[]}),
+        },
+    )
+    .await
+    .unwrap();
+    assert!(matches!(
+        control_protocol::read_frame(&mut first).await.unwrap(),
+        Some(ControlBody::SessionReady { .. })
+    ));
+    control_protocol::write_frame(
+        &mut first,
+        &ControlBody::Prompt {
+            request: serde_json::json!({"sessionId":"root","prompt":[]}),
+        },
+    )
+    .await
+    .unwrap();
+    wait_for(&spawned, "subagent announced");
+    // The daemon stops; the subagent works on while the runner queues its output.
+    drop(first);
+    std::fs::write(&release, "release").unwrap();
+
+    let mut resumed = AcpClient::attach(
+        socket,
+        home,
+        vec![],
+        "root".into(),
+        true,
+        AcpSessionId(session.into()),
+        None,
+        "review-agent".into(),
+        None,
+        vec!["kid".into()],
+    )
+    .await
+    .unwrap();
+    std::fs::write(&attached, "attached").unwrap();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    let mut child_text = None;
+    while child_text.is_none() || !outcome.exists() {
+        match tokio::time::timeout_at(deadline, resumed.next_event())
+            .await
+            .expect("reattached subagent output before the deadline")
+            .unwrap()
+        {
+            Event::SubagentUpdate { id, event } => {
+                if let Event::AgentMessageChunk { text } = *event {
+                    child_text = Some((id, text));
+                }
+            }
+            Event::ApprovalRequested { approval } => resumed
+                .resolve_permission(approval.nonce, ApprovalDecision::Allow, None)
+                .await
+                .unwrap(),
+            _ => {}
+        }
+    }
+    resumed.shutdown().await.unwrap();
+    assert_eq!(
+        child_text,
+        Some(("kid".to_string(), "AFTER_RESTART".to_string()))
+    );
+    let reply: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&outcome).unwrap()).unwrap();
+    assert_eq!(
+        reply["result"]["outcome"]["optionId"], "allow",
+        "the subagent's permission request reached the user: {reply}"
+    );
 }

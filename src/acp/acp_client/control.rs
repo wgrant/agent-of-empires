@@ -1297,6 +1297,7 @@ mod tests {
                     None,
                     "codex".into(),
                     None,
+                    Vec::new(),
                 )
                 .await
                 .unwrap();
@@ -1469,6 +1470,7 @@ mod tests {
                 None,
                 "codex".into(),
                 None,
+                Vec::new(),
             )
             .await
             .unwrap();
@@ -1596,6 +1598,7 @@ mod tests {
                 None,
                 "codex".into(),
                 None,
+                Vec::new(),
             )
             .await
             .expect("producer-admitted backlog must attach");

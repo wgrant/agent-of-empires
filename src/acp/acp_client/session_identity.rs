@@ -173,6 +173,8 @@ struct Establishment {
     candidate: Option<SessionId>,
     updates: Vec<SessionNotification>,
     encoded_bytes: usize,
+    /// Subagents already running when this establishment began, admitted with it.
+    subagents: HashSet<SessionId>,
 }
 
 /// Count encoded pending payload without retaining a second copy.
@@ -228,8 +230,21 @@ impl SessionIngress {
             candidate: None,
             updates: Vec::new(),
             encoded_bytes: 0,
+            subagents: HashSet::new(),
         });
         generation
+    }
+
+    /// Admit subagents a previous daemon saw announced and not yet ended: a
+    /// reattached runner keeps them running, but their announcements are
+    /// gone from what it flushes.
+    pub(super) fn readmit_subagents(&self, ids: impl IntoIterator<Item = SessionId>) {
+        let mut state = self.state.lock().unwrap();
+        let ids = ids.into_iter().take(MAX_SUBAGENTS);
+        match state.pending.as_mut() {
+            Some(pending) => pending.subagents.extend(ids),
+            None => state.children.extend(ids),
+        }
     }
 
     /// Publish a response fact under the wire's ordering barrier, not an update's ID.
@@ -253,12 +268,11 @@ impl SessionIngress {
         if state.failed {
             return Err(Self::overflow_error());
         }
-        let mut updates = state
+        let (mut updates, mut children) = state
             .pending
             .take()
-            .map(|pending| pending.updates)
+            .map(|pending| (pending.updates, pending.subagents))
             .unwrap_or_default();
-        let mut children = HashSet::new();
         updates.retain(|notification| {
             let admitted = Some(&notification.session_id) == id.as_ref()
                 || children.contains(&notification.session_id);
