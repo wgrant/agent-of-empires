@@ -20,6 +20,13 @@ const expect2xx = (res: Response) => {
   expect(res.status).toBeLessThan(300);
 };
 
+test("structured view spawn + prompt round-trip emits an agent_message_chunk", async ({ spawnServe }) => {
+  // Enable spawns the worker itself; an explicit /acp/spawn would 409.
+  const { serve, sessionId } = await startAcpSession(spawnServe, { title: "acp-trace" });
+  expect2xx(await postPrompt(serve.baseUrl, sessionId, "hello structured view"));
+  await waitForReplayContains(serve.baseUrl, sessionId, ["agent_message_chunk", "AgentMessageChunk"]);
+});
+
 type ApprovalFrame = {
   seq?: number;
   event?: {
@@ -156,9 +163,40 @@ test.describe("mid-turn prompts", () => {
   });
 });
 
-// force_end_turn and user prompts are published straight to the event store, so this needs no live worker.
-// Replay paging is pinned by Rust event_store::replay tests (forward_pages_reassemble_the_full_replay).
+test("notice and structured compaction updates reach the event store through the runner", async ({ spawnServe }) => {
+  // The ACP crate cannot decode these kinds; ingress tunnels them through `session_info_update`.
+  const { serve, sessionId } = await startAcpSession(spawnServe, {
+    title: "acp-extension-updates",
+    fakeAcpScript: script(
+      endTurn(
+        { sessionUpdate: "notice", severity: "warning", title: "Config deprecated", description: "Use the new key" },
+        { sessionUpdate: "compaction_update", compactionId: "c1", status: "in_progress" },
+        {
+          sessionUpdate: "compaction_update",
+          compactionId: "c1",
+          status: "completed",
+          summary: [{ type: "text", text: "KEPT_THE_PLAN" }],
+        },
+      ),
+    ),
+  });
+  await postPrompt(serve.baseUrl, sessionId, "/compact");
+  await waitForReplayContains(serve.baseUrl, sessionId, "KEPT_THE_PLAN");
+  const replay = await replayJson(serve.baseUrl, sessionId);
+  for (const needle of ["AgentNotice", "Config deprecated", "ConversationCompactionStarted", "ConversationCompacted"]) {
+    expect(replay, needle).toContain(needle);
+  }
+});
+
+// force_end_turn and user prompts are published straight to the event store, so these need no live worker.
 test.describe("event store", () => {
+  test("structured view/force_end_turn publishes a synthetic Stopped event", async ({ spawnServe }) => {
+    const { serve, sessionId } = await seedAcpSession(spawnServe, { title: "acp-force-end" });
+    expect((await postAcp(serve.baseUrl, sessionId, "/enable")).ok).toBeTruthy();
+    expect((await postAcp(serve.baseUrl, sessionId, "/force_end_turn")).status).toBe(202);
+    await waitForReplayContains(serve.baseUrl, sessionId, "user_forced");
+  });
+
   test("structured view/context-primer renders the seeded turn", async ({ spawnServe }) => {
     const primerText = "primer-fixture-prompt-1224";
     const { serve, sessionId } = await seedAcpSession(spawnServe, { title: "acp-primer" });
@@ -198,5 +236,64 @@ test.describe("event store", () => {
     expect(primer.included_turn_count).toBeGreaterThanOrEqual(1);
     expect(primer.primer).toContain(primerText);
     expect(primer.max_chars).toBeGreaterThan(0);
+  });
+
+  test("structured view/replay surfaces seeded events and signals lost frames", async ({ spawnServe }) => {
+    const seedEvents = 5;
+    // Keep the worker stopped so startup frames cannot land between head snapshot and tail probe.
+    const { serve, sessionId } = await seedAcpSession(spawnServe, { title: "acp-replay" });
+    for (let i = 0; i < seedEvents; i++) {
+      expect((await postAcp(serve.baseUrl, sessionId, "/force_end_turn")).status).toBe(202);
+    }
+
+    type Replay = { frames: { seq: number }[]; lost: boolean; highest_seq: number | null; lowest_seq: number | null };
+    const replay = (query: string) =>
+      fetch(`${serve.baseUrl}/api/sessions/${sessionId}/acp/replay?${query}`).then((r) => r.json());
+    let body: Replay | null = null;
+    await expect
+      .poll(
+        async () => {
+          body = (await replay("since=0")) as Replay;
+          return JSON.stringify(body.frames).split('"user_forced"').length - 1;
+        },
+        { timeout: 15_000, intervals: [100, 200, 500, 1000] },
+      )
+      .toBeGreaterThanOrEqual(seedEvents);
+    const full = body as Replay | null;
+    expect(full).not.toBeNull();
+    expect(full!.frames.length).toBeGreaterThanOrEqual(seedEvents);
+    expect(full!.lowest_seq).not.toBeNull();
+    expect(full!.highest_seq).not.toBeNull();
+    expect(full!.lost).toBe(false);
+    for (let i = 1; i < full!.frames.length; i++) {
+      expect(full!.frames[i]!.seq).toBeGreaterThan(full!.frames[i - 1]!.seq);
+    }
+
+    const highest = full!.highest_seq!;
+    const tail = await replay(`since=${highest}`);
+    expect(tail.frames.length).toBe(0);
+    expect(tail.highest_seq).toBe(highest);
+    expect(tail.lost).toBe(false);
+
+    // Following next_cursor with a small limit reassembles the unbounded transcript, capped at the snapshot head.
+    const fullSeqs = full!.frames.map((f) => f.seq).filter((s) => s <= highest);
+    const pageSize = 2;
+    const pagedSeqs: number[] = [];
+    let cursor = 0;
+    let pages = 0;
+    for (;;) {
+      const page = (await replay(`since=${cursor}&limit=${pageSize}`)) as Replay & {
+        next_cursor: number | null;
+        has_more: boolean;
+      };
+      pages++;
+      expect(page.frames.length).toBeLessThanOrEqual(pageSize);
+      pagedSeqs.push(...page.frames.map((f) => f.seq).filter((s) => s <= highest));
+      const next = page.next_cursor;
+      if (!(page.has_more && next != null && next > cursor && next < highest)) break;
+      cursor = next;
+    }
+    expect(pages).toBeGreaterThan(1);
+    expect(pagedSeqs).toEqual(fullSeqs);
   });
 });

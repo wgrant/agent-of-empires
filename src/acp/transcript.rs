@@ -40,6 +40,9 @@ pub struct TranscriptRow {
     /// A `tool_complete` row that launched an async sub-agent.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub async_subagent: bool,
+    /// An `agent_notice` row's severity: `info`, `warning`, or `error`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub severity: Option<String>,
 }
 
 /// The kind discriminant for a [`TranscriptRow`]. Mirrors the web
@@ -69,6 +72,8 @@ pub enum TranscriptRowKind {
     /// An agent session advisory. Unlike `Notice`, every surface keeps it in
     /// the timeline, since its banner is capped and retired by the next turn.
     Advisory,
+    /// An advisory from the agent itself, carrying a severity.
+    AgentNotice,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -370,7 +375,7 @@ impl TranscriptModel {
             } => {
                 // Kept even when empty (clients hide it), so a later summary
                 // lands beside its divider.
-                let id = format!("compaction-summary-{compaction_id}");
+                let id = if compaction_id.is_empty() { format!("compaction-summary-{seq}") } else { format!("compaction-summary-{compaction_id}") };
                 match self.rows.iter().position(|r| r.id == id) {
                     Some(i) => {
                         self.rows[i].text = text.clone();
@@ -437,6 +442,23 @@ impl TranscriptModel {
                 TranscriptRowKind::Summary,
                 text.clone(),
             )],
+            Event::AgentNotice {
+                severity,
+                title,
+                description,
+            } => {
+                let text = match description {
+                    Some(description) => format!("{title}\n{description}"),
+                    None => title.clone(),
+                };
+                let mut row = self.grouped_row(
+                    format!("agent-notice-{seq}"),
+                    TranscriptRowKind::AgentNotice,
+                    text,
+                );
+                row.severity = Some(severity.clone());
+                vec![self.append(row)]
+            }
             Event::ThinkingStarted => {
                 self.turn_active = true;
                 self.turn_has_output = true;
@@ -713,6 +735,7 @@ impl TranscriptRow {
             diff_comments: None,
             elicitation_answers: Vec::new(),
             async_subagent: false,
+            severity: None,
         }
     }
 }
@@ -1015,6 +1038,24 @@ mod tests {
                 "did the thing".to_string(),
             ),
             (
+                Event::ConversationCompactionSummary {
+                    text: "kept the plan".into(),
+                },
+                "compaction-summary-1",
+                TranscriptRowKind::CompactionSummary,
+                "kept the plan".to_string(),
+            ),
+            (
+                Event::AgentNotice {
+                    severity: "warning".into(),
+                    title: "Config".into(),
+                    description: Some("deprecated key".into()),
+                },
+                "agent-notice-1",
+                TranscriptRowKind::AgentNotice,
+                "Config\ndeprecated key".to_string(),
+            ),
+            (
                 switched,
                 "agent-switched-1",
                 TranscriptRowKind::SessionCleared,
@@ -1025,6 +1066,8 @@ mod tests {
             let m = fold([event]);
             let got = row(&m, id);
             assert_eq!((got.kind, got.text.as_str()), (kind, text.as_str()), "{id}");
+            let want_severity = (kind == TranscriptRowKind::AgentNotice).then_some("warning");
+            assert_eq!(got.severity.as_deref(), want_severity, "{id}");
         }
 
         // Control-only events produce no rows.

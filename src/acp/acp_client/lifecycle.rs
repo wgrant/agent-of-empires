@@ -46,6 +46,9 @@ pub(crate) enum LifecycleSignal {
 /// `None` for ambient updates (mode, commands, usage without cost) that must
 /// not reset the watchdog timer.
 pub(super) fn classify_lifecycle_signal(update: &SessionUpdate) -> Option<LifecycleSignal> {
+    if let Some(extension) = super::extension_updates::extension_update(update) {
+        return super::extension_updates::extension_lifecycle_signal(extension);
+    }
     match update {
         SessionUpdate::UsageUpdate(u) if u.cost.is_some() => Some(LifecycleSignal::TerminalUsage),
         SessionUpdate::AgentMessageChunk(chunk) => {

@@ -45,6 +45,7 @@ pub(super) fn is_transcript_event(event: &Event) -> bool {
             | Event::ConversationCompacted
             | Event::ConversationCompactionFailed
             | Event::ConversationCompactionSummary { .. }
+            | Event::AgentNotice { .. }
     )
 }
 
@@ -76,6 +77,7 @@ pub(super) fn transcript_event_kind(event: &Event) -> &'static str {
         Event::ConversationCompacted => "conversation_compacted",
         Event::ConversationCompactionFailed => "conversation_compaction_failed",
         Event::ConversationCompactionSummary { .. } => "conversation_compaction_summary",
+        Event::AgentNotice { .. } => "agent_notice",
         _ => "other",
     }
 }

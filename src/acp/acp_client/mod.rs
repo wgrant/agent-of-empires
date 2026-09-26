@@ -11,6 +11,7 @@ mod connection;
 mod control;
 mod delete;
 mod errors;
+mod extension_updates;
 mod fs_handlers;
 mod handshake;
 mod lifecycle;

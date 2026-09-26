@@ -813,8 +813,17 @@ pub enum Event {
     /// `ConversationCompacted`. A later one for the same compaction replaces
     /// it; empty `text` clears it.
     ConversationCompactionSummary {
+        #[serde(default)]
         compaction_id: String,
         text: String,
+    },
+    /// An agent advisory (a warning, deprecation, or failed background step).
+    AgentNotice {
+        /// `info`, `warning`, or `error`; other values render as `info`.
+        severity: String,
+        title: String,
+        #[serde(default)]
+        description: Option<String>,
     },
     AgentSwitched {
         from: String,
@@ -1110,6 +1119,7 @@ impl AcpState {
             | Event::AgentMessageSnapshot { .. }
             | Event::ConversationSummary { .. }
             | Event::ConversationCompactionSummary { .. }
+            | Event::AgentNotice { .. }
             | Event::WakeupScheduled { .. }
             | Event::MonitorArmed { .. } => {}
         }

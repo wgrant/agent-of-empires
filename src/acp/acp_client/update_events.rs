@@ -15,6 +15,7 @@ use agent_client_protocol::schema::MaybeUndefined;
 use tracing::debug;
 
 use super::config_options::map_acp_config_option;
+use super::extension_updates::{extension_events, extension_update};
 use super::lifecycle::{detect_off_protocol_work_completed, OffProtocolWorkKind};
 use super::plan::{extract_plan_from_switch_mode, map_plan_status, plan_status_to_str};
 use super::raw_input::{
@@ -287,6 +288,20 @@ fn notice_severity_str(severity: &NoticeSeverity) -> &str {
     }
 }
 
+/// A finished compaction; the model forgot its plan, so the plan strip clears too.
+pub(super) fn compaction_completed_events() -> Vec<Event> {
+    vec![
+        Event::ConversationCompacted,
+        Event::PlanUpdated {
+            plan: Plan {
+                plan_id: format!("plan-{}", chrono::Utc::now().timestamp_millis()),
+                version: 1,
+                steps: Vec::new(),
+            },
+        },
+    ]
+}
+
 /// Unmapped variants pass through as `RawAgentUpdate`. `profile` gates the
 /// claude-specific synthesis (subagent linkage, ExitPlanMode, wake tools).
 pub(super) fn map_update_to_events(
@@ -303,8 +318,7 @@ pub(super) fn map_update_to_events(
                     events.push(Event::ConversationCompactionStarted);
                 }
                 if is_compact_completion(&text.text) {
-                    events.push(Event::ConversationCompacted);
-                    events.push(cleared_plan());
+                    events.extend(compaction_completed_events());
                 }
                 if is_compact_failure(&text.text) {
                     events.push(Event::ConversationCompactionFailed);
@@ -633,7 +647,9 @@ pub(super) fn map_update_to_events(
         // Folded into the completion by `CompactionTracker`.
         SessionUpdate::CompactionSummaryChunk(_) => Vec::new(),
         // AoE owns automatic renaming, so agent titles are ignored.
-        SessionUpdate::SessionInfoUpdate(_) => Vec::new(),
+        ref info @ SessionUpdate::SessionInfoUpdate(_) => extension_update(info)
+            .map(extension_events)
+            .unwrap_or_default(),
         other => vec![raw_event(&other)],
     }
 }
