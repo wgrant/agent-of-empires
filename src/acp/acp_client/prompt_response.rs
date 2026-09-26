@@ -1,12 +1,33 @@
-//! Token counts from a turn's `PromptResponse`: the ACP `usage` for totals
-//! and the `_meta.quota.model_usage` split that claude-agent-acp and codex-acp
-//! share.
+//! Events from the `PromptResponse` that ends a turn.
 
-use agent_client_protocol::schema::v1::PromptResponse;
+use agent_client_protocol::schema::v1::{PromptResponse, StopReason};
 use serde_json::Value;
 
-use crate::acp::state::{ModelTokenCounts, TokenCounts, TurnTokenUsage};
+use crate::acp::state::{Event, ModelTokenCounts, TokenCounts, TurnTokenUsage};
 
+/// A notice for a turn the agent ended before finishing its reply.
+pub(super) fn stop_reason_notice(reason: StopReason) -> Option<Event> {
+    let (title, description) = match reason {
+        StopReason::MaxTokens => (
+            "Reply cut off",
+            "The model reached its output token limit before finishing.",
+        ),
+        StopReason::MaxTurnRequests => (
+            "Turn stopped early",
+            "The agent reached its request or budget limit for this turn.",
+        ),
+        StopReason::Refusal => ("Model refused", "The model declined to continue this turn."),
+        _ => return None,
+    };
+    Some(Event::AgentNotice {
+        severity: "warning".to_string(),
+        title: title.to_string(),
+        description: Some(description.to_string()),
+    })
+}
+
+/// Totals from the ACP `usage`, split by the `_meta.quota.model_usage` that
+/// claude-agent-acp and codex-acp share.
 pub(super) fn turn_token_usage(response: &PromptResponse) -> Option<TurnTokenUsage> {
     let usage = response.usage.as_ref()?;
     let total = TokenCounts {
@@ -87,5 +108,27 @@ mod tests {
         );
 
         assert!(turn_token_usage(&response(json!({"stopReason": "end_turn"}))).is_none());
+    }
+
+    #[test]
+    fn only_unfinished_stop_reasons_get_a_notice() {
+        let titled = |reason| match stop_reason_notice(reason) {
+            Some(Event::AgentNotice { title, .. }) => Some(title),
+            _ => None,
+        };
+        assert_eq!(
+            titled(StopReason::MaxTokens).as_deref(),
+            Some("Reply cut off")
+        );
+        assert_eq!(
+            titled(StopReason::MaxTurnRequests).as_deref(),
+            Some("Turn stopped early")
+        );
+        assert_eq!(
+            titled(StopReason::Refusal).as_deref(),
+            Some("Model refused")
+        );
+        assert_eq!(titled(StopReason::EndTurn), None);
+        assert_eq!(titled(StopReason::Cancelled), None);
     }
 }
