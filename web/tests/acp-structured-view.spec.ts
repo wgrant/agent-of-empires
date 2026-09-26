@@ -243,9 +243,9 @@ test("mobile composer footer keeps the Send action reachable when config control
   await expect(mobileStatus.getByTestId("composer-mobile-compose-icon")).toBeVisible();
   await mobileStatus.getByRole("button", { name: /Open message composer/ }).click();
 
-  // The model chip rendering confirms the left cluster carries the
-  // config controls that create the width pressure this story guards.
-  await expect(page.getByTestId("config-option-model")).toBeVisible({
+  // The settings summary chip carries the model and effort labels that
+  // create the width pressure this story guards.
+  await expect(page.getByTestId("session-settings-trigger")).toContainText("Claude Opus 4.7", {
     timeout: 15_000,
   });
   await expect(page.getByTestId("composer-usage")).toBeVisible();

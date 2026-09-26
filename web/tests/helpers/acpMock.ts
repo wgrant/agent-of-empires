@@ -406,6 +406,14 @@ export async function openStructuredSession(page: Page, mock: AcpSessionMock) {
   await expect(page.locator("header")).toBeVisible();
 }
 
+/** Open the composer's session settings dialog, which holds the mode, model, and effort controls. */
+export async function openSessionSettings(page: Page) {
+  const trigger = page.getByTestId("session-settings-trigger");
+  await expect(trigger).toBeVisible({ timeout: 15_000 });
+  await trigger.click();
+  await expect(page.getByTestId("session-settings-dialog")).toBeVisible();
+}
+
 /** Wait until the composer reflects an open structured view WS. On a narrow
  *  viewport, reveal the compact composer first: callers of this helper need
  *  the full composer, rather than testing its collapsed summary. The Send

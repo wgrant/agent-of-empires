@@ -2,7 +2,7 @@
 // the current value changes only when the adapter confirms; the pending choice is disabled.
 
 import { ChevronUp } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 import type { ConfigOptionChoice, ConfigOptionDescriptor, AcpState } from "../../lib/acpTypes";
 import { ActionFeedbackNotice } from "./status/ActionFeedbackNotice";
@@ -80,20 +80,24 @@ export function SessionConfigControls({
   if (!model && !effort && !onSetProvider) return null;
 
   return (
-    <div data-testid="session-config-controls" className="flex flex-wrap items-center gap-1.5">
+    <div data-testid="session-config-controls" className="flex flex-col gap-2">
       {model && (
-        <ModelDropdown
-          option={model}
-          pending={pendingConfigOption?.configId === model.id ? pendingConfigOption.value : null}
-          onSelect={(value) => onSetConfigOption(model.id, value)}
-        />
+        <ConfigRow label={model.name}>
+          <ModelDropdown
+            option={model}
+            pending={pendingConfigOption?.configId === model.id ? pendingConfigOption.value : null}
+            onSelect={(value) => onSetConfigOption(model.id, value)}
+          />
+        </ConfigRow>
       )}
       {effort && (
-        <EffortControl
-          option={effort}
-          pending={pendingConfigOption?.configId === effort.id ? pendingConfigOption.value : null}
-          onSelect={(value) => onSetConfigOption(effort.id, value)}
-        />
+        <ConfigRow label={effort.name}>
+          <EffortControl
+            option={effort}
+            pending={pendingConfigOption?.configId === effort.id ? pendingConfigOption.value : null}
+            onSelect={(value) => onSetConfigOption(effort.id, value)}
+          />
+        </ConfigRow>
       )}
       {onSetProvider && (
         <ModelDropdown
@@ -103,6 +107,15 @@ export function SessionConfigControls({
           lockedReason={providerLockedReason}
         />
       )}
+    </div>
+  );
+}
+
+function ConfigRow({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="text-xs text-text-secondary">{label}</span>
+      {children}
     </div>
   );
 }
