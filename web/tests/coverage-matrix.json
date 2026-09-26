@@ -2874,12 +2874,23 @@
       "specs": [
         "src/lib/acpTypes.test.ts",
         "src/components/acp/activityMessages.test.ts",
-        "src/components/acp/StructuredView.reasoning.test.tsx"
+        "src/components/acp/StructuredView.reasoning.test.tsx",
+        "src/components/acp/SessionSettings.test.tsx",
+        "src/hooks/useSessionThinkingDisplay.test.ts",
+        "src/components/settings/__tests__/StructuredViewDisplaySettings.test.tsx",
+        "src/lib/__tests__/webUiSync.test.ts",
+        "tests/acp-thinking-display.spec.ts"
       ],
       "components": [
         "web/src/lib/acpTypes.ts",
         "web/src/components/acp/activityMessages.ts",
-        "web/src/components/acp/ThreadMessages.tsx"
+        "web/src/components/acp/ThreadMessages.tsx",
+        "web/src/components/acp/SessionSettings.tsx",
+        "web/src/components/acp/StructuredView.tsx",
+        "web/src/components/settings/StructuredViewDisplaySettings.tsx",
+        "web/src/lib/thinkingDisplay.ts",
+        "web/src/hooks/useSessionThinkingDisplay.ts",
+        "web/src/hooks/useWebSettings.ts"
       ]
     },
     {

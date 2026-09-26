@@ -1,13 +1,15 @@
 // Session settings: a read-only summary chip in the composer footer that opens a
-// dialog holding the agent's mode, model, effort, and launch options.
+// dialog holding the agent's mode, model, effort, thinking display, and launch options.
 
 import { Settings2 } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
+import { useSessionThinkingDisplay } from "../../hooks/useSessionThinkingDisplay";
 import type { AcpState } from "../../lib/acpTypes";
 import { agentLaunchOptions, updateAgentLaunchOptions, type AgentLaunchOption } from "../../lib/agentLaunchOptions";
 import { useAgentProfile } from "../../lib/agentProfileContext";
 import { resolveModeChannel, type ModeChannel } from "../../lib/modeChannel";
+import { THINKING_DISPLAY_LABELS, THINKING_DISPLAYS, type ThinkingDisplay } from "../../lib/thinkingDisplay";
 import { TOUR_ANCHORS, tourAnchor } from "../../lib/tourSteps";
 import { BRAND_BUTTON, ConfirmButton, Dialog } from "../Dialog";
 import { LaunchOptionRestartDialog } from "./LaunchOptionRestartDialog";
@@ -99,6 +101,7 @@ export function SessionSettingsControl(props: Props) {
       </button>
       {open && (
         <SessionSettingsDialog
+          sessionId={props.sessionId}
           channel={channel}
           onSelectMode={selectMode}
           configOptions={props.configOptions}
@@ -131,6 +134,7 @@ export function SessionSettingsControl(props: Props) {
 const DIALOG_ID = "session-settings-dialog";
 
 function SessionSettingsDialog({
+  sessionId,
   channel,
   onSelectMode,
   configOptions,
@@ -140,6 +144,7 @@ function SessionSettingsDialog({
   onToggleLaunchOption,
   onClose,
 }: {
+  sessionId: string;
   channel: ModeChannel | null;
   onSelectMode: (id: string) => void;
   configOptions: AcpState["configOptions"];
@@ -194,6 +199,9 @@ function SessionSettingsDialog({
           />
         </Section>
       )}
+      <Section label="Thinking">
+        <ThinkingDisplayOptions sessionId={sessionId} />
+      </Section>
       {launchOptions.length > 0 && (
         <Section label="Launch options · restart required">
           <div className="flex flex-col">
@@ -268,6 +276,48 @@ function ModeOptions({ channel, onSelect }: { channel: ModeChannel; onSelect: (i
           </button>
         );
       })}
+    </div>
+  );
+}
+
+const THINKING_CHOICES: readonly (ThinkingDisplay | "default")[] = ["default", ...THINKING_DISPLAYS];
+
+/** Per-session override of the dashboard's thinking display; "Default" follows the dashboard. */
+function ThinkingDisplayOptions({ sessionId }: { sessionId: string }) {
+  const { override, globalDefault, setOverride } = useSessionThinkingDisplay(sessionId);
+  const selected = override ?? "default";
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div
+        role="radiogroup"
+        aria-label="Thinking display"
+        data-testid="thinking-display-options"
+        className="inline-flex w-fit items-center gap-0.5 rounded-md border border-surface-700 bg-surface-800/60 p-0.5"
+      >
+        {THINKING_CHOICES.map((choice) => {
+          const isCurrent = choice === selected;
+          return (
+            <button
+              key={choice}
+              type="button"
+              role="radio"
+              aria-checked={isCurrent}
+              data-testid={`thinking-display-value-${choice}`}
+              onClick={() => setOverride(choice === "default" ? null : choice)}
+              className={[
+                "rounded px-2 py-0.5 text-[11px] font-medium transition-colors",
+                isCurrent ? "bg-surface-700 text-text-primary" : "text-text-secondary hover:text-text-primary",
+              ].join(" ")}
+            >
+              {choice === "default" ? "Default" : THINKING_DISPLAY_LABELS[choice]}
+            </button>
+          );
+        })}
+      </div>
+      <p className="text-[11px] text-text-dim">
+        Default follows your dashboard setting ({THINKING_DISPLAY_LABELS[globalDefault]}). Thinking is always recorded,
+        so you can reveal it later.
+      </p>
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { DEFAULT_CONVERSATION_FONT_SIZE, normalizeConversationFontSize } from ".
 import { DEFAULT_PERSISTENT_TERMINALS, normalizePersistentTerminalLimit } from "../lib/persistentTerminals";
 import { safeGetItem, safeSetItem } from "../lib/safeStorage";
 import { DEFAULT_TOOLBAR_KEYS, normalizeToolbarKeys, type ToolbarKeyId } from "../lib/terminalToolbarKeys";
+import { DEFAULT_THINKING_DISPLAY, parseThinkingDisplay, type ThinkingDisplay } from "../lib/thinkingDisplay";
 
 const STORAGE_KEY = "aoe-web-settings";
 
@@ -28,6 +29,8 @@ export interface WebSettings {
   /** Ordered key row above the soft keyboard in the live terminal. */
   mobileToolbarKeys: ToolbarKeyId[];
   showArrowJoystick: boolean;
+  /** Default for sessions without their own override. */
+  thinkingDisplay: ThinkingDisplay;
 }
 
 function getDefaults(): WebSettings {
@@ -51,6 +54,7 @@ function getDefaults(): WebSettings {
     autoOpenPluginPanes: false,
     mobileToolbarKeys: [...DEFAULT_TOOLBAR_KEYS],
     showArrowJoystick: true,
+    thinkingDisplay: DEFAULT_THINKING_DISPLAY,
   };
 }
 
@@ -76,6 +80,7 @@ function normalizeSnapshot(settings: WebSettings): WebSettings {
       settings.markdownPreview === "rendered" || settings.markdownPreview === "raw"
         ? settings.markdownPreview
         : defaults.markdownPreview,
+    thinkingDisplay: parseThinkingDisplay(settings.thinkingDisplay) ?? defaults.thinkingDisplay,
   };
 }
 

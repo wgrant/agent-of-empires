@@ -7,6 +7,7 @@ vi.mock("./Markdown", () => ({
   Markdown: ({ text, smooth }: { text: string; smooth?: boolean }) => <div data-smooth={String(!!smooth)}>{text}</div>,
 }));
 
+import { ThinkingDisplayContext, type ThinkingDisplay } from "../../lib/thinkingDisplay";
 import { AssistantReasoning, AssistantText } from "./ThreadMessages";
 
 describe("AssistantReasoning", () => {
@@ -19,6 +20,20 @@ describe("AssistantReasoning", () => {
     fireEvent.click(screen.getByText("Thinking trace"));
     expect(disclosure?.hasAttribute("open")).toBe(true);
     expect(screen.getByText("Inspect the hidden constraint.")).toBeTruthy();
+  });
+
+  it.each<[ThinkingDisplay, boolean | null]>([
+    ["hidden", null],
+    ["collapsed", false],
+    ["expanded", true],
+  ])("renders the trace per display %s", (display, open) => {
+    render(
+      <ThinkingDisplayContext.Provider value={display}>
+        <AssistantReasoning text="Weigh both options." />
+      </ThinkingDisplayContext.Provider>,
+    );
+    const disclosure = screen.queryByText("Thinking trace")?.closest("details") ?? null;
+    expect(disclosure === null ? null : disclosure.hasAttribute("open")).toBe(open);
   });
 });
 

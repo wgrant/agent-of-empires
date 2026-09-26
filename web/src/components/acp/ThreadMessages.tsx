@@ -1,10 +1,12 @@
 import { useMemo } from "react";
 
 import { MessagePrimitive, useAuiState } from "@assistant-ui/react";
+import { useContext } from "react";
 
 import { isElicitationAnswersPayload, type ActivityRow, type ToolCall, type ToolOutputBlock } from "../../lib/acpTypes";
 import { parseJsonObject } from "../../lib/acpArgs";
 import { pickMemoryRecall } from "../../lib/memoryRecall";
+import { ThinkingDisplayContext } from "../../lib/thinkingDisplay";
 import { ArtifactImage } from "./artifactMedia";
 import { DiffCommentsUserCard } from "../diff/comments/DiffCommentsUserCard";
 import { isDiffCommentsCardPayload, parseDiffCommentsSentinel } from "../diff/comments/buildPrompt";
@@ -84,9 +86,15 @@ export function AssistantMessage() {
 }
 
 export function AssistantReasoning({ text }: { text: string }) {
-  if (!text) return null;
+  const display = useContext(ThinkingDisplayContext);
+  if (!text || display === "hidden") return null;
+  // Keyed so switching the display re-applies its default open state.
   return (
-    <details className="my-2 rounded-lg border border-surface-700 bg-surface-900/40 text-text-secondary">
+    <details
+      key={display}
+      open={display === "expanded"}
+      className="my-2 rounded-lg border border-surface-700 bg-surface-900/40 text-text-secondary"
+    >
       <summary className="cursor-pointer select-none px-3 py-2 text-xs font-medium hover:text-text-primary">
         Thinking trace
       </summary>

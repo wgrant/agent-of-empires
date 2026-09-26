@@ -2,6 +2,7 @@
 
 import { getWebUiState, patchWebUiState } from "./api";
 import { configureStorageSync } from "./safeStorage";
+import { SESSION_THINKING_DISPLAY_PREFIX } from "./thinkingDisplay";
 
 const EXACT_KEYS = new Set<string>([
   "aoe-welcome-seen", // theme welcome modal seen (mirrors the server-side tour flag)
@@ -16,8 +17,13 @@ const EXACT_KEYS = new Set<string>([
   "aoe-web-settings", // dashboard prefs (persistent terminals, auto-open keyboard, fonts)
 ]);
 
-// Group-collapse keys are per repo/group, so match by prefix.
-const KEY_PREFIXES = ["aoe-repo-collapsed-", "aoe-nested-group-collapsed-", "aoe-group-collapsed-"];
+// Group-collapse and per-session keys are keyed by id, so match by prefix.
+const KEY_PREFIXES = [
+  "aoe-repo-collapsed-",
+  "aoe-nested-group-collapsed-",
+  "aoe-group-collapsed-",
+  SESSION_THINKING_DISPLAY_PREFIX,
+];
 
 export function isSyncedKey(key: string): boolean {
   return EXACT_KEYS.has(key) || KEY_PREFIXES.some((p) => key.startsWith(p));
