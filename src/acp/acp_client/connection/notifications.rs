@@ -13,11 +13,12 @@ use tracing::debug;
 
 use crate::acp::acp_client::between_prompt::BetweenPromptTracker;
 use crate::acp::acp_client::lifecycle::{
-    forward_lifecycle_signals, LifecycleEnvelope, TerminalClaim,
+    forward_lifecycle_signals, LifecycleEnvelope, LifecycleSignal, TerminalClaim,
 };
 use crate::acp::acp_client::rate_limit::rate_limit_rejection_from_meta;
 use crate::acp::acp_client::session_identity::SessionIngress;
 use crate::acp::acp_client::session_sandbox::SessionSandbox;
+use crate::acp::acp_client::subagents::child_events;
 use crate::acp::acp_client::tool_context::{
     update_tool_context_cache, ToolCallContextCache, ToolContextCache,
 };
@@ -170,6 +171,10 @@ impl Shared {
     ) {
         self.last_event_at.store(now_ms(), Ordering::Relaxed);
         let suppressing = self.suppress_history_replay.load(Ordering::Relaxed);
+        let subagent = self
+            .ingress
+            .is_subagent(&notification.session_id)
+            .then(|| notification.session_id.0.to_string());
         // Drop the adapter's leaked restatement before anything sees it
         // (#2281). Replayed history resets rather than feeds the deduper.
         {
@@ -179,7 +184,7 @@ impl Shared {
                 .expect("agent message dedup mutex poisoned");
             if suppressing {
                 dedup.reset();
-            } else if dedup.observe(&notification.update) {
+            } else if subagent.is_none() && dedup.observe(&notification.update) {
                 debug!(
                     target: "acp.protocol",
                     session = %self.session_label,
@@ -191,8 +196,15 @@ impl Shared {
         // One epoch per notification, so its signals belong to the prompt
         // that was current when it arrived.
         let epoch = self.prompt_epoch.load(Ordering::Relaxed);
-        let (lifecycle, wakeup) =
-            classify_watchdog_notification_signals(&notification.update, self.profile, suppressing);
+        // A child's activity keeps the main turn alive but cannot end or wake it.
+        let (lifecycle, wakeup) = match subagent {
+            Some(_) => ((!suppressing).then_some(LifecycleSignal::Progress), None),
+            None => classify_watchdog_notification_signals(
+                &notification.update,
+                self.profile,
+                suppressing,
+            ),
+        };
         if lifecycle.is_some() || wakeup.is_some() {
             self.first_event_after_attach.store(true, Ordering::Relaxed);
         }
@@ -212,9 +224,15 @@ impl Shared {
                 "between-prompt watchdog armed for an agent-initiated turn"
             );
         }
-        self.capture_rate_limit(&notification.update);
+        if subagent.is_none() {
+            self.capture_rate_limit(&notification.update);
+        }
         let update_for_tool_context = notification.update.clone();
         let events = map_update_to_events(notification.update, self.profile);
+        let events = match &subagent {
+            Some(id) => child_events(id, events),
+            None => events,
+        };
         // Signals go first: if the event send backpressures, the watchdog must
         // not evaluate without a suppression-bearing signal.
         forward_lifecycle_signals(
@@ -258,7 +276,11 @@ impl Shared {
                 );
                 continue;
             }
-            update_tool_context_cache(&self.tool_context_cache, &event, &update_for_tool_context);
+            let inner = match &event {
+                Event::SubagentUpdate { event, .. } => event.as_ref(),
+                event => event,
+            };
+            update_tool_context_cache(&self.tool_context_cache, inner, &update_for_tool_context);
             if self.event_tx.send(event).await.is_err() {
                 break;
             }

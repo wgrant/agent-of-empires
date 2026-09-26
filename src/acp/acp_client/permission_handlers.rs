@@ -22,6 +22,7 @@ use super::pending::{
     ApprovalResolutionMessage, ElicitationResolutionMessage, PendingResolver, PendingResponder,
     PendingResponders,
 };
+use super::subagents::scoped;
 use super::tool_context::{permission_raw_input_with_context, ToolContextCache};
 use super::tool_output::{preview_optional_args, tool_kind_str};
 
@@ -112,32 +113,37 @@ fn decision_for_option(
 /// denied tool hangs on "running" until the turn ends (#1713).
 pub(super) async fn emit_permission_denied(
     event_tx: &mpsc::Sender<Event>,
+    subagent: Option<&str>,
     tool_call_id: &str,
     content: &str,
 ) {
-    let _ = event_tx
-        .send(Event::ToolCallCompleted {
-            tool_call_id: tool_call_id.to_string(),
-            is_error: true,
-            content: content.to_string(),
-            output: Vec::new(),
-            completed_at: chrono::Utc::now(),
-            async_subagent: false,
-        })
-        .await;
+    let completed = Event::ToolCallCompleted {
+        tool_call_id: tool_call_id.to_string(),
+        is_error: true,
+        content: content.to_string(),
+        output: Vec::new(),
+        completed_at: chrono::Utc::now(),
+        async_subagent: false,
+    };
+    let _ = event_tx.send(scoped(subagent, completed)).await;
 }
 
 /// Clear the approval card and close the start frame `handle_permission_request`
 /// emitted. Neither a cancel nor an unmatched option produces an agent
 /// completion, so nothing else would terminate the tool card (#1713).
-async fn cancel_approval(event_tx: &mpsc::Sender<Event>, nonce: &Nonce, tool_call_id: &str) {
+async fn cancel_approval(
+    event_tx: &mpsc::Sender<Event>,
+    subagent: Option<&str>,
+    nonce: &Nonce,
+    tool_call_id: &str,
+) {
     let _ = event_tx
         .send(Event::ApprovalResolved {
             nonce: nonce.clone(),
             decision: ApprovalDecision::Cancelled,
         })
         .await;
-    emit_permission_denied(event_tx, tool_call_id, "permission cancelled").await;
+    emit_permission_denied(event_tx, subagent, tool_call_id, "permission cancelled").await;
 }
 
 pub(super) async fn handle_permission_request(
@@ -146,7 +152,9 @@ pub(super) async fn handle_permission_request(
     pending: PendingResponders,
     profile: &'static agent_profiles::AgentProfile,
     tool_context_cache: ToolContextCache,
+    subagent: Option<String>,
 ) -> Result<RequestPermissionResponse, agent_client_protocol::Error> {
+    let subagent = subagent.as_deref();
     let enter_ns = enter_timestamp_ns();
     let tool_call_id = request.tool_call.tool_call_id.0.to_string();
     trace!(
@@ -193,11 +201,10 @@ pub(super) async fn handle_permission_request(
     // Gemini sends no standalone `tool_call` start frame, so without this the
     // approved tool would have no transcript card. The reducer dedupes
     // tool_start by id, so a later real start frame merges in place (#1713).
-    let _ = event_tx
-        .send(Event::ToolCallStarted {
-            tool_call: tool_call.clone(),
-        })
-        .await;
+    let started = Event::ToolCallStarted {
+        tool_call: tool_call.clone(),
+    };
+    let _ = event_tx.send(scoped(subagent, started)).await;
     let offered = approval_options(&request.options);
     // A choice list (N same-kind options) must never be answered by kind: a
     // generic client rendered no labels and sent no option id, so by-kind
@@ -278,7 +285,8 @@ pub(super) async fn handle_permission_request(
                     .await;
                 // A denied tool never runs, so close its start frame (#1713).
                 if matches!(decision, ApprovalDecision::Deny) {
-                    emit_permission_denied(&event_tx, &tool_call_id, "permission denied").await;
+                    emit_permission_denied(&event_tx, subagent, &tool_call_id, "permission denied")
+                        .await;
                 }
                 (
                     RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(option_id)),
@@ -290,13 +298,13 @@ pub(super) async fn handle_permission_request(
                     choice_list = choice_list_unanswered,
                     "no option matched (decision {decision:?}, requested {requested:?}); cancelling"
                 );
-                cancel_approval(&event_tx, &nonce, &tool_call_id).await;
+                cancel_approval(&event_tx, subagent, &nonce, &tool_call_id).await;
                 (RequestPermissionOutcome::Cancelled, "cancelled")
             }
         }
         // An explicit cancel_permission, or the resolver dropped on teardown.
         Ok(ApprovalResolutionMessage::Cancelled) | Err(_) => {
-            cancel_approval(&event_tx, &nonce, &tool_call_id).await;
+            cancel_approval(&event_tx, subagent, &nonce, &tool_call_id).await;
             (RequestPermissionOutcome::Cancelled, "cancelled")
         }
     };
@@ -511,6 +519,7 @@ mod tests {
             pending.clone(),
             &crate::acp::agent_profiles::GEMINI,
             cache,
+            None,
         ));
         let nonce = loop {
             if let Event::ApprovalRequested { approval } = event_rx.recv().await.expect("events") {

@@ -69,6 +69,7 @@ pub(super) struct EstablishCtx {
     pub(super) default_effort: Option<String>,
     pub(super) default_mode: Option<String>,
     pub(super) default_model: Option<String>,
+    pub(super) native_subagents: bool,
     pub(super) source_profile: Option<String>,
     pub(super) agent_cwd: PathBuf,
     pub(super) cmd_rx: mpsc::Receiver<ClientCmd>,
@@ -85,8 +86,12 @@ pub(super) async fn establish(
     let label = shared.session_label.clone();
     info!(target: "acp.protocol", session = %label, "initializing ACP agent");
     let init: InitializeResponse = match ctx.control.as_ref() {
-        Some(control) => serde_json::from_value(control.initialize(initialize_params()).await?)
-            .map_err(|e| acp_internal_error(format!("deserialize initialize result: {e}")))?,
+        Some(control) => serde_json::from_value(
+            control
+                .initialize(initialize_params(ctx.native_subagents))
+                .await?,
+        )
+        .map_err(|e| acp_internal_error(format!("deserialize initialize result: {e}")))?,
         // The typed request cannot carry the extension capabilities, so
         // adapters fall back to transcript text on this path.
         None => {

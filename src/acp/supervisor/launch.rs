@@ -403,6 +403,7 @@ impl<S: BroadcastSink> Supervisor<S> {
                 default_effort_explicit: req.effort_explicit,
                 default_mode: acp_defaults.and_then(|defaults| defaults.mode()),
                 default_model: model,
+                native_subagents: resolved_cfg.acp.native_subagents,
                 socket_path: Some(socket_path),
                 stored_acp_session_id,
                 fork_from,

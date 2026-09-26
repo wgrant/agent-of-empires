@@ -80,6 +80,7 @@ pub(super) struct ConnectionParams {
     pub(super) default_effort: Option<String>,
     pub(super) default_mode: Option<String>,
     pub(super) default_model: Option<String>,
+    pub(super) native_subagents: bool,
     pub(super) mcp_servers: Vec<McpServer>,
     pub(super) runner: Option<RunnerLink>,
 }
@@ -146,6 +147,7 @@ pub(super) async fn run_connection_task<W, R>(
         default_effort,
         default_mode,
         default_model,
+        native_subagents,
         mcp_servers,
         runner,
     } = params;
@@ -254,12 +256,17 @@ pub(super) async fn run_connection_task<W, R>(
                             Ok(guard) => guard,
                             Err(error) => return reply(responder, Err(error)),
                         };
+                        let subagent = shared
+                            .ingress
+                            .is_subagent(&request.session_id)
+                            .then(|| request.session_id.0.to_string());
                         let outcome = handle_permission_request(
                             request,
                             shared.event_tx.clone(),
                             pending,
                             profile,
                             shared.tool_context_cache.clone(),
+                            subagent,
                         )
                         .await;
                         reply(responder, outcome)
@@ -346,6 +353,7 @@ pub(super) async fn run_connection_task<W, R>(
         default_effort,
         default_mode,
         default_model,
+        native_subagents,
         source_profile,
         agent_cwd: resources.agent_cwd(),
         cmd_rx,

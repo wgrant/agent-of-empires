@@ -304,9 +304,11 @@ async function emitSessionUpdates(sessionId, updates) {
       }
       continue;
     }
+    // `onSession` sends an update or request as another session, such as a native subagent.
+    const target = u?.onSession ?? sessionId;
     if (u && u.sessionUpdate === "permission_request") {
       const permissionResponse = await sendRequest("session/request_permission", {
-        sessionId,
+        sessionId: target,
         toolCall: u.toolCall ?? {
           toolCallId: `fake-tool-call-${Date.now()}`,
           title: "fake tool call",
@@ -322,7 +324,7 @@ async function emitSessionUpdates(sessionId, updates) {
         const outcome = permissionResponse?.outcome;
         const picked = outcome?.outcome === "selected" ? outcome.optionId : "cancelled";
         sendNotification("session/update", {
-          sessionId,
+          sessionId: target,
           update: {
             sessionUpdate: "agent_message_chunk",
             content: { type: "text", text: `permission_option=${picked}` },
@@ -355,7 +357,8 @@ async function emitSessionUpdates(sessionId, updates) {
       });
       continue;
     }
-    sendNotification("session/update", { sessionId, update: u });
+    const { onSession: _onSession, ...update } = u;
+    sendNotification("session/update", { sessionId: target, update });
     // A 1ms tick lost first chunks under CI contention.
     await new Promise((resolve) => setTimeout(resolve, 5));
   }

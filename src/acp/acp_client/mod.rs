@@ -30,6 +30,7 @@ mod session_identity;
 mod session_sandbox;
 mod spawn;
 mod steer;
+mod subagents;
 mod terminal_handlers;
 #[cfg(test)]
 mod test_helpers;
@@ -155,6 +156,7 @@ struct Launch {
     default_effort: Option<String>,
     default_mode: Option<String>,
     default_model: Option<String>,
+    native_subagents: bool,
     mcp_servers: Vec<McpServer>,
 }
 
@@ -195,6 +197,7 @@ impl Launch {
             default_effort: self.default_effort,
             default_mode: self.default_mode,
             default_model: self.default_model,
+            native_subagents: self.native_subagents,
             mcp_servers: self.mcp_servers,
             runner,
         };
@@ -403,6 +406,7 @@ impl AcpClient {
             default_effort: config.default_effort.clone(),
             default_mode: config.default_mode.clone(),
             default_model: config.default_model.clone(),
+            native_subagents: config.native_subagents,
             mcp_servers: config.mcp_servers.clone(),
         };
 
@@ -535,6 +539,8 @@ impl AcpClient {
             default_effort: None,
             default_mode: None,
             default_model: None,
+            // The runner answers a reattach from its first handshake.
+            native_subagents: false,
             mcp_servers: Vec::new(),
         };
         Self::connect_via_socket(socket_path, launch).await
