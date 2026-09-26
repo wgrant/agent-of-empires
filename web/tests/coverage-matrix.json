@@ -2588,6 +2588,7 @@
         "src/components/acp/Composer.test.tsx",
         "src/components/acp/Composer.usageHint.test.tsx",
         "src/lib/quota.test.ts",
+        "src/lib/turnUsage.test.ts",
         "src/lib/acpTypes.test.ts",
         "tests/acp-structured-view.spec.ts"
       ],
@@ -2596,6 +2597,7 @@
         "web/src/components/Tooltip.tsx",
         "web/src/components/acp/ComposerControls.tsx",
         "web/src/lib/quota.ts",
+        "web/src/lib/turnUsage.ts",
         "web/src/hooks/useMinuteClock.ts"
       ]
     },

@@ -27,6 +27,7 @@ use crate::acp::acp_client::rate_limit::{
 };
 use crate::acp::acp_client::reset::ResetSessionOutcome;
 use crate::acp::acp_client::steer::{first_text_block, SteerOutcome, SteerRequest};
+use crate::acp::acp_client::token_usage::turn_token_usage;
 use crate::acp::acp_client::watchdog::{
     silent_orphan_check_interval, silent_orphan_fast_grace, silent_orphan_grace,
     terminal_stop_reason, SilentOrphanWatchdog, SilentOrphanWatchdogConfig,
@@ -302,6 +303,9 @@ impl Session {
         let e = match res {
             Ok(resp) => {
                 turn.flags.prompt_cancelled = matches!(resp.stop_reason, StopReason::Cancelled);
+                if let Some(usage) = turn_token_usage(&resp) {
+                    self.shared.emit(Event::TurnTokenUsage { usage }).await;
+                }
                 return Ok(Flow::Break);
             }
             Err(e) => e,

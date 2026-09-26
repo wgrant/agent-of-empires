@@ -619,6 +619,8 @@ function ComposerDock({
           sessionUsage={state.sessionUsage}
           authStatus={state.authStatus}
           quota={state.quota}
+          lastModel={state.lastModel}
+          lastTurnUsage={state.lastTurnUsage}
           availableCommands={state.availableCommands}
           availability={availability}
           turnActive={state.turnActive}

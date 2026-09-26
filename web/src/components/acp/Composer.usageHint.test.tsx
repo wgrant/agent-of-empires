@@ -14,9 +14,19 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { AssistantRuntimeProvider, useExternalStoreRuntime, type ThreadMessageLike } from "@assistant-ui/react";
 
 import { Composer } from "./Composer";
-import type { AgentQuota, SessionUsage } from "../../lib/acpTypes";
+import type { AgentQuota, SessionUsage, TurnTokenUsage } from "../../lib/acpTypes";
 
-function Harness({ usage, quota = null }: { usage: SessionUsage | null; quota?: AgentQuota | null }) {
+function Harness({
+  usage,
+  quota = null,
+  lastModel = null,
+  lastTurnUsage = null,
+}: {
+  usage: SessionUsage | null;
+  quota?: AgentQuota | null;
+  lastModel?: string | null;
+  lastTurnUsage?: TurnTokenUsage | null;
+}) {
   const runtime = useExternalStoreRuntime<ThreadMessageLike>({
     messages: [],
     isRunning: false,
@@ -36,6 +46,8 @@ function Harness({ usage, quota = null }: { usage: SessionUsage | null; quota?: 
         setConfigOption={() => {}}
         sessionUsage={usage}
         quota={quota}
+        lastModel={lastModel}
+        lastTurnUsage={lastTurnUsage}
         availableCommands={[]}
         availability={{ kind: "send_now" }}
         turnActive={false}
@@ -134,5 +146,19 @@ describe("composer usage indicator tooltip", () => {
     expect(tip).toContain("Opus 7d: 50% used");
     expect(tip).toContain("Plan usage as of just now");
     expect(tip).toContain("cumulative session spend");
+  });
+
+  it("names the replying model and the last turn's tokens on separate lines", () => {
+    render(
+      <Harness
+        usage={{ used: 50_000, size: 200_000, cost: null }}
+        lastModel="claude-opus-5-5"
+        lastTurnUsage={{ input: 12, output: 3_100, cache_read: 45_000 }}
+      />,
+    );
+    const indicator = screen.getAllByLabelText(/Context window:/)[0]!;
+    expect(indicator.getAttribute("aria-label")).toContain(
+      "Latest reply by claude-opus-5-5\nLast turn: 12 input · 45k cache read · 3.1k output",
+    );
   });
 });

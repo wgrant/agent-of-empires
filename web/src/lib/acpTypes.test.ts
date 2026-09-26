@@ -419,6 +419,14 @@ describe("cost baseline (#1354)", () => {
     expect(pctOf(fold(emptyAcpState(), reading(40), usage(2), "SessionCleared", "ConversationCompacted"))).toBe(40);
     expect(pctOf(fold(emptyAcpState(), reading(40), usage(2), reading(62)))).toBe(62);
   });
+
+  it("latches the latest model and turn token counts", () => {
+    const named: AcpEvent = { UsageUpdated: { usage: { used: 1, size: 200_000, model: "claude-opus-5-5" } } };
+    const turn: AcpEvent = { TurnTokenUsage: { usage: { input: 10, output: 300 } } };
+    const state = fold(emptyAcpState(), named, turn, usage(2), "SessionCleared");
+    expect(state.lastModel).toBe("claude-opus-5-5");
+    expect(state.lastTurnUsage).toEqual({ input: 10, output: 300 });
+  });
 });
 
 describe("turnActive: daemon truth plus an optimistic overlay (#3417)", () => {

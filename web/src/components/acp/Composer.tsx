@@ -80,6 +80,8 @@ interface Props {
   sessionUsage: AcpState["sessionUsage"];
   authStatus: AcpState["authStatus"];
   quota?: AcpState["quota"];
+  lastModel?: AcpState["lastModel"];
+  lastTurnUsage?: AcpState["lastTurnUsage"];
   availableCommands: AcpState["availableCommands"];
   /** Shared policy for what submitting the current draft means. */
   availability: Exclude<ComposerAvailability, { kind: "read_only" }>;
@@ -298,7 +300,12 @@ export function Composer(props: Props) {
                   </span>
                 )}
                 <div className="shrink-0">
-                  <UsageHint usage={props.sessionUsage} quota={props.quota} />
+                  <UsageHint
+                    usage={props.sessionUsage}
+                    quota={props.quota}
+                    lastModel={props.lastModel}
+                    lastTurnUsage={props.lastTurnUsage}
+                  />
                 </div>
                 {turnActive && <StopButton compact />}
               </div>
@@ -453,7 +460,12 @@ export function Composer(props: Props) {
                   summary={statusParts}
                 />
                 <AuthStatusHint authStatus={props.authStatus} />
-                <UsageHint usage={props.sessionUsage} quota={props.quota} />
+                <UsageHint
+                  usage={props.sessionUsage}
+                  quota={props.quota}
+                  lastModel={props.lastModel}
+                  lastTurnUsage={props.lastTurnUsage}
+                />
               </div>
 
               <div data-testid="composer-actions" className="flex shrink-0 items-center gap-2">
