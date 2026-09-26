@@ -1,7 +1,7 @@
 // Session settings: a read-only summary chip in the composer footer that opens a
 // dialog holding the agent's mode, model, effort, thinking display, and launch options.
 
-import { Settings2 } from "lucide-react";
+import { ArrowLeftRight, Settings2 } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { useSessionThinkingDisplay } from "../../hooks/useSessionThinkingDisplay";
@@ -9,6 +9,7 @@ import type { AcpState } from "../../lib/acpTypes";
 import { agentLaunchOptions, updateAgentLaunchOptions, type AgentLaunchOption } from "../../lib/agentLaunchOptions";
 import { useAgentProfile } from "../../lib/agentProfileContext";
 import { resolveModeChannel, type ModeChannel } from "../../lib/modeChannel";
+import { requestSwitchAgent } from "../../lib/switchAgentTrigger";
 import { THINKING_DISPLAY_LABELS, THINKING_DISPLAYS, type ThinkingDisplay } from "../../lib/thinkingDisplay";
 import { TOUR_ANCHORS, tourAnchor } from "../../lib/tourSteps";
 import { BRAND_BUTTON, ConfirmButton, Dialog } from "../Dialog";
@@ -106,6 +107,7 @@ export function SessionSettingsControl(props: Props) {
       {open && (
         <SessionSettingsDialog
           sessionId={props.sessionId}
+          agent={props.summary.agent}
           channel={channel}
           onSelectMode={selectMode}
           configOptions={props.configOptions}
@@ -170,6 +172,7 @@ const DIALOG_ID = "session-settings-dialog";
 
 function SessionSettingsDialog({
   sessionId,
+  agent,
   channel,
   onSelectMode,
   configOptions,
@@ -180,6 +183,7 @@ function SessionSettingsDialog({
   onClose,
 }: {
   sessionId: string;
+  agent: string;
   channel: ModeChannel | null;
   onSelectMode: (id: string) => void;
   configOptions: AcpState["configOptions"];
@@ -220,6 +224,27 @@ function SessionSettingsDialog({
         </ConfirmButton>
       }
     >
+      <Section label="Agent">
+        <div className="flex items-center justify-between gap-3">
+          <span data-testid="session-settings-agent" className="text-xs font-medium text-text-primary">
+            {agent}
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              onClose();
+              requestSwitchAgent(sessionId);
+            }}
+            className={[
+              "inline-flex items-center gap-1 rounded-md border border-surface-700 bg-surface-800/60 px-2 py-1 text-[11px] font-medium",
+              "text-text-secondary transition-colors hover:border-brand-600/60 hover:text-text-primary",
+            ].join(" ")}
+          >
+            <ArrowLeftRight className="h-3 w-3 opacity-70" aria-hidden />
+            Switch agent…
+          </button>
+        </div>
+      </Section>
       {channel && (
         <Section label={channel.label}>
           <ModeOptions channel={channel} onSelect={onSelectMode} />
