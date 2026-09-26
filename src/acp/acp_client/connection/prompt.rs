@@ -22,12 +22,12 @@ use crate::acp::acp_client::delete::handle_delete_session_cmd;
 use crate::acp::acp_client::errors::acp_internal_error;
 use crate::acp::acp_client::lifecycle::{LifecycleSignal, OffProtocolWorkKind};
 use crate::acp::acp_client::opencode::recover_opencode_prompt_error;
+use crate::acp::acp_client::prompt_response::{stop_reason_notice, turn_token_usage};
 use crate::acp::acp_client::rate_limit::{
     captured_rate_limit_resets_at, classify_rate_limit_error, is_unsupported_session_error,
 };
 use crate::acp::acp_client::reset::ResetSessionOutcome;
 use crate::acp::acp_client::steer::{first_text_block, SteerOutcome, SteerRequest};
-use crate::acp::acp_client::token_usage::turn_token_usage;
 use crate::acp::acp_client::watchdog::{
     silent_orphan_check_interval, silent_orphan_fast_grace, silent_orphan_grace,
     terminal_stop_reason, SilentOrphanWatchdog, SilentOrphanWatchdogConfig,
@@ -303,6 +303,9 @@ impl Session {
         let e = match res {
             Ok(resp) => {
                 turn.flags.prompt_cancelled = matches!(resp.stop_reason, StopReason::Cancelled);
+                if let Some(notice) = stop_reason_notice(resp.stop_reason) {
+                    self.shared.emit(notice).await;
+                }
                 if let Some(usage) = turn_token_usage(&resp) {
                     self.shared.emit(Event::TurnTokenUsage { usage }).await;
                 }

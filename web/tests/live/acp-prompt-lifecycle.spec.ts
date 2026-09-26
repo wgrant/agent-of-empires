@@ -163,12 +163,14 @@ test.describe("mid-turn prompts", () => {
   });
 });
 
-test("notice and structured compaction updates reach the event store through the runner", async ({ spawnServe }) => {
+test("notices, structured compaction, and a truncated turn reach the event store through the runner", async ({
+  spawnServe,
+}) => {
   // The ACP crate cannot decode these kinds; ingress tunnels them through `session_info_update`.
   const { serve, sessionId } = await startAcpSession(spawnServe, {
     title: "acp-extension-updates",
-    fakeAcpScript: script(
-      endTurn(
+    fakeAcpScript: script({
+      ...endTurn(
         { sessionUpdate: "notice", severity: "warning", title: "Config deprecated", description: "Use the new key" },
         { sessionUpdate: "compaction_update", compactionId: "c1", status: "in_progress" },
         {
@@ -178,12 +180,18 @@ test("notice and structured compaction updates reach the event store through the
           summary: [{ type: "text", text: "KEPT_THE_PLAN" }],
         },
       ),
-    ),
+      stopReason: "max_tokens",
+    }),
   });
   await postPrompt(serve.baseUrl, sessionId, "/compact");
-  await waitForReplayContains(serve.baseUrl, sessionId, "KEPT_THE_PLAN");
+  await waitForReplayContains(serve.baseUrl, sessionId, "Reply cut off");
   const replay = await replayJson(serve.baseUrl, sessionId);
-  for (const needle of ["AgentNotice", "Config deprecated", "ConversationCompactionStarted", "ConversationCompacted"]) {
+  for (const needle of [
+    "Config deprecated",
+    "KEPT_THE_PLAN",
+    "ConversationCompactionStarted",
+    "ConversationCompacted",
+  ]) {
     expect(replay, needle).toContain(needle);
   }
 });
