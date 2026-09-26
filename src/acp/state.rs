@@ -557,7 +557,7 @@ pub enum Event {
     TodoListUpdated {
         todos: Vec<Todo>,
     },
-    /// Legacy: agent-pushed `session_info_update` titles.
+    /// A title the agent generated for the session; see `smart_rename::apply_agent_title`.
     SessionTitleSuggested {
         title: String,
     },

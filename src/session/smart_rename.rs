@@ -984,7 +984,9 @@ pub async fn run_terminal_rename(
     Ok(())
 }
 
-pub use serve::{should_trigger_smart_rename, try_smart_rename};
+pub use serve::{
+    apply_agent_title, should_trigger_smart_rename, smart_rename_after_turn, try_smart_rename,
+};
 
 mod serve {
     use super::*;
@@ -1039,6 +1041,87 @@ mod serve {
                 guard.remove(&self.id);
             }
         }
+    }
+
+    /// How long a session whose agent titles itself waits for that title
+    /// before falling back to the one-shot.
+    const AGENT_TITLE_GRACE: std::time::Duration = std::time::Duration::from_secs(30);
+
+    /// The turn-end trigger: the one-shot, held back while an agent that
+    /// titles sessions itself gets the chance to.
+    pub async fn smart_rename_after_turn(
+        state: Arc<AppState>,
+        session_id: String,
+        input: SmartRenameInput,
+    ) {
+        let agent_titles = state
+            .instances
+            .read()
+            .await
+            .iter()
+            .find(|i| i.id == session_id)
+            .is_some_and(|i| {
+                crate::acp::agent_profiles::resolve(
+                    i.agent_name
+                        .as_deref()
+                        .filter(|s| !s.is_empty())
+                        .unwrap_or(i.tool.as_str()),
+                )
+                .generates_session_titles
+            });
+        if agent_titles {
+            tokio::time::sleep(AGENT_TITLE_GRACE).await;
+        }
+        // Eligibility requires a default name, so an adopted agent title ends it here.
+        try_smart_rename(state, session_id, input, false).await;
+    }
+
+    /// Adopt a title the agent generated, but only over a default name: a
+    /// session keeps the first title it gets, from either source.
+    pub async fn apply_agent_title(state: Arc<AppState>, session_id: String, raw_title: String) {
+        let Some((profile, title, project_path, repo_path, structured)) = ({
+            let instances = state.instances.read().await;
+            instances.iter().find(|i| i.id == session_id).map(|i| {
+                (
+                    i.source_profile.clone(),
+                    i.title.clone(),
+                    i.project_path.clone(),
+                    i.repo_path().to_string(),
+                    i.is_structured(),
+                )
+            })
+        }) else {
+            return;
+        };
+        if !structured || !is_default_civ_name(&title) {
+            return;
+        }
+        let resolved = crate::session::config::repo_config::resolve_config_with_repo_or_warn(
+            &profile,
+            Path::new(&project_path),
+        );
+        let smart_rename_override =
+            crate::session::projects::find_by_canonical_path(&profile, Path::new(&repo_path))
+                .and_then(|p| p.overrides.smart_rename);
+        if !resolve_smart_rename_config(&resolved.session, smart_rename_override).setting_on {
+            return;
+        }
+        // Without a generated title the adapter may fall back to the first prompt verbatim.
+        let first_prompt = state
+            .acp_event_store
+            .first_turn_context(&session_id, 0)
+            .map(|(prompt, _)| prompt)
+            .unwrap_or_default();
+        let Some(new_title) = sanitize_title(&raw_title, &first_prompt) else {
+            tracing::debug!(target: "smart_rename", session = %session_id, "skip: agent title not usable");
+            return;
+        };
+        state
+            .smart_rename_attempted
+            .lock()
+            .expect("smart_rename_attempted poisoned")
+            .insert(session_id.clone());
+        apply_auto_title(&state, &session_id, &profile, &new_title, false).await;
     }
 
     /// Best-effort auto-rename of a structured-view session from its first turn.
@@ -1270,6 +1353,50 @@ mod serve {
     mod tests {
         use super::*;
         use std::time::Duration;
+
+        #[tokio::test]
+        #[serial_test::serial]
+        async fn agent_titles_replace_only_a_default_name() {
+            let _guard = crate::session::test_support::isolate_app_dir();
+            let storage =
+                crate::session::storage::Storage::new_unwatched("default").expect("storage");
+            let mut inst = crate::session::Instance::new("Franks", "/tmp/agent-title");
+            inst.source_profile = "default".to_string();
+            inst.view = crate::session::instance::View::Structured;
+            let id = inst.id.clone();
+            storage
+                .update(|instances, _groups| {
+                    *instances = vec![inst.clone()];
+                    Ok(())
+                })
+                .unwrap();
+            let state = crate::server::test_support::build_test_app_state(vec![inst]);
+            let prompt = crate::acp::state::Event::UserPromptSent {
+                text: "why is login flaky".to_string(),
+                attachments: Vec::new(),
+                prompt_id: None,
+                synthesized: false,
+            };
+            state.acp_event_store.record(&id, 1, &prompt).unwrap();
+
+            // (agent title, title afterwards): an echo of the prompt is
+            // rejected, then the first real title sticks.
+            for (suggested, want) in [
+                ("Why is login flaky", "Franks"),
+                ("Fix flaky login test", "Fix flaky login test"),
+                ("Something else entirely", "Fix flaky login test"),
+            ] {
+                apply_agent_title(state.clone(), id.clone(), suggested.to_string()).await;
+                let title = state.instances.read().await[0].title.clone();
+                assert_eq!(title, want, "after {suggested:?}");
+                assert_eq!(
+                    storage.load().unwrap()[0].title,
+                    want,
+                    "after {suggested:?}"
+                );
+            }
+            assert!(attempted_contains(&state, &id));
+        }
 
         #[tokio::test]
         #[serial_test::serial]

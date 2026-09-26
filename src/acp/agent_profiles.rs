@@ -26,6 +26,9 @@ pub struct AgentProfile {
     pub yolo_mode_id: Option<&'static str>,
     /// Native agent whose on-disk configuration carries conversation state.
     pub native_config_agent: Option<&'static str>,
+    /// The adapter titles a new session shortly after its first turn, so
+    /// smart rename waits for that before running its own one-shot.
+    pub generates_session_titles: bool,
 }
 
 impl AgentProfile {
@@ -87,6 +90,7 @@ pub const DEFAULT: AgentProfile = AgentProfile {
     emits_heartbeat_keepalives: false,
     yolo_mode_id: None,
     native_config_agent: None,
+    generates_session_titles: false,
 };
 
 /// Claude via `claude-agent-acp`.
@@ -100,6 +104,7 @@ pub const CLAUDE: AgentProfile = AgentProfile {
     emits_heartbeat_keepalives: true,
     yolo_mode_id: Some("bypassPermissions"),
     native_config_agent: Some("claude"),
+    generates_session_titles: true,
 };
 
 /// Legacy alias key carried by older session records (`agent_name="claude-code"`).
@@ -115,6 +120,7 @@ pub const CODEX: AgentProfile = AgentProfile {
     clear_requires_driven_reset: true,
     yolo_mode_id: Some("agent-full-access"),
     native_config_agent: Some("codex"),
+    generates_session_titles: true,
     ..DEFAULT
 };
 

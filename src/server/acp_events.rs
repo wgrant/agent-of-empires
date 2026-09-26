@@ -189,6 +189,14 @@ pub(super) async fn acp_event_listener(state: Arc<AppState>) {
             }
         }
 
+        if let crate::acp::state::Event::SessionTitleSuggested { title } = frame.event.as_ref() {
+            tokio::spawn(crate::session::smart_rename::apply_agent_title(
+                state.clone(),
+                frame.session_id.clone(),
+                title.clone(),
+            ));
+        }
+
         // Smart-rename defer.
         let should_rename = matches!(
             frame.event.as_ref(),
@@ -222,19 +230,14 @@ pub(super) async fn acp_event_listener(state: Arc<AppState>) {
                     &first_user_prompt,
                     &agent_prose,
                 );
-                tokio::spawn(async move {
-                    crate::session::smart_rename::try_smart_rename(
-                        state_for_rename,
-                        session_id,
-                        crate::session::smart_rename::SmartRenameInput {
-                            first_user_prompt,
-                            context,
-                        },
-                        // Automatic turn-end trigger.
-                        false,
-                    )
-                    .await;
-                });
+                tokio::spawn(crate::session::smart_rename::smart_rename_after_turn(
+                    state_for_rename,
+                    session_id,
+                    crate::session::smart_rename::SmartRenameInput {
+                        first_user_prompt,
+                        context,
+                    },
+                ));
             } else {
                 // A `prompt_complete` Stopped without any persisted UserPromptSent is
                 // unexpected.
