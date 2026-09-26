@@ -2733,6 +2733,13 @@
       "components": ["web/src/components/WorkspaceSidebar.tsx", "web/src/components/acp/Composer.tsx"]
     },
     {
+      "id": "acp.switch-agent-session-settings",
+      "kind": "vitest",
+      "risk": "low",
+      "specs": ["src/components/acp/SessionSettings.test.tsx", "src/lib/__tests__/switchAgentTrigger.test.ts"],
+      "components": ["web/src/components/acp/SessionSettings.tsx", "web/src/components/acp/Composer.tsx"]
+    },
+    {
       "id": "acp.switch-view-ui",
       "kind": "mocked-playwright",
       "risk": "medium",

@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/rea
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ConfigOptionDescriptor } from "../../lib/acpTypes";
+import { consumePendingSwitchAgent } from "../../lib/switchAgentTrigger";
 import { sessionThinkingDisplayKey } from "../../lib/thinkingDisplay";
 import { AgentProfileProvider } from "../../lib/agentProfileContext";
 import { SessionSettingsControl } from "./SessionSettings";
@@ -104,6 +105,15 @@ describe("SessionSettingsControl", () => {
     fireEvent.click(choice("default"));
     expect(choice("default").getAttribute("aria-checked")).toBe("true");
     expect(localStorage.getItem(sessionThinkingDisplayKey("s1"))).toBeNull();
+  });
+
+  it("hands off to the switch-agent flow from the agent row", () => {
+    mount([MODEL]);
+    fireEvent.click(trigger());
+    expect(screen.getByTestId("session-settings-agent").textContent).toBe("Claude");
+    fireEvent.click(screen.getByRole("button", { name: "Switch agent…" }));
+    expect(dialog()).toBeNull();
+    expect(consumePendingSwitchAgent("s1")).toBe(true);
   });
 
   it("closes from Done", () => {
