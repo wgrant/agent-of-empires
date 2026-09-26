@@ -16,6 +16,7 @@ use tracing::{debug, info, trace, warn};
 use super::command_loop::Session;
 use super::notifications::now_ms;
 use super::CANCEL_ESCALATION_GRACE;
+use crate::acp::acp_client::async_tasks::dispatch_stop_async_task;
 use crate::acp::acp_client::commands::ClientCmd;
 use crate::acp::acp_client::control::prompt_outcome_to_response;
 use crate::acp::acp_client::delete::handle_delete_session_cmd;
@@ -390,6 +391,9 @@ impl Session {
                 self.dispatch_config_option(config_id, value)
             }
             Some(ClientCmd::SetMode(mode_id)) => self.dispatch_mode(mode_id, true),
+            Some(ClientCmd::StopAsyncTask(task_id)) => {
+                dispatch_stop_async_task(&self.connection, &self.acp_session_id, task_id)
+            }
             Some(ClientCmd::DeleteSession {
                 acp_session_id,
                 respond_to,

@@ -56,6 +56,9 @@ pub(super) fn is_transcript_event(event: &Event) -> bool {
             | Event::SubagentSpawned { .. }
             | Event::SubagentStateChanged { .. }
             | Event::SubagentUpdate { .. }
+            | Event::AsyncTaskSpawned { .. }
+            | Event::AsyncTaskProgress { .. }
+            | Event::AsyncTaskStateChanged { .. }
     )
 }
 

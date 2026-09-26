@@ -182,6 +182,14 @@ pub struct SessionUsage {
     pub model: Option<String>,
 }
 
+/// A task's cumulative spend, as the adapter reports it.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct AsyncTaskUsage {
+    pub total_tokens: u64,
+    pub tool_uses: u64,
+    pub duration_ms: u64,
+}
+
 /// Token counts for the agent's latest turn, from its prompt response.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TurnTokenUsage {
@@ -495,6 +503,9 @@ pub struct AcpState {
     pub session_notices: Vec<SessionNotice>,
     #[serde(default)]
     pub background_agents: Vec<BackgroundAgentRecord>,
+    /// Workflow tasks still running; they keep working after the turn that launched them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub running_workflows: Vec<String>,
 
     /// Whether the main turn is in flight. Dispatch (`acp::dispatch::decide`)
     /// and the queue drain gate on this directly, so it tracks only the main
@@ -845,6 +856,42 @@ pub enum Event {
         id: String,
         event: Box<Event>,
     },
+    /// Background work the agent reports as a task (JetBrains AIR async
+    /// tasks): a Claude workflow, a background shell, or a monitor.
+    AsyncTaskSpawned {
+        id: String,
+        name: String,
+        /// `workflow`, `shell`, `monitor`, or another adapter-defined kind.
+        task_type: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        description: Option<String>,
+        /// The tool call that started it, when the adapter names one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        tool_call_id: Option<String>,
+        can_stop: bool,
+        at: DateTime<Utc>,
+    },
+    AsyncTaskProgress {
+        id: String,
+        /// What it is doing now, such as a workflow's current agent.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        description: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        usage: Option<AsyncTaskUsage>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        tool_call_id: Option<String>,
+        at: DateTime<Utc>,
+    },
+    /// `running`, `paused`, `completed`, `failed`, or `stopped`.
+    AsyncTaskStateChanged {
+        id: String,
+        state: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        summary: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        tool_call_id: Option<String>,
+        at: DateTime<Utc>,
+    },
     /// An agent advisory (a warning, deprecation, or failed background step).
     AgentNotice {
         /// `info`, `warning`, or `error`; other values render as `info`.
@@ -880,12 +927,14 @@ impl AcpState {
         }
     }
 
-    /// Whether any background sub-agent is still in flight. Keyed on
-    /// `ended_at`, not `status`: a terminal `BackgroundAgentCompleted` can
-    /// carry `status: Stalled` (the tailer's abort timeout gives up without a
-    /// clean `end_turn`), and that record is done like any other (#4001).
+    /// Whether any background sub-agent or workflow is still in flight.
+    /// Keyed on `ended_at`, not `status`: a terminal `BackgroundAgentCompleted`
+    /// can carry `status: Stalled` (the tailer's abort timeout gives up
+    /// without a clean `end_turn`), and that record is done like any other
+    /// (#4001). Shells and monitors can run indefinitely, so they never count.
     pub fn has_active_background_agent(&self) -> bool {
         self.background_agents.iter().any(|a| a.ended_at.is_none())
+            || !self.running_workflows.is_empty()
     }
 
     /// Apply a single event; returns the new `last_seq`.
@@ -1124,6 +1173,16 @@ impl AcpState {
                     }
                 }
             }
+            Event::AsyncTaskSpawned { id, task_type, .. } => {
+                if task_type == "workflow" && !self.running_workflows.contains(&id) {
+                    self.running_workflows.push(id);
+                }
+            }
+            Event::AsyncTaskStateChanged { id, state, .. } => {
+                if !matches!(state.as_str(), "running" | "paused") {
+                    self.running_workflows.retain(|running| running != &id);
+                }
+            }
             // Titles live on `Instance`; wakeups and monitors are read from the log.
             Event::SessionTitleSuggested { .. }
             | Event::ToolCallContent { .. }
@@ -1139,6 +1198,7 @@ impl AcpState {
             | Event::SubagentSpawned { .. }
             | Event::SubagentStateChanged { .. }
             | Event::SubagentUpdate { .. }
+            | Event::AsyncTaskProgress { .. }
             | Event::WakeupScheduled { .. }
             | Event::MonitorArmed { .. } => {}
         }
@@ -1448,6 +1508,34 @@ mod tests {
         Event::RateLimit {
             info: RateLimitInfo::undated(),
         }
+    }
+
+    #[test]
+    fn a_running_workflow_counts_as_background_activity_until_it_ends() {
+        let spawned = |id: &str, task_type: &str| Event::AsyncTaskSpawned {
+            id: id.into(),
+            name: "n".into(),
+            task_type: task_type.into(),
+            description: None,
+            tool_call_id: None,
+            can_stop: true,
+            at: Utc::now(),
+        };
+        let state = |id: &str, state: &str| Event::AsyncTaskStateChanged {
+            id: id.into(),
+            state: state.into(),
+            summary: None,
+            tool_call_id: None,
+            at: Utc::now(),
+        };
+        let mut s = AcpState::default();
+        s.apply_event(spawned("shell-1", "shell")).unwrap();
+        assert!(!s.has_active_background_agent(), "a shell can run forever");
+        s.apply_event(spawned("wf-1", "workflow")).unwrap();
+        s.apply_event(state("wf-1", "paused")).unwrap();
+        assert!(s.has_active_background_agent());
+        s.apply_event(state("wf-1", "completed")).unwrap();
+        assert!(!s.has_active_background_agent());
     }
 
     #[test]

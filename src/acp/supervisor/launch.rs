@@ -388,7 +388,10 @@ impl<S: BroadcastSink> Supervisor<S> {
                 default_effort_explicit: req.effort_explicit,
                 default_mode: acp_defaults.and_then(|defaults| defaults.mode()),
                 default_model: model,
-                native_subagents: resolved_cfg.acp.native_subagents,
+                extensions: crate::acp::acp_client::ClientExtensions {
+                    native_subagents: resolved_cfg.acp.native_subagents,
+                    async_tasks: resolved_cfg.acp.async_tasks,
+                },
                 socket_path: Some(socket_path),
                 stored_acp_session_id,
                 fork_from,

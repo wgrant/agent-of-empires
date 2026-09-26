@@ -11,6 +11,7 @@ use tokio::sync::{oneshot, Mutex};
 use tracing::warn;
 
 use super::errors::AcpError;
+use super::spawn::ClientExtensions;
 
 /// A fork needs both a requested parent and the agent's fork capability;
 /// otherwise the normal new/load handshake runs, which surfaces an unfulfilled
@@ -45,16 +46,27 @@ pub(super) fn build_initialize_request() -> InitializeRequest {
 
 /// The initialize request as sent through the runner: the typed request plus
 /// the capabilities the ACP crate cannot express yet, `session.notices`,
-/// `session.compaction`, and optionally native subagents; `extension_updates`
+/// `session.compaction`, and the optional `extensions`; `extension_updates`
 /// handles what they unlock.
-pub(super) fn initialize_params(native_subagents: bool) -> serde_json::Value {
+pub(super) fn initialize_params(extensions: ClientExtensions) -> serde_json::Value {
     let mut params =
         serde_json::to_value(build_initialize_request()).expect("initialize request serializes");
     let capabilities = &mut params["clientCapabilities"];
     capabilities["session"]["notices"] = serde_json::json!({});
     capabilities["session"]["compaction"] = serde_json::json!({});
-    if native_subagents {
-        super::subagents::declare_capability(capabilities);
+    // JetBrains AIR names each opt-in; SDKs that strip unknown capability
+    // fields keep `_meta`, so native subagents are declared both ways.
+    let mut air = Vec::new();
+    if extensions.native_subagents {
+        capabilities["subagents"] = serde_json::json!({});
+        air.push("nativeSubagentSessions");
+    }
+    if extensions.async_tasks {
+        air.push("asyncTasks");
+    }
+    if !air.is_empty() {
+        capabilities["_meta"]["jetbrains"]["air"] =
+            serde_json::json!({ "version": 1, "capabilities": air });
     }
     params
 }
@@ -119,21 +131,34 @@ mod tests {
 
     #[test]
     fn initialize_params_advertise_extensions_beside_typed_capabilities() {
-        let params = initialize_params(false);
+        let params = initialize_params(ClientExtensions::default());
         let caps = &params["clientCapabilities"];
         assert_eq!(caps["session"]["notices"], serde_json::json!({}));
         assert_eq!(caps["session"]["compaction"], serde_json::json!({}));
         assert_eq!(caps["terminal"], true);
-        assert!(caps.get("subagents").is_none());
+        assert!(caps.get("subagents").is_none() && caps.get("_meta").is_none());
         assert_eq!(params["clientInfo"]["name"], "agent-of-empires");
 
-        let caps = initialize_params(true)["clientCapabilities"].clone();
-        assert_eq!(caps["subagents"], serde_json::json!({}));
+        let caps = |native_subagents, async_tasks| {
+            initialize_params(ClientExtensions {
+                native_subagents,
+                async_tasks,
+            })["clientCapabilities"]
+                .clone()
+        };
+        let both = caps(true, true);
+        assert_eq!(both["subagents"], serde_json::json!({}));
         assert_eq!(
-            caps["_meta"]["jetbrains"]["air"]["capabilities"],
-            serde_json::json!(["nativeSubagentSessions"])
+            both["_meta"]["jetbrains"]["air"],
+            serde_json::json!({"version": 1, "capabilities": ["nativeSubagentSessions", "asyncTasks"]})
         );
-        assert_eq!(caps["terminal"], true);
+        assert_eq!(both["terminal"], true);
+        let tasks_only = caps(false, true);
+        assert!(tasks_only.get("subagents").is_none());
+        assert_eq!(
+            tasks_only["_meta"]["jetbrains"]["air"]["capabilities"],
+            serde_json::json!(["asyncTasks"])
+        );
     }
 
     /// #2767: a strict backend rejects an empty client_name/client_version.

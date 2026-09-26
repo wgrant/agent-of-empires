@@ -2733,6 +2733,17 @@
       "components": ["web/src/components/WorkspaceSidebar.tsx", "web/src/components/acp/Composer.tsx"]
     },
     {
+      "id": "acp.background-tasks",
+      "kind": "live-playwright",
+      "risk": "medium",
+      "specs": [
+        "tests/live/acp-prompt-lifecycle.spec.ts",
+        "src/lib/acpTypes.reducer.test.ts",
+        "src/components/acp/__tests__/BackgroundAgentsPanel.test.tsx"
+      ],
+      "components": ["web/src/components/acp/BackgroundAgentsPanel.tsx", "web/src/hooks/acpSession/stateCache.ts"]
+    },
+    {
       "id": "acp.native-subagents",
       "kind": "live-playwright",
       "risk": "medium",

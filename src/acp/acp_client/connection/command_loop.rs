@@ -16,6 +16,7 @@ use tokio::sync::{mpsc, oneshot};
 use tracing::{debug, info, warn};
 
 use super::notifications::{now_ms, Shared};
+use crate::acp::acp_client::async_tasks::dispatch_stop_async_task;
 use crate::acp::acp_client::between_prompt::{
     between_prompt_stop_reason, BETWEEN_PROMPT_IDLE_CHECK_INTERVAL,
 };
@@ -161,6 +162,9 @@ impl Session {
                     let _ = self.send_cancel().await;
                 }
                 Some(ClientCmd::SetMode(mode_id)) => self.dispatch_mode(mode_id, false),
+                Some(ClientCmd::StopAsyncTask(task_id)) => {
+                    dispatch_stop_async_task(&self.connection, &self.acp_session_id, task_id)
+                }
                 Some(ClientCmd::DeleteSession {
                     acp_session_id,
                     respond_to,

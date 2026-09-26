@@ -173,6 +173,16 @@ impl<S: BroadcastSink> Supervisor<S> {
         Ok(())
     }
 
+    pub async fn stop_async_task(
+        &self,
+        session_id: &str,
+        task_id: &str,
+    ) -> Result<(), SupervisorError> {
+        let client = self.ready_client(session_id).await?;
+        client.stop_async_task(task_id).await?;
+        Ok(())
+    }
+
     pub async fn set_config_option(
         &self,
         session_id: &str,

@@ -383,6 +383,35 @@ export type AcpEvent =
   | { SubagentSpawned: { id: string; parent?: string | null; name: string; task: string; at: string } }
   | { SubagentStateChanged: { id: string; state: string; at: string } }
   | { SubagentUpdate: { id: string; event: AcpEvent } }
+  | {
+      AsyncTaskSpawned: {
+        id: string;
+        name: string;
+        task_type: string;
+        description?: string | null;
+        tool_call_id?: string | null;
+        can_stop: boolean;
+        at: string;
+      };
+    }
+  | {
+      AsyncTaskProgress: {
+        id: string;
+        description?: string | null;
+        usage?: AsyncTaskUsage | null;
+        tool_call_id?: string | null;
+        at: string;
+      };
+    }
+  | {
+      AsyncTaskStateChanged: {
+        id: string;
+        state: string;
+        summary?: string | null;
+        tool_call_id?: string | null;
+        at: string;
+      };
+    }
   | { TurnTokenUsage: { usage: TurnTokenUsage } }
   | { ModeChanged: { mode: SessionMode } }
   | {
@@ -656,6 +685,8 @@ export interface AcpState {
   sessionNotices: SessionNotice[];
   /** Ids dismissed in this tab. Local, so it never clears another client. */
   dismissedNoticeIds: string[];
+  /** Background tasks: workflows, background shells, and monitors. */
+  asyncTasks: AsyncTask[];
 }
 
 /** Wire mirror of the Rust `SessionNotice` (src/acp/state.rs). */
@@ -670,6 +701,8 @@ export interface SessionNotice {
 export type BackgroundAgentStatus = "running" | "stalled" | "completed" | "detached" | "error";
 
 export interface BackgroundAgentTool {
+  /** The tool call id, for a native subagent's tools. */
+  id?: string;
   name: string;
   title?: string | null;
   /** Undefined while running. */
@@ -692,6 +725,35 @@ export interface BackgroundAgent {
   lastText: string | null;
   result: string | null;
   warning: string | null;
+}
+
+export interface AsyncTaskUsage {
+  total_tokens: number;
+  tool_uses: number;
+  duration_ms: number;
+}
+
+/** Background work the agent reports as a task: a workflow, a background shell, or a monitor. */
+export interface AsyncTask {
+  id: string;
+  name: string;
+  /** `workflow`, `shell`, `monitor`, or another adapter-defined kind. */
+  taskType: string;
+  description: string | null;
+  toolCallId: string | null;
+  canStop: boolean;
+  /** `running`, `paused`, `completed`, `failed`, or `stopped`. */
+  state: string;
+  /** What it is doing now, such as a workflow's current agent. */
+  activity: string | null;
+  usage: AsyncTaskUsage | null;
+  summary: string | null;
+  startedAt: string;
+  endedAt: string | null;
+}
+
+export function asyncTaskRunning(task: AsyncTask): boolean {
+  return task.state === "running" || task.state === "paused";
 }
 
 export interface RejectedPrompt {
@@ -948,6 +1010,7 @@ export function emptyAcpState(): AcpState {
     agentUnresponsive: false,
     agentOrphaned: false,
     backgroundAgents: [],
+    asyncTasks: [],
     modeSwitchFailed: null,
     lastAgentSwitch: null,
     configOptions: [],
@@ -1000,18 +1063,18 @@ function foldSubagentActivity(agent: BackgroundAgent, event: AcpEvent): Backgrou
   if (typeof event === "string") return agent;
   if ("ToolCallStarted" in event) {
     const { id, name } = event.ToolCallStarted.tool_call;
-    if (agent.tools.some((t) => t.title === id)) return agent;
+    if (agent.tools.some((t) => t.id === id)) return agent;
     return {
       ...agent,
       toolCount: agent.toolCount + 1,
-      tools: [...agent.tools, { name, title: id, ok: null }],
+      tools: [...agent.tools, { id, name, ok: null }],
       lastTool: name,
       lastText: null,
     };
   }
   if ("ToolCallCompleted" in event) {
     const e = event.ToolCallCompleted;
-    return { ...agent, tools: agent.tools.map((t) => (t.title === e.tool_call_id ? { ...t, ok: !e.is_error } : t)) };
+    return { ...agent, tools: agent.tools.map((t) => (t.id === e.tool_call_id ? { ...t, ok: !e.is_error } : t)) };
   }
   if ("AgentMessageChunk" in event) {
     return { ...agent, lastText: (agent.lastText ?? "") + event.AgentMessageChunk.text };
@@ -1386,6 +1449,54 @@ export function applyEvent(state: AcpState, frame: AcpFrame): AcpState {
           }
         : a,
     );
+    return next;
+  }
+  if ("AsyncTaskSpawned" in event) {
+    const e = event.AsyncTaskSpawned;
+    const task: AsyncTask = {
+      id: e.id,
+      name: e.name,
+      taskType: e.task_type,
+      description: e.description ?? null,
+      toolCallId: e.tool_call_id ?? null,
+      canStop: e.can_stop,
+      state: "running",
+      activity: null,
+      usage: null,
+      summary: null,
+      startedAt: e.at,
+      endedAt: null,
+    };
+    const i = next.asyncTasks.findIndex((t) => t.id === e.id);
+    next.asyncTasks = i >= 0 ? next.asyncTasks.map((t, idx) => (idx === i ? task : t)) : [...next.asyncTasks, task];
+    return next;
+  }
+  if ("AsyncTaskProgress" in event) {
+    const e = event.AsyncTaskProgress;
+    next.asyncTasks = next.asyncTasks.map((t) =>
+      t.id === e.id
+        ? {
+            ...t,
+            activity: e.description ?? t.activity,
+            usage: e.usage ?? t.usage,
+            toolCallId: t.toolCallId ?? e.tool_call_id ?? null,
+          }
+        : t,
+    );
+    return next;
+  }
+  if ("AsyncTaskStateChanged" in event) {
+    const e = event.AsyncTaskStateChanged;
+    next.asyncTasks = next.asyncTasks.map((t) => {
+      if (t.id !== e.id) return t;
+      const updated = {
+        ...t,
+        state: e.state,
+        summary: e.summary ?? t.summary,
+        toolCallId: t.toolCallId ?? e.tool_call_id ?? null,
+      };
+      return { ...updated, endedAt: asyncTaskRunning(updated) ? null : (t.endedAt ?? e.at) };
+    });
     return next;
   }
   if ("BackgroundAgentProgress" in event) {
