@@ -53,6 +53,8 @@ pub(super) struct Session {
     pub(super) agent_cwd: PathBuf,
     /// Capability-filtered servers, forwarded again by a driven reset.
     pub(super) mcp_servers: Vec<McpServer>,
+    /// Adapter-specific `_meta` sent with every session/new, load, and fork.
+    pub(super) session_meta: Option<serde_json::Map<String, serde_json::Value>>,
     pub(super) cmd_rx: mpsc::Receiver<ClientCmd>,
     pub(super) lifecycle_rx: mpsc::Receiver<LifecycleEnvelope>,
     /// Steers the adapter handed back unconsumed, run as ordinary turns.
@@ -267,8 +269,9 @@ impl Session {
             old_id = %self.acp_session_id.0,
             "conversation reset: issuing fresh session/new on the live worker"
         );
-        let req =
-            NewSessionRequest::new(self.agent_cwd.clone()).mcp_servers(self.mcp_servers.clone());
+        let req = NewSessionRequest::new(self.agent_cwd.clone())
+            .mcp_servers(self.mcp_servers.clone())
+            .meta(self.session_meta.clone());
         let connection = self.connection.clone();
         let generation = ingress.begin();
         drop(transition_guard);

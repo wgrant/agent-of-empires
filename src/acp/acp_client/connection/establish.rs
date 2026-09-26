@@ -188,6 +188,7 @@ pub(super) async fn establish(
         default_model: ctx.default_model,
         agent_cwd: ctx.agent_cwd,
         mcp_servers: mcp_servers.clone(),
+        session_meta: agent_compat::session_meta(ctx.expected_agent),
         cmd_rx: ctx.cmd_rx,
         lifecycle_rx: ctx.lifecycle_rx,
         pending_prompts: VecDeque::new(),
@@ -351,7 +352,8 @@ impl Session {
             let parent = fork_from.unwrap_or_default();
             info!(target: "acp.protocol", session = %label, parent_acp_id = %parent, "structured fork via session/fork");
             let req = ForkSessionRequest::new(parent.clone(), self.agent_cwd.clone())
-                .mcp_servers(mcp_servers);
+                .mcp_servers(mcp_servers)
+                .meta(self.session_meta.clone());
             return match self
                 .minting_request("session/fork", req, |resp: &ForkSessionResponse| {
                     resp.session_id.clone()
@@ -426,7 +428,8 @@ impl Session {
                 ingress.finish(Some(SessionId::from(stored.clone())))?;
             }
             let req = LoadSessionRequest::new(stored.clone(), self.agent_cwd.clone())
-                .mcp_servers(mcp_servers.clone());
+                .mcp_servers(mcp_servers.clone())
+                .meta(self.session_meta.clone());
             match self.load_request(req).await {
                 Ok(resp) => {
                     self.session_from_storage = true;
@@ -490,7 +493,9 @@ impl Session {
     ) -> Result<SessionId, agent_client_protocol::Error> {
         let label = self.shared.session_label.clone();
         info!(target: "acp.protocol", session = %label, "creating fresh session via session/new");
-        let req = NewSessionRequest::new(self.agent_cwd.clone()).mcp_servers(mcp_servers);
+        let req = NewSessionRequest::new(self.agent_cwd.clone())
+            .mcp_servers(mcp_servers)
+            .meta(self.session_meta.clone());
         let new_session = self
             .minting_request("session/new", req, |resp: &NewSessionResponse| {
                 resp.session_id.clone()
