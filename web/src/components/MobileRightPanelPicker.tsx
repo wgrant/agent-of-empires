@@ -32,12 +32,22 @@ interface Props {
   // same capability/session gating as the desktop dock instead of a second,
   // independently maintained list.
   availablePanes: string[];
+  /** Running work per view, noted on its entry. */
+  badges?: Readonly<Record<string, number>>;
   onSelect: (view: RightPanelView) => void;
   onClose: () => void;
 }
 
 /** Mobile-only bottom sheet that promotes the chosen view into the single full-viewport main pane. */
-export function MobileRightPanelPicker({ open, active, pluginPanes, availablePanes, onSelect, onClose }: Props) {
+export function MobileRightPanelPicker({
+  open,
+  active,
+  pluginPanes,
+  availablePanes,
+  badges = {},
+  onSelect,
+  onClose,
+}: Props) {
   // Close on Escape, matching the other dismissible overlays.
   useEffect(() => {
     if (!open) return;
@@ -79,7 +89,12 @@ export function MobileRightPanelPicker({ open, active, pluginPanes, availablePan
                     isActive ? "bg-brand-600/10 text-brand-500" : "text-text-secondary hover:bg-surface-800"
                   }`}
                 >
-                  <span className="text-sm font-medium">{entry.label}</span>
+                  <span className="text-sm font-medium">
+                    {entry.label}
+                    {(badges[entry.view] ?? 0) > 0 && (
+                      <span className="ml-2 text-xs font-normal text-text-dim">{badges[entry.view]} running</span>
+                    )}
+                  </span>
                   <span className="text-xs text-text-dim">{entry.hint}</span>
                 </button>
               </li>

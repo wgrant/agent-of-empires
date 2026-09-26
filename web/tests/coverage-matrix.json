@@ -2686,11 +2686,16 @@
         "src/lib/acpTypes.reducer.test.ts",
         "src/components/acp/__tests__/BackgroundAgentsPanel.test.tsx",
         "src/components/acp/ToolCards.render.test.tsx",
-        "src/components/acp/activityMessages.test.ts"
+        "src/components/acp/activityMessages.test.ts",
+        "src/lib/backgroundWork.test.ts",
+        "src/components/__tests__/ActivityBar.test.tsx",
+        "src/components/__tests__/TopBar.test.tsx"
       ],
       "components": [
         "web/src/components/acp/BackgroundAgentsPanel.tsx",
         "web/src/lib/backgroundWork.ts",
+        "web/src/components/ActivityBar.tsx",
+        "web/src/components/MobileRightPanelPicker.tsx",
         "web/src/hooks/acpSession/stateCache.ts",
         "web/src/components/acp/NamedToolCards.tsx",
         "web/src/components/acp/NativeSubagentCard.tsx"
