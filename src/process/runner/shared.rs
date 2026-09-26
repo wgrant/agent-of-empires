@@ -1286,6 +1286,7 @@ mod tests {
                     prompt_req_id: id,
                     outcome: PromptOutcome::Completed {
                         stop_reason: Some("end_turn".into()),
+                        result: Some(serde_json::json!({"stopReason": "end_turn"})),
                     },
                 },
             ]
@@ -1330,6 +1331,7 @@ mod tests {
                 prompt_req_id: *prompt_req_id,
                 outcome: PromptOutcome::Completed {
                     stop_reason: Some("end_turn".into()),
+                    result: Some(serde_json::json!({"stopReason": "end_turn"})),
                 },
             }],
             "only the durable completion may reach the replacement attachment"

@@ -700,6 +700,7 @@ pub(super) fn control_outcome_reason(
     match outcome {
         PromptOutcome::Completed {
             stop_reason: Some(r),
+            ..
         } => match r.as_str() {
             // The adapter spells it both ways.
             "rate_limited" | "rate_limit" => "rate_limited".to_string(),
@@ -736,9 +737,13 @@ pub(super) fn prompt_outcome_to_response(
             .map_err(|e| acp_internal_error(format!("build prompt response: {e}")))
     };
     match outcome {
-        PromptOutcome::Completed { stop_reason } => {
-            build(stop_reason.as_deref().unwrap_or("end_turn"))
-        }
+        PromptOutcome::Completed {
+            stop_reason,
+            result,
+        } => match result.and_then(|r| serde_json::from_value::<PromptResponse>(r).ok()) {
+            Some(response) => Ok(response),
+            None => build(stop_reason.as_deref().unwrap_or("end_turn")),
+        },
         PromptOutcome::Aborted => build("end_turn"),
         PromptOutcome::Error {
             code,
@@ -937,6 +942,7 @@ mod tests {
     fn end(reason: &str) -> PromptOutcome {
         PromptOutcome::Completed {
             stop_reason: Some(reason.into()),
+            result: None,
         }
     }
 

@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Fake ACP agent (newline-delimited JSON-RPC) for live structured view tests.
 //
-// FAKE_ACP_SCRIPT names a JSON file: { turns: [{ updates: [...session/update], stopReason }] }.
+// FAKE_ACP_SCRIPT names a JSON file: { turns: [{ updates: [...session/update], stopReason, response }] },
+// where `response` merges extra fields such as `usage` and `_meta` into the prompt result.
 // Each session/prompt consumes one turn; afterwards prompts get a default one-chunk turn. Pseudo
 // updates: wait_for_release (waits for `<script>.release`), wait_ms, permission_request and
 // elicitation_request (sent as real client requests and awaited).
@@ -677,6 +678,7 @@ async function handleRequest(msg) {
         return;
       }
       sendResult(id, {
+        ...turn.response,
         stopReason: wasCancelled ? "cancelled" : (turn.stopReason ?? "end_turn"),
       });
       return;

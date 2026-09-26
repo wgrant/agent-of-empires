@@ -163,7 +163,12 @@ impl JsonRpcError {
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum PromptOutcome {
     /// Normal completion.
-    Completed { stop_reason: Option<String> },
+    Completed {
+        stop_reason: Option<String>,
+        /// The agent's whole `session/prompt` result, carrying its `usage` and `_meta`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        result: Option<serde_json::Value>,
+    },
     /// The agent answered the prompt with a JSON-RPC error envelope.
     Error {
         code: i32,
@@ -299,11 +304,17 @@ mod tests {
                 prompt_req_id: 42,
                 outcome: PromptOutcome::Completed {
                     stop_reason: Some("end_turn".into()),
+                    result: Some(
+                        serde_json::json!({"stopReason": "end_turn", "usage": {"inputTokens": 1}}),
+                    ),
                 },
             },
             ControlBody::PromptCompleted {
                 prompt_req_id: 1,
-                outcome: PromptOutcome::Completed { stop_reason: None },
+                outcome: PromptOutcome::Completed {
+                    stop_reason: None,
+                    result: None,
+                },
             },
             ControlBody::PromptCompleted {
                 prompt_req_id: 1,
@@ -387,6 +398,7 @@ mod tests {
             prompt_req_id: 1,
             outcome: PromptOutcome::Completed {
                 stop_reason: Some("cancelled".into()),
+                result: None,
             },
         };
         let mut buf = Vec::new();

@@ -140,7 +140,10 @@ pub(super) fn parse_response(line: &[u8]) -> Option<(i64, PromptOutcome)> {
             .and_then(|r| r.get("stopReason"))
             .and_then(|s| s.as_str())
             .map(|s| s.to_string());
-        PromptOutcome::Completed { stop_reason }
+        PromptOutcome::Completed {
+            stop_reason,
+            result: peek.result,
+        }
     };
     Some((id, outcome))
 }
@@ -181,14 +184,21 @@ mod tests {
 
     #[test]
     fn response_parsers_classify_lines() {
-        let completed = |reason: &str| PromptOutcome::Completed {
+        let completed = |reason: &str, result: serde_json::Value| PromptOutcome::Completed {
             stop_reason: Some(reason.into()),
+            result: Some(result),
         };
         let cases: [(&[u8], Option<i64>, Option<(i64, PromptOutcome)>); 6] = [
             (
-                br#"{"jsonrpc":"2.0","id":3,"result":{"stopReason":"end_turn"}}"#,
+                br#"{"jsonrpc":"2.0","id":3,"result":{"stopReason":"end_turn","usage":{"inputTokens":5}}}"#,
                 Some(3),
-                Some((3, completed("end_turn"))),
+                Some((
+                    3,
+                    completed(
+                        "end_turn",
+                        serde_json::json!({"stopReason": "end_turn", "usage": {"inputTokens": 5}}),
+                    ),
+                )),
             ),
             (
                 br#"{"jsonrpc":"2.0","id":4,"error":{"code":-32000,"message":"boom","data":{"errorKind":"rate_limit"}}}"#,

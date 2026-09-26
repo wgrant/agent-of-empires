@@ -164,7 +164,7 @@ test.describe("mid-turn prompts", () => {
   });
 });
 
-test("notices, structured compaction, and a truncated turn reach the event store through the runner", async ({
+test("notices, structured compaction, a truncated turn, and turn usage reach the event store through the runner", async ({
   spawnServe,
 }) => {
   // The ACP crate cannot decode these kinds; ingress tunnels them through `session_info_update`.
@@ -182,6 +182,14 @@ test("notices, structured compaction, and a truncated turn reach the event store
         },
       ),
       stopReason: "max_tokens",
+      response: {
+        usage: { totalTokens: 1310, inputTokens: 10, outputTokens: 300, cachedReadTokens: 1000 },
+        _meta: {
+          quota: {
+            model_usage: [{ model: "claude-haiku-4-5", token_count: { inputTokens: 2, outputTokens: 50 } }],
+          },
+        },
+      },
     }),
   });
   await postPrompt(serve.baseUrl, sessionId, "/compact");
@@ -190,6 +198,8 @@ test("notices, structured compaction, and a truncated turn reach the event store
   for (const needle of [
     "Config deprecated",
     "KEPT_THE_PLAN",
+    "TurnTokenUsage",
+    "claude-haiku-4-5",
     "ConversationCompactionStarted",
     "ConversationCompacted",
   ]) {
