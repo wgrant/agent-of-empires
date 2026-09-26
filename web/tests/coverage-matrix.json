@@ -2745,6 +2745,7 @@
       ],
       "components": [
         "web/src/components/acp/BackgroundAgentsPanel.tsx",
+        "web/src/lib/backgroundWork.ts",
         "web/src/hooks/acpSession/stateCache.ts",
         "web/src/components/acp/NamedToolCards.tsx",
         "web/src/components/acp/NativeSubagentCard.tsx"

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { fireEvent, render } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { AsyncTask, BackgroundAgent } from "../../../lib/acpTypes";
 
@@ -35,156 +35,127 @@ function agent(over: Partial<BackgroundAgent> = {}): BackgroundAgent {
   };
 }
 
-describe("BackgroundAgentsPanel", () => {
-  it("shows an empty state with no agents", () => {
-    agentsMock.mockReturnValue([]);
-    const { container } = render(<BackgroundAgentsPanel sessionId="s-1" />);
-    expect(container.textContent).toContain("No sub-agents or background tasks yet");
-  });
+function task(over: Partial<AsyncTask> = {}): AsyncTask {
+  return {
+    id: "wj242",
+    name: "calc-bug-check",
+    taskType: "workflow",
+    description: "Check calc.py",
+    toolCallId: "toolu_1",
+    canStop: true,
+    state: "running",
+    activity: "Review: review:average",
+    usage: { total_tokens: 12957, tool_uses: 4, duration_ms: 1779 },
+    summary: null,
+    startedAt: new Date(Date.now() - 5000).toISOString(),
+    endedAt: null,
+    ...over,
+  };
+}
 
-  it("lists background tasks with live activity and stops one on its own", () => {
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
-    vi.stubGlobal("fetch", fetchMock);
-    const task = (over: Partial<AsyncTask>): AsyncTask => ({
-      id: "wj242",
-      name: "calc-bug-check",
-      taskType: "workflow",
-      description: "Check calc.py",
-      toolCallId: "toolu_1",
-      canStop: true,
-      state: "running",
-      activity: "Review: review:average",
-      usage: { total_tokens: 12957, tool_uses: 4, duration_ms: 1779 },
-      summary: null,
-      startedAt: new Date(Date.now() - 5000).toISOString(),
-      endedAt: null,
-      ...over,
-    });
-    tasksMock.mockReturnValue([
-      task({ id: "done-shell", name: "npm run dev", taskType: "shell", state: "completed", summary: "exited 0" }),
-      task({}),
-    ]);
-    const { container, getAllByTestId, getByRole } = render(<BackgroundAgentsPanel sessionId="s-1" />);
-    expect(container.textContent).toContain("Background tasks · 2");
-    const [running, done] = getAllByTestId("async-task-row");
-    for (const text of ["calc-bug-check", "workflow", "Review: review:average", "4 tools · 13k tokens"]) {
-      expect(running!.textContent).toContain(text);
-    }
-    expect(done!.textContent).toContain("exited 0");
-    fireEvent.click(getByRole("button", { name: "Stop task" }));
-    expect(fetchMock).toHaveBeenCalledWith("/api/sessions/s-1/acp/async-tasks/wj242/stop", { method: "POST" });
-    tasksMock.mockReturnValue([]);
+const finished = { status: "completed" as const, endedAt: new Date().toISOString() };
+
+function renderPanel(agents: BackgroundAgent[], tasks: AsyncTask[] = []) {
+  agentsMock.mockReturnValue(agents);
+  tasksMock.mockReturnValue(tasks);
+  return render(<BackgroundAgentsPanel sessionId="s-1" />);
+}
+
+describe("BackgroundAgentsPanel", () => {
+  afterEach(() => {
+    cleanup();
     vi.unstubAllGlobals();
   });
 
-  it("lists a running agent with description, tool count, and last activity", () => {
-    agentsMock.mockReturnValue([agent()]);
-    const { container } = render(<BackgroundAgentsPanel sessionId="s-1" />);
-    expect(container.textContent).toContain("Sub-agents · 1");
-    // Persistent hint: async-only scope + where the sync ones live.
-    expect(container.textContent).toContain("native subagent session");
-    expect(container.textContent).toContain("The rest run inline in the transcript");
-    expect(container.textContent).toContain("Map backend lifecycle");
-    expect(container.textContent).toContain("running");
-    expect(container.textContent).toContain("3 tools");
-    expect(container.textContent).toContain("scanning files");
-    // Internal id never surfaces.
+  it("shows an empty state with nothing in the background", () => {
+    expect(renderPanel([]).container.textContent).toContain("Nothing in the background yet");
+  });
+
+  it("lists sub-agents and tasks as one running group with their activity and counts", () => {
+    const { container, getAllByTestId } = renderPanel([agent()], [task()]);
+    expect(container.textContent).toContain("Running · 2");
+    const rows = getAllByTestId("background-item").map((r) => r.textContent ?? "");
+    const [agentRow, taskRow] = [
+      rows.find((r) => r.includes("Map backend lifecycle"))!,
+      rows.find((r) => r.includes("calc-bug-check"))!,
+    ];
+    for (const text of ["subagent", "scanning files", "3 tools"]) expect(agentRow).toContain(text);
+    for (const text of ["workflow", "Review: review:average", "4 tools · 13k tokens"]) expect(taskRow).toContain(text);
+    // Internal ids never surface.
     expect(container.textContent).not.toContain("a1");
+    expect(container.textContent).not.toContain("wj242");
   });
 
-  it("expands to reveal prompt, model, and result; never leaks the agent id", () => {
-    agentsMock.mockReturnValue([
+  it("folds finished work away while something runs, and shows it when nothing does", () => {
+    const done = agent({ agentId: "done", toolCallId: "t-done", description: "Done one", ...finished });
+    const live = renderPanel([done, agent({ agentId: "run", toolCallId: "t-run", description: "Running one" })]);
+    expect(live.container.textContent).toContain("Finished · 1");
+    expect(live.container.textContent).not.toContain("Done one");
+    fireEvent.click(live.getByRole("button", { name: /Finished/ }));
+    expect(live.container.textContent!.indexOf("Running one")).toBeLessThan(
+      live.container.textContent!.indexOf("Done one"),
+    );
+    cleanup();
+    expect(renderPanel([done]).container.textContent).toContain("Done one");
+  });
+
+  it("expands a finished sub-agent to its task, model, tools, and result", () => {
+    const { container, getByRole } = renderPanel([
       agent({
-        status: "completed",
-        endedAt: new Date().toISOString(),
+        ...finished,
         result: "found 12 files",
-      }),
-    ]);
-    const { container, getAllByRole } = render(<BackgroundAgentsPanel sessionId="s-1" />);
-    expect(container.textContent).toContain("done");
-    fireEvent.click(getAllByRole("button")[0]!); // row toggle (not the details button)
-    expect(container.textContent).toContain("do the thing");
-    expect(container.textContent).toContain("claude-opus-4-8");
-    expect(container.textContent).toContain("found 12 files");
-  });
-
-  it("orders running agents before finished ones", () => {
-    agentsMock.mockReturnValue([
-      agent({ agentId: "done", toolCallId: "t-done", description: "Done one", status: "completed" }),
-      agent({ agentId: "run", toolCallId: "t-run", description: "Running one", status: "running" }),
-    ]);
-    const { container } = render(<BackgroundAgentsPanel sessionId="s-1" />);
-    const runIdx = container.textContent!.indexOf("Running one");
-    const doneIdx = container.textContent!.indexOf("Done one");
-    expect(runIdx).toBeGreaterThanOrEqual(0);
-    expect(runIdx).toBeLessThan(doneIdx);
-  });
-
-  it("lists the sub-agent's individual tool calls when expanded", () => {
-    // Use a finished agent so the only button is the row toggle (no Stop).
-    agentsMock.mockReturnValue([
-      agent({
-        status: "completed",
-        endedAt: new Date().toISOString(),
         tools: [
           { name: "Bash", title: "ls -la", ok: true },
           { name: "Read", title: "src/main.rs", ok: false },
-          { name: "Grep", title: "tmux", ok: undefined },
         ],
       }),
     ]);
-    const { container, getAllByRole } = render(<BackgroundAgentsPanel sessionId="s-1" />);
-    // First button is the row toggle; second is the details (modal) button.
-    fireEvent.click(getAllByRole("button")[0]!);
-    expect(container.textContent).toContain("tools · 3");
-    expect(container.textContent).toContain("Bash");
-    expect(container.textContent).toContain("ls -la");
-    expect(container.textContent).toContain("Read");
-    expect(container.textContent).toContain("src/main.rs");
-    expect(container.textContent).toContain("Grep");
+    expect(container.textContent).toContain("done");
+    fireEvent.click(getByRole("button", { name: /Map backend lifecycle/ }));
+    for (const text of ["do the thing", "claude-opus-4-8", "found 12 files", "tools · 2", "ls -la", "src/main.rs"]) {
+      expect(container.textContent).toContain(text);
+    }
   });
 
-  it("shows a Stop button for active agents that POSTs the session cancel", async () => {
+  it("leaves out the model a native subagent does not report", () => {
+    const { container, getByRole } = renderPanel([agent({ ...finished, toolCallId: "", model: "" })]);
+    fireEvent.click(getByRole("button", { name: /Map backend lifecycle/ }));
+    expect(container.textContent).not.toContain("model");
+  });
+
+  it("stops a task on its own, and interrupts the turn for a running sub-agent", () => {
     const fetchMock = vi.fn(() => Promise.resolve({ ok: true } as Response));
     vi.stubGlobal("fetch", fetchMock);
-    agentsMock.mockReturnValue([agent({ status: "running" })]);
-    const { getByRole } = render(<BackgroundAgentsPanel sessionId="s-1" />);
-    const stop = getByRole("button", { name: /stop/i });
-    fireEvent.click(stop);
+    const { getByRole } = renderPanel([agent()], [task()]);
+    fireEvent.click(getByRole("button", { name: "Stop task" }));
+    expect(fetchMock).toHaveBeenCalledWith("/api/sessions/s-1/acp/async-tasks/wj242/stop", { method: "POST" });
+    fireEvent.click(getByRole("button", { name: /Interrupt/ }));
     expect(fetchMock).toHaveBeenCalledWith("/api/sessions/s-1/acp/cancel", { method: "POST" });
-    vi.unstubAllGlobals();
   });
 
-  it("hides the Stop button when no agent is active", () => {
-    agentsMock.mockReturnValue([agent({ status: "completed", endedAt: new Date().toISOString() })]);
-    const { queryByRole } = render(<BackgroundAgentsPanel sessionId="s-1" />);
-    expect(queryByRole("button", { name: /stop/i })).toBeNull();
+  it.each([
+    ["finished", agent(finished)],
+    // A stalled agent is no longer writing, so cancel would be a no-op.
+    ["stalled", agent({ status: "stalled" })],
+  ])("offers no interrupt for a %s sub-agent", (_, a) => {
+    expect(renderPanel([a]).queryByRole("button", { name: /Interrupt/ })).toBeNull();
   });
 
-  it("hides the Stop button for a stalled agent (cancel would be a no-op)", () => {
-    agentsMock.mockReturnValue([agent({ status: "stalled" })]);
-    const { queryByRole } = render(<BackgroundAgentsPanel sessionId="s-1" />);
-    expect(queryByRole("button", { name: /stop/i })).toBeNull();
-  });
-
-  it("opens a details modal showing the full prompt, result, and tools", () => {
-    agentsMock.mockReturnValue([
+  it("opens a details modal showing the full task, result, and tools", () => {
+    const { getByRole, queryByRole } = renderPanel([
       agent({
-        status: "completed",
-        endedAt: new Date().toISOString(),
+        ...finished,
         prompt: "a very long prompt that the narrow panel would clamp",
         result: "the complete final result text",
         tools: [{ name: "Bash", title: "ls -la", ok: true }],
       }),
     ]);
-    const { getByRole, getByText } = render(<BackgroundAgentsPanel sessionId="s-1" />);
     fireEvent.click(getByRole("button", { name: /open full details/i }));
     const dialog = getByRole("dialog");
     expect(dialog.textContent).toContain("a very long prompt that the narrow panel would clamp");
     expect(dialog.textContent).toContain("the complete final result text");
     expect(dialog.textContent).toContain("ls -la");
-    // Closes on the X button.
     fireEvent.click(getByRole("button", { name: /close/i }));
-    expect(() => getByText("the complete final result text")).toThrow();
+    expect(queryByRole("dialog")).toBeNull();
   });
 });
