@@ -1,6 +1,7 @@
 // Structured view prompt lifecycle over REST: prompts, approvals, cancel, steering, and the event store.
 
 import { test, expect } from "../helpers/liveTest";
+import { listSessions } from "../helpers/aoeServe";
 import {
   HOLD,
   chunk,
@@ -194,6 +195,19 @@ test("notices, structured compaction, and a truncated turn reach the event store
   ]) {
     expect(replay, needle).toContain(needle);
   }
+});
+
+test("an agent-generated title renames a default-named session", async ({ spawnServe }) => {
+  const { serve, sessionId } = await startAcpSession(spawnServe, {
+    title: "Franks",
+    fakeAcpScript: script(
+      endTurn(chunk("Looking."), { sessionUpdate: "session_info_update", title: "Fix flaky login test" }),
+    ),
+  });
+  await postPrompt(serve.baseUrl, sessionId, "why is login flaky");
+  await expect
+    .poll(async () => (await listSessions(serve.baseUrl)).find((s) => s.id === sessionId)?.title, { timeout: 15_000 })
+    .toBe("Fix flaky login test");
 });
 
 // force_end_turn and user prompts are published straight to the event store, so these need no live worker.
