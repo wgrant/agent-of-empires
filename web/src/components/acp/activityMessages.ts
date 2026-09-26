@@ -29,6 +29,9 @@ export type NativeSubagentItem =
 export interface NativeSubagent {
   id: string;
   name: string;
+  /** `workflow`, or absent for a native subagent session. */
+  kind: string | null;
+  activity: string | null;
   task: string;
   /** Terminal state, or `null` while it runs. */
   state: string | null;
@@ -73,9 +76,12 @@ function nativeSubagent(
   return {
     id: info.id,
     name: info.name,
+    kind: info.kind ?? null,
+    activity: info.activity ?? null,
     task: header.text,
     state,
-    unresolved: state === null && !visiblyBusy,
+    // A workflow runs outside any turn, so only its own end state ends it.
+    unresolved: state === null && !visiblyBusy && info.kind !== "workflow",
     startedAt: header.at,
     ...(info.ended_at ? { endedAt: info.ended_at } : {}),
     items,

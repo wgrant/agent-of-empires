@@ -310,6 +310,53 @@ test("a background workflow keeps the session running until its task is stopped"
   await expect.poll(status, { timeout: 15_000 }).toBe("Idle");
 });
 
+test("a workflow's agents' unlinked tool calls and approvals are kept inside its run", async ({ spawnServe }) => {
+  const { serve, sessionId } = await startAcpSession(spawnServe, {
+    title: "acp-workflow-attribution",
+    fakeAcpScript: script({
+      ...endTurn(
+        { sessionUpdate: "tool_call", toolCallId: "launch", title: "Workflow", kind: "other", rawInput: {} },
+        {
+          sessionUpdate: "async_task_spawned",
+          asyncTaskId: "wf1",
+          name: "calc-bug-check",
+          taskType: "workflow",
+          canStop: true,
+        },
+        { sessionUpdate: "tool_call_update", toolCallId: "launch", status: "completed" },
+        chunk("MAIN_LAUNCHED"),
+      ),
+      afterTurn: [
+        { sessionUpdate: "tool_call", toolCallId: "agent-tool", title: "AGENT_BASH", kind: "execute", rawInput: {} },
+        {
+          sessionUpdate: "permission_request",
+          toolCall: { toolCallId: "agent-tool", title: "AGENT_BASH", kind: "execute" },
+        },
+        { sessionUpdate: "tool_call_update", toolCallId: "agent-tool", status: "completed" },
+        { sessionUpdate: "async_task_state_update", asyncTaskId: "wf1", state: "completed" },
+      ],
+    }),
+  });
+  await postPrompt(serve.baseUrl, sessionId, "run a workflow");
+  const frames = async () => (await replayFrames(serve.baseUrl, sessionId)) as ApprovalFrame[];
+  const nonceOf = async () => (await frames()).find((f) => f.event?.ApprovalRequested?.approval?.nonce);
+  await expect.poll(nonceOf, { timeout: 15_000, intervals: [100, 200, 500, 1000] }).toBeDefined();
+  const nonce = (await nonceOf())!.event!.ApprovalRequested!.approval!.nonce!;
+  expect2xx(await postAcp(serve.baseUrl, sessionId, `/approvals/${nonce}`, { decision: "Allow" }));
+  await waitForReplayContains(serve.baseUrl, sessionId, "AsyncTaskStateChanged");
+
+  const events = (await replayFrames(serve.baseUrl, sessionId)).map((f) =>
+    JSON.stringify((f as { event: object }).event),
+  );
+  const scoped = events.filter((e) => e.startsWith('{"SubagentUpdate":{"id":"wf1"'));
+  expect(scoped.some((e) => e.includes("AGENT_BASH") && e.includes("ToolCallStarted"))).toBe(true);
+  expect(scoped.some((e) => e.includes("ToolCallCompleted") && e.includes("agent-tool"))).toBe(true);
+  // Neither the agent's tool nor the main agent's own Workflow call leaks the wrong way.
+  expect(events.some((e) => e.startsWith('{"ToolCallStarted"') && e.includes("AGENT_BASH"))).toBe(false);
+  expect(events.some((e) => e.startsWith('{"ToolCallStarted"') && e.includes('"launch"'))).toBe(true);
+  expect(events.some((e) => e.startsWith('{"AgentTurnStarted'))).toBe(false);
+});
+
 test("an agent-generated title renames a default-named session", async ({ spawnServe }) => {
   const { serve, sessionId } = await startAcpSession(spawnServe, {
     title: "Franks",

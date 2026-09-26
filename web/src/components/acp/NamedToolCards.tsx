@@ -16,6 +16,7 @@ import {
   Search,
   Sparkles,
   Square,
+  Workflow,
 } from "lucide-react";
 
 import { useSkillIndex } from "../../hooks/useSkillIndex";
@@ -61,13 +62,14 @@ function ArgsCard({
   label: string;
   primary: React.ReactNode;
   meta?: React.ReactNode;
+  /** 0 hides the output. */
   outputMaxLines: number;
 }) {
   const status = statusFor(result);
   const [open, setOpen] = useToolCardExpansion(status);
   const args = useToolArgs(tool);
   const inputJson = useInputJson(tool, args);
-  const output = result?.text ?? "";
+  const output = outputMaxLines > 0 ? (result?.text ?? "") : "";
   const hasBody = Boolean((args && Object.keys(args).length > 0) || output);
   return (
     <CardChrome
@@ -126,11 +128,15 @@ export function classifySkill(
 ): { isSkill: true; name: string } | { isSkill: false } {
   if (tool.kind !== "other") return { isSkill: false };
   const title = tool.name?.trim().toLowerCase() ?? "";
-  if (!profile.specialTitles.skillNames.includes(title)) return { isSkill: false };
+  // claude-agent-acp titles the call `Load skill: <name>` once it knows the name.
+  if (!profile.specialTitles.skillNames.includes(title) && !/^load skill(:|$)/.test(title)) {
+    return { isSkill: false };
+  }
   const name = pickStr(parseJsonObject(tool.args_preview), "skill", "name", "skill_name") ?? "skill";
   return { isSkill: true, name };
 }
 
+/** Loading a skill only injects its instructions; its result just says so. */
 export function SkillToolCard({ tool, result, skillName }: ToolCardProps & { skillName: string }) {
   // Same index as the composer picker and skills manager, so badges agree everywhere.
   const skillIndex = useSkillIndex();
@@ -143,7 +149,47 @@ export function SkillToolCard({ tool, result, skillName }: ToolCardProps & { ski
       label="skill"
       primary={skillName}
       meta={skillSource && <ProvenanceBadge label={badgeLabel(skillSource)} tone={badgeTone(skillSource)} />}
-      outputMaxLines={16}
+      outputMaxLines={0}
+    />
+  );
+}
+
+/** A Claude workflow launch: a script that runs its agents in the background. */
+export function classifyWorkflow(tool: ToolCall): boolean {
+  return tool.kind === "other" && (tool.raw_name ?? tool.name)?.trim() === "Workflow";
+}
+
+/** The `meta.name` a workflow script declares, e.g. `name: 'calc-bug-check'`. */
+function workflowScriptName(script: string | null): string | null {
+  return script?.match(/\bname:\s*['"`]([^'"`\n]+)['"`]/)?.[1] ?? null;
+}
+
+export function WorkflowToolCard({ tool, result }: ToolCardProps) {
+  const status = statusFor(result);
+  const [open, setOpen] = useToolCardExpansion(status);
+  const args = useToolArgs(tool);
+  const script = pickStr(args, "script");
+  const name = pickStr(args, "name") ?? workflowScriptName(script);
+  const description = pickStr(args, "description", "title");
+  return (
+    <CardChrome
+      status={status}
+      neutralOnDone
+      startedAt={tool.started_at}
+      endedAt={result?.at}
+      icon={<Workflow className={ICON} />}
+      label="workflow"
+      primary={name ?? description ?? "Workflow"}
+      meta={status === "ok" && <span className="text-[11px] text-text-dim">launched</span>}
+      expanded={open}
+      onToggle={script || status === "err" ? () => setOpen((v) => !v) : undefined}
+      body={
+        // The launch result is written for the model; the run itself is the card below.
+        <ToolErrorBody status={status} errorText={result?.text}>
+          {name && description && <p className="px-3 pt-2 text-xs text-text-secondary">{description}</p>}
+          {script && <HighlightedBlock text={script} language="javascript" maxLines={30} />}
+        </ToolErrorBody>
+      }
     />
   );
 }
