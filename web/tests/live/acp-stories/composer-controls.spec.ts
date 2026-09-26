@@ -19,34 +19,56 @@ import {
 
 const REVIEW_COMMAND = { name: "review", description: "Review the diff", accepts_input: true, hint: "what to review" };
 
-// #1512: without the trailing space the popover reopens and claims the next Enter. The args-command
-// variant (trailing space, caret after it) is pinned by Composer.test.tsx.
-test("picking a no-arg slash command does not trap Enter", async ({ page, spawnServe }) => {
-  const { serve, sessionId } = await startAcpSession(spawnServe, {
-    title: "story-slash-pick-no-arg",
-    extraEnv: {
-      FAKE_ACP_COMMANDS: JSON.stringify([
-        { name: "help", description: "Show help", accepts_input: false },
-        REVIEW_COMMAND,
-      ]),
+test.describe("slash command picks", () => {
+  for (const c of [
+    {
+      name: "picking a no-arg slash command does not trap Enter",
+      title: "story-slash-pick-no-arg",
+      commands: [{ name: "help", description: "Show help", accepts_input: false }, REVIEW_COMMAND],
+      typed: "/h",
+      item: /\/help/,
+      picked: "/help ",
     },
-  });
-  // An explicit spawn attaches the session before the first available_commands_update.
-  await spawnAcpAgent(serve.baseUrl, sessionId);
-  await waitForReplayContains(serve.baseUrl, sessionId, "AvailableCommandsUpdated");
+    {
+      name: "picking an args slash command leaves trailing space and closes popover",
+      title: "story-slash-pick-args",
+      commands: [REVIEW_COMMAND],
+      // `/r` would also match the seeded `/clear` alias, which ranks first.
+      typed: "/rev",
+      item: /\/review/,
+      picked: "/review ",
+    },
+  ]) {
+    test(c.name, async ({ page, spawnServe }) => {
+      const { serve, sessionId } = await startAcpSession(spawnServe, {
+        title: c.title,
+        extraEnv: { FAKE_ACP_COMMANDS: JSON.stringify(c.commands) },
+      });
+      // An explicit spawn attaches the session before the first available_commands_update.
+      await spawnAcpAgent(serve.baseUrl, sessionId);
+      await waitForReplayContains(serve.baseUrl, sessionId, "AvailableCommandsUpdated");
 
-  const composer = await openStructuredView(page, serve, sessionId);
-  await composer.click();
-  await composer.pressSequentially("/h");
-  const item = page.getByRole("option").filter({ hasText: /\/help/ });
-  await expect(item).toBeVisible({ timeout: 15_000 });
-  await composer.press("Enter");
+      const composer = await openStructuredView(page, serve, sessionId);
+      await composer.click();
+      await composer.pressSequentially(c.typed);
+      const item = page.getByRole("option").filter({ hasText: c.item });
+      await expect(item).toBeVisible({ timeout: 15_000 });
+      await composer.press("Enter");
 
-  await expect(composer).toHaveValue("/help ", { timeout: 5_000 });
-  await expect(item).toBeHidden({ timeout: 5_000 });
-  await composer.press("Enter");
-  await expect(page.getByText("Hello from fake ACP agent.")).toBeVisible({ timeout: 10_000 });
-  await expect(composer).toHaveValue("", { timeout: 5_000 });
+      // #1512: without the trailing space the popover reopens and claims the next Enter.
+      await expect(composer).toHaveValue(c.picked, { timeout: 5_000 });
+      await expect(item).toBeHidden({ timeout: 5_000 });
+
+      if (c.picked === "/help ") {
+        await composer.press("Enter");
+        await expect(page.getByText("Hello from fake ACP agent.")).toBeVisible({ timeout: 10_000 });
+        await expect(composer).toHaveValue("", { timeout: 5_000 });
+      } else {
+        await composer.pressSequentially("scope");
+        await expect(composer).toHaveValue("/review scope");
+      }
+    });
+  }
 });
 
 const STOP_CASES = [
@@ -153,20 +175,32 @@ test("stopping mid-tool settles the card and survives reload", async ({ page, sp
   await expectStopped();
 });
 
-function modeTrigger(page: Page, labels: RegExp) {
-  return page
-    .locator("button")
-    .filter({ has: page.locator(":scope > span", { hasText: labels }) })
-    .first();
+function modeTrigger(page: Page) {
+  return page.getByTestId("session-settings-trigger");
 }
 
+/** Pick a mode in the session settings dialog, then close it so the chip shows the result. */
 async function pickMode(page: Page, mode: RegExp) {
-  const item = page.locator('[role="menu"]').getByText(mode).first();
+  const item = page.getByTestId("session-mode-options").getByText(mode).first();
   await expect(item).toBeVisible({ timeout: 5_000 });
   await item.click();
+  await page.getByRole("button", { name: "Done" }).click();
 }
 
-test("ModePicker uses OpenCode's config-option modes and never traps the user", async ({ page, spawnServe }) => {
+test("session settings switch the structured view mode", async ({ page, spawnServe }) => {
+  const { serve, sessionId } = await startAcpSession(spawnServe, { title: "story-mode-picker" });
+  // Without an attached session /acp/mode races the implicit spawn and fails silently.
+  await spawnAcpAgent(serve.baseUrl, sessionId);
+  await openStructuredView(page, serve, sessionId);
+
+  const trigger = modeTrigger(page);
+  await expect(trigger).toContainText(/Default|Plan|Accept|Bypass/, { timeout: 10_000 });
+  await trigger.click();
+  await pickMode(page, /^Plan$/i);
+  await expect(trigger).toContainText(/Plan/i, { timeout: 10_000 });
+});
+
+test("session settings use OpenCode's config-option modes and never trap the user", async ({ page, spawnServe }) => {
   // #1764: OpenCode advertises modes only as a config option and rejects claude's phantom "Default".
   const { serve, sessionId } = await startAcpSession(spawnServe, {
     title: "story-mode-opencode",
@@ -176,13 +210,12 @@ test("ModePicker uses OpenCode's config-option modes and never traps the user", 
   await spawnAcpAgent(serve.baseUrl, sessionId, "opencode");
   await openStructuredView(page, serve, sessionId);
 
-  const trigger = modeTrigger(page, /^(Build|Plan)$/);
-  await expect(trigger).toBeVisible({ timeout: 10_000 });
-  // Scoped to the chip: the reasoning-effort selector has its own "Default".
-  await expect(trigger).toContainText(/Build/i);
+  const trigger = modeTrigger(page);
+  await expect(trigger).toContainText(/Build/i, { timeout: 10_000 });
 
   await trigger.click();
-  await expect(page.locator('[role="menu"]').getByText(/^Default$/)).toHaveCount(0);
+  // Scoped to the mode list: the reasoning-effort selector has its own "Default".
+  await expect(page.getByTestId("session-mode-options").getByText(/^Default$/)).toHaveCount(0);
   await pickMode(page, /^Plan$/i);
   await expect(trigger).toContainText(/Plan/i, { timeout: 10_000 });
 

@@ -2547,10 +2547,12 @@
         "tests/live/acp-worker-api.spec.ts",
         "tests/acp-config-pickers-ui.spec.ts",
         "src/components/acp/SessionConfigControls.test.tsx",
+        "src/components/acp/SessionSettings.test.tsx",
         "src/hooks/useAcpSession.test.ts"
       ],
       "components": [
         "web/src/components/acp/SessionConfigControls.tsx",
+        "web/src/components/acp/SessionSettings.tsx",
         "web/src/components/acp/Composer.tsx",
         "web/src/components/acp/StructuredView.tsx",
         "web/src/components/acp/AcpRuntime.tsx",
@@ -3508,7 +3510,7 @@
       "kind": "live-playwright",
       "risk": "medium",
       "specs": ["tests/live/acp-stories/composer-controls.spec.ts"],
-      "components": ["web/src/components/acp/Composer.tsx"]
+      "components": ["web/src/components/acp/Composer.tsx", "web/src/components/acp/SessionSettings.tsx"]
     },
     {
       "id": "story.diff-base-picker",

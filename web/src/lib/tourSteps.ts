@@ -14,7 +14,7 @@ export const TOUR_ANCHORS = {
   settingsAgentDefaults: "settings-agent-defaults",
   rightPanel: "right-panel",
   composer: "acp-composer",
-  modePicker: "acp-mode-picker",
+  sessionSettings: "acp-session-settings",
   queueSend: "acp-queue-send",
 } as const;
 
@@ -147,11 +147,11 @@ export const TOUR_STEPS: readonly TourStep[] = [
     body: "Write instructions to the agent here. Type / for commands and @ to reference files.",
   },
   {
-    id: "mode-picker",
-    anchor: TOUR_ANCHORS.modePicker,
+    id: "session-settings",
+    anchor: TOUR_ANCHORS.sessionSettings,
     scopes: ["structured-view"],
-    title: "Agent mode",
-    body: "Switch the agent's mode (plan, accept edits, and so on) before you send.",
+    title: "Session settings",
+    body: "The agent's mode, model, and effort. Click to change them before you send.",
   },
   {
     id: "queue-send",

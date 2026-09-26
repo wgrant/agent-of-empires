@@ -7,7 +7,8 @@ export function collapsibleRegionClass(collapsed: boolean): string {
   }`;
 }
 
-/** `min-h-0` lets the row reach zero; clip only while collapsed since composer menus render outside the box. */
+/** `min-h-0` lets the row reach zero and `min-w-0` keeps wide content from widening the column; clip only
+ *  while collapsed since composer menus render outside the box. */
 export function collapsibleInnerClass(collapsed: boolean): string {
-  return collapsed ? "min-h-0 overflow-hidden" : "min-h-0";
+  return collapsed ? "min-h-0 min-w-0 overflow-hidden" : "min-h-0 min-w-0";
 }
