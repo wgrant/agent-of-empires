@@ -207,6 +207,63 @@ test("notices, structured compaction, a truncated turn, and turn usage reach the
   }
 });
 
+test("native subagent sessions reach the event store apart from the main reply", async ({ spawnServe }) => {
+  const child = "fake-child-session";
+  const { serve, sessionId } = await startAcpSession(spawnServe, {
+    title: "acp-native-subagents",
+    fakeAcpScript: script(
+      endTurn(
+        {
+          sessionUpdate: "subagent_spawned",
+          subagentSessionId: child,
+          name: "Explorer",
+          task: "Find it",
+          capabilities: {},
+        },
+        { ...chunk("CHILD_TEXT"), onSession: child },
+        {
+          sessionUpdate: "permission_request",
+          onSession: child,
+          echoDecision: true,
+          toolCall: { toolCallId: "child-tool", title: "Child edit", kind: "edit" },
+        },
+        { sessionUpdate: "subagent_state_update", subagentSessionId: child, state: "completed" },
+        // Never announced, so refused.
+        { ...chunk("STRANGER_TEXT"), onSession: "stranger-session" },
+        chunk("MAIN_TEXT"),
+      ),
+    ),
+  });
+  await postPrompt(serve.baseUrl, sessionId, "delegate");
+  const frames = async () => (await replayFrames(serve.baseUrl, sessionId)) as ApprovalFrame[];
+  const nonceOf = async () => (await frames()).find((f) => f.event?.ApprovalRequested?.approval?.nonce);
+  await expect.poll(nonceOf, { timeout: 15_000, intervals: [100, 200, 500, 1000] }).toBeDefined();
+  const nonce = (await nonceOf())!.event!.ApprovalRequested!.approval!.nonce!;
+  expect2xx(await postAcp(serve.baseUrl, sessionId, `/approvals/${nonce}`, { decision: "Allow" }));
+  await waitForReplayContains(serve.baseUrl, sessionId, "MAIN_TEXT");
+
+  const events = (await replayFrames(serve.baseUrl, sessionId)).map((f) => (f as { event: object }).event);
+  const top = (kind: string) => events.filter((e) => kind in e).map((e) => JSON.stringify(e));
+  const nested = events.flatMap((e) =>
+    "SubagentUpdate" in e
+      ? [JSON.stringify((e as { SubagentUpdate: { id: string; event: object } }).SubagentUpdate)]
+      : [],
+  );
+  expect(top("SubagentSpawned")).toEqual([
+    JSON.stringify({ SubagentSpawned: { id: child, name: "Explorer", task: "Find it" } }),
+  ]);
+  expect(top("SubagentStateChanged")).toEqual([
+    JSON.stringify({ SubagentStateChanged: { id: child, state: "completed" } }),
+  ]);
+  // The child's text, permission tool card, and its echoed decision stay inside the child.
+  expect(nested.some((e) => e.includes("CHILD_TEXT"))).toBe(true);
+  expect(nested.some((e) => e.includes("child-tool") && e.includes("ToolCallStarted"))).toBe(true);
+  expect(nested.some((e) => e.includes("permission_option="))).toBe(true);
+  const mainText = top("AgentMessageChunk").join("");
+  expect(mainText).toContain("MAIN_TEXT");
+  for (const leaked of ["CHILD_TEXT", "STRANGER_TEXT", "permission_option="]) expect(mainText).not.toContain(leaked);
+});
+
 test("an agent-generated title renames a default-named session", async ({ spawnServe }) => {
   const { serve, sessionId } = await startAcpSession(spawnServe, {
     title: "Franks",

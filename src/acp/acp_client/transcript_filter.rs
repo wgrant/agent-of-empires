@@ -46,6 +46,10 @@ pub(super) fn is_transcript_event(event: &Event) -> bool {
             | Event::ConversationCompactionFailed
             | Event::ConversationCompactionSummary { .. }
             | Event::AgentNotice { .. }
+            // The event store recorded these live; a load replays them.
+            | Event::SubagentSpawned { .. }
+            | Event::SubagentStateChanged { .. }
+            | Event::SubagentUpdate { .. }
     )
 }
 
@@ -78,6 +82,9 @@ pub(super) fn transcript_event_kind(event: &Event) -> &'static str {
         Event::ConversationCompactionFailed => "conversation_compaction_failed",
         Event::ConversationCompactionSummary { .. } => "conversation_compaction_summary",
         Event::AgentNotice { .. } => "agent_notice",
+        Event::SubagentSpawned { .. } => "subagent_spawned",
+        Event::SubagentStateChanged { .. } => "subagent_state_changed",
+        Event::SubagentUpdate { .. } => "subagent_update",
         _ => "other",
     }
 }

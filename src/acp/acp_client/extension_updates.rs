@@ -1,7 +1,7 @@
 //! Session-update kinds the ACP crate cannot represent yet: `notice`,
-//! `compaction_update`, and `compaction_summary_chunk`. The handshake
-//! advertises `session.notices` and `session.compaction` so adapters send
-//! these instead of transcript text and pseudo tool calls. They are tunnelled
+//! `compaction_update`, `compaction_summary_chunk`, and the native subagent
+//! lifecycle. The handshake advertises the capabilities that unlock them;
+//! see `initialize_params`. They are tunnelled
 //! through a `session_info_update`'s `_meta`, keeping the typed pipeline's
 //! session-identity and ordering guarantees.
 
@@ -13,7 +13,13 @@ use super::update_events::compaction_completed_events;
 use crate::acp::state::Event;
 
 const TUNNEL_META_KEY: &str = "aoe/extensionUpdate";
-const EXTENSION_KINDS: &[&str] = &["notice", "compaction_update", "compaction_summary_chunk"];
+const EXTENSION_KINDS: &[&str] = &[
+    "notice",
+    "compaction_update",
+    "compaction_summary_chunk",
+    "subagent_spawned",
+    "subagent_state_update",
+];
 
 /// Rewrite an extension update inside `session/update` params into its tunnelled form.
 pub(super) fn tunnel_extension_update(params: &mut Value) {
@@ -98,6 +104,24 @@ pub(super) fn extension_events(update: &Value) -> Vec<Event> {
             Some("cancelled") => vec![notice("info", "Compaction cancelled", None)],
             _ => Vec::new(),
         },
+        Some("subagent_spawned") => field(update, "subagentSessionId")
+            .map(|id| Event::SubagentSpawned {
+                id: id.to_string(),
+                parent: None,
+                name: field(update, "name").unwrap_or("Subagent").to_string(),
+                task: field(update, "task").unwrap_or_default().to_string(),
+            })
+            .into_iter()
+            .collect(),
+        Some("subagent_state_update") => {
+            match (field(update, "subagentSessionId"), field(update, "state")) {
+                (Some(id), Some(state)) => vec![Event::SubagentStateChanged {
+                    id: id.to_string(),
+                    state: state.to_string(),
+                }],
+                _ => Vec::new(),
+            }
+        }
         // The summary also arrives whole on the completed update.
         _ => Vec::new(),
     }
@@ -112,7 +136,9 @@ pub(super) fn extension_lifecycle_signal(update: &Value) -> Option<LifecycleSign
             "failed" | "cancelled" => Some(LifecycleSignal::CompactionFailed),
             _ => None,
         },
-        "compaction_summary_chunk" => Some(LifecycleSignal::Progress),
+        "compaction_summary_chunk" | "subagent_spawned" | "subagent_state_update" => {
+            Some(LifecycleSignal::Progress)
+        }
         _ => None,
     }
 }
@@ -169,6 +195,16 @@ mod tests {
                 vec![],
                 Some("Progress"),
             ),
+            (
+                json!({"sessionUpdate": "subagent_spawned", "subagentSessionId": "c9", "name": "Explore", "task": "Find it", "capabilities": {}}),
+                vec!["SubagentSpawned:c9:Explore:Find it"],
+                Some("Progress"),
+            ),
+            (
+                json!({"sessionUpdate": "subagent_state_update", "subagentSessionId": "c9", "state": "failed"}),
+                vec!["SubagentStateChanged:c9:failed"],
+                Some("Progress"),
+            ),
         ];
         for (raw, want_events, want_signal) in cases {
             let update = decode(raw.clone());
@@ -192,6 +228,15 @@ mod tests {
                     Event::ConversationCompactionStarted => "ConversationCompactionStarted".into(),
                     Event::ConversationCompacted => "ConversationCompacted".into(),
                     Event::PlanUpdated { .. } => "PlanUpdated".into(),
+                    Event::SubagentSpawned {
+                        id,
+                        parent: None,
+                        name,
+                        task,
+                    } => format!("SubagentSpawned:{id}:{name}:{task}"),
+                    Event::SubagentStateChanged { id, state } => {
+                        format!("SubagentStateChanged:{id}:{state}")
+                    }
                     other => format!("{other:?}"),
                 })
                 .collect();
