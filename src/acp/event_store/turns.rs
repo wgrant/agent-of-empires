@@ -263,6 +263,26 @@ impl EventStore {
             .unwrap_or_default()
     }
 
+    /// Native subagent session ids announced and not yet ended, oldest first.
+    pub fn unresolved_native_subagents(&self, session_id: &str) -> Vec<String> {
+        query_strings(
+            &self.conn(),
+            "SELECT json_extract(event_json, '$.SubagentSpawned.id')
+             FROM acp_events
+             WHERE session_id = ?1
+               AND discriminant = 'SubagentSpawned'
+               AND json_extract(event_json, '$.SubagentSpawned.id') NOT IN (
+                   SELECT json_extract(event_json, '$.SubagentStateChanged.id')
+                   FROM acp_events
+                   WHERE session_id = ?1
+                     AND discriminant = 'SubagentStateChanged'
+               )
+             ORDER BY seq ASC",
+            "unresolved_native_subagents",
+            session_id,
+        )
+    }
+
     /// Full payloads of unresolved approval requests, in request order.
     pub fn pending_approval_requests(&self, session_id: &str) -> Vec<Approval> {
         query_strings(
@@ -729,6 +749,34 @@ mod tests {
             map,
             HashMap::from([("s-a".to_string(), 900), ("s-b".to_string(), 7000)])
         );
+    }
+
+    #[test]
+    fn unresolved_native_subagents_are_the_announced_and_unended() {
+        let (_tmp, store) = open_store(1000);
+        let spawned = |id: &str| Event::SubagentSpawned {
+            id: id.into(),
+            parent: None,
+            name: "n".into(),
+            task: "t".into(),
+            at: chrono::Utc::now(),
+        };
+        record_from(
+            &store,
+            "s-1",
+            1,
+            [
+                spawned("done"),
+                spawned("running"),
+                Event::SubagentStateChanged {
+                    id: "done".into(),
+                    state: "completed".into(),
+                    at: chrono::Utc::now(),
+                },
+            ],
+        );
+        record_from(&store, "s-2", 1, [spawned("elsewhere")]);
+        assert_eq!(store.unresolved_native_subagents("s-1"), ["running"]);
     }
 
     #[test]
