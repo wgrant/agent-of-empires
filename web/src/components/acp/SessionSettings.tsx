@@ -12,6 +12,7 @@ import { resolveModeChannel, type ModeChannel } from "../../lib/modeChannel";
 import { THINKING_DISPLAY_LABELS, THINKING_DISPLAYS, type ThinkingDisplay } from "../../lib/thinkingDisplay";
 import { TOUR_ANCHORS, tourAnchor } from "../../lib/tourSteps";
 import { BRAND_BUTTON, ConfirmButton, Dialog } from "../Dialog";
+import { composerStatusText, type ComposerStatusParts } from "./composerStatus";
 import { LaunchOptionRestartDialog } from "./LaunchOptionRestartDialog";
 import { SessionConfigControls } from "./SessionConfigControls";
 
@@ -26,16 +27,15 @@ interface Props {
   pendingConfigOption: AcpState["pendingConfigOption"];
   setConfigOption: (configId: string, value: string) => void | Promise<void>;
   /** Read-only one-line summary shown on the chip. */
-  summary: string;
+  summary: ComposerStatusParts;
 }
 
-/** Chips tinted by mode id so destructive modes stand out without opening the dialog. */
+/** The permission segment is tinted by mode id so destructive modes stand out without opening the dialog. */
 const MODE_TONES: [RegExp, string][] = [
-  [/bypass|yolo/i, "border-rose-700/50 bg-rose-950/30 text-rose-300 hover:border-rose-700"],
-  [/accept/i, "border-amber-700/50 bg-amber-950/30 text-amber-300 hover:border-amber-700"],
-  [/plan/i, "border-cyan-800/50 bg-cyan-950/30 text-cyan-300 hover:border-cyan-700"],
+  [/bypass|yolo/i, "text-rose-300"],
+  [/accept/i, "text-amber-300"],
+  [/plan/i, "text-cyan-300"],
 ];
-const DEFAULT_MODE_TONE = "border-surface-700 bg-surface-800 text-text-secondary hover:border-surface-600";
 
 /** Whether SessionConfigControls has anything to render. */
 function hasSessionConfigControls(configOptions: AcpState["configOptions"]): boolean {
@@ -72,7 +72,8 @@ export function SessionSettingsControl(props: Props) {
 
   if (!channel && launchOptions.length === 0 && !hasSessionConfigControls(props.configOptions)) return null;
   const activeToneId = props.yoloMode ? "yolo" : (channel?.activeId ?? "");
-  const tone = MODE_TONES.find(([re]) => re.test(activeToneId))?.[1] ?? DEFAULT_MODE_TONE;
+  const permissionTone = MODE_TONES.find(([re]) => re.test(activeToneId))?.[1];
+  const summaryText = composerStatusText(props.summary);
 
   const selectMode = (id: string) => {
     if (!channel || id === channel.activeId || id === channel.pendingId) return;
@@ -88,15 +89,18 @@ export function SessionSettingsControl(props: Props) {
         data-testid="session-settings-trigger"
         aria-haspopup="dialog"
         onClick={() => setOpen(true)}
-        title={`Session settings: ${props.summary}`}
-        aria-label={`Session settings: ${props.summary}`}
+        title={`Session settings: ${summaryText}`}
+        aria-label={`Session settings: ${summaryText}`}
+        // Narrow footers truncate the chip on the toolbar's line instead of wrapping it onto its own.
         className={[
-          "inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] font-medium",
-          "transition-colors",
-          tone,
+          "inline-flex min-w-0 max-w-full flex-1 basis-0 items-center gap-1.5 sm:flex-none sm:basis-auto",
+          "rounded-md border border-surface-700 bg-surface-800 px-2 py-1 text-[11px] font-medium text-text-secondary",
+          "transition-colors hover:border-surface-600",
         ].join(" ")}
       >
-        <span className="min-w-0 truncate">{props.summary}</span>
+        <span className="min-w-0 flex-1 truncate text-left">
+          <StatusSegments parts={props.summary} permissionTone={permissionTone} />
+        </span>
         <Settings2 className="h-3 w-3 shrink-0 opacity-70" aria-hidden />
       </button>
       {open && (
@@ -129,6 +133,23 @@ export function SessionSettingsControl(props: Props) {
       )}
     </>
   );
+}
+
+function StatusSegments({ parts, permissionTone }: { parts: ComposerStatusParts; permissionTone?: string }) {
+  const segments = [
+    { key: "agent", text: parts.agent },
+    { key: "permission", text: parts.permission, className: permissionTone },
+    { key: "model", text: parts.model },
+    { key: "effort", text: parts.effort },
+  ].filter((segment) => segment.text);
+  return segments.map((segment, index) => (
+    <span key={segment.key}>
+      {index > 0 && " · "}
+      <span data-testid={`session-summary-${segment.key}`} className={segment.className}>
+        {segment.text}
+      </span>
+    </span>
+  ));
 }
 
 const DIALOG_ID = "session-settings-dialog";
