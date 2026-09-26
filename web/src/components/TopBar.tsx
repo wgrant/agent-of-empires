@@ -4,7 +4,7 @@ import { PaletteTriggerPill } from "./PaletteTriggerPill";
 import { OverflowMenu, type OverflowItem } from "./OverflowMenu";
 import { TOUR_ANCHORS, tourAnchor } from "../lib/tourSteps";
 import { PluginStatusBarSegments } from "./plugin/PluginSlots";
-import { ActivityBar } from "./ActivityBar";
+import { ActivityBar, RunningBadge } from "./ActivityBar";
 import type { PaneDisplay } from "./Dock";
 import { useWebSettings } from "../hooks/useWebSettings";
 import type { AttentionBadgeColors } from "../lib/attentionBadgeColors";
@@ -31,6 +31,8 @@ interface Props {
   paneDescriptor: (id: string) => PaneDisplay;
   isPaneOpen: (id: string) => boolean;
   onTogglePane: (id: string) => void;
+  /** Running work per pane id, badged on the pane toggles. */
+  paneBadges?: Readonly<Record<string, number>>;
   onOpenHelp: () => void;
   onOpenAbout: () => void;
   onStartTutorial: () => void;
@@ -73,6 +75,7 @@ export function TopBar({
   paneDescriptor,
   isPaneOpen,
   onTogglePane,
+  paneBadges = {},
   onOpenHelp,
   onOpenAbout,
   onStartTutorial,
@@ -88,6 +91,7 @@ export function TopBar({
   sidebarColumnVisible,
   rightColumnVisible,
 }: Props) {
+  const runningTotal = Object.values(paneBadges).reduce((sum, n) => sum + n, 0);
   const overflowItems = useMemo<OverflowItem[]>(() => {
     const items: OverflowItem[] = [
       { label: "Help", onClick: onOpenHelp },
@@ -256,17 +260,24 @@ export function TopBar({
         {activeWorkspace && activeSession && (
           <>
             {/* Desktop: per-pane toggles. */}
-            <ActivityBar paneIds={paneIds} descriptorFor={paneDescriptor} isOpen={isPaneOpen} onToggle={onTogglePane} />
+            <ActivityBar
+              paneIds={paneIds}
+              descriptorFor={paneDescriptor}
+              isOpen={isPaneOpen}
+              onToggle={onTogglePane}
+              badges={paneBadges}
+            />
             <button
               onClick={onToggleDiff}
-              className="md:hidden w-8 h-8 flex items-center justify-center cursor-pointer rounded-md transition-colors text-text-secondary hover:text-text-primary hover:bg-surface-700/50"
+              className="relative md:hidden w-8 h-8 flex items-center justify-center cursor-pointer rounded-md transition-colors text-text-secondary hover:text-text-primary hover:bg-surface-700/50"
               title="Toggle panels"
-              aria-label="Toggle panels"
+              aria-label={runningTotal > 0 ? `Toggle panels, ${runningTotal} running` : "Toggle panels"}
             >
               <StrokeIcon size={16} strokeWidth="1.5">
                 <rect x="3" y="3" width="18" height="18" rx="2" />
                 <line x1="15" y1="3" x2="15" y2="21" />
               </StrokeIcon>
+              {runningTotal > 0 && <RunningBadge count={runningTotal} testId="topbar-panels-badge" />}
             </button>
           </>
         )}
