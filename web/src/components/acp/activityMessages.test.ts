@@ -6,6 +6,7 @@ import { resolveAgentProfile } from "../../lib/agentProfiles";
 import {
   activityToThreadMessages,
   clearFoldGeneration,
+  NATIVE_SUBAGENT_NAME,
   SUBAGENT_TASK_NAME,
   TODO_GROUP_NAME,
   TOOL_GROUP_NAME,
@@ -212,6 +213,43 @@ describe("tool-call grouping", () => {
     );
     const ids = messages.map((m) => m.id);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+});
+
+describe("native subagents", () => {
+  const header = (id: string, parent?: string, state?: string) =>
+    row(`subagent-${id}`, "subagent", `task for ${id}`, {
+      subagent: { id, name: `Agent ${id}`, state },
+      ...(parent ? { subagentId: parent } : {}),
+    });
+  const inside = (owner: string, r: ActivityRow): ActivityRow => ({ ...r, subagentId: owner });
+
+  it("renders a child session's rows inside its card, nesting the subagents it spawned", () => {
+    const rows = [
+      user(),
+      header("c1"),
+      message("main text"),
+      inside("c1", row("c1-m", "message", "child ")),
+      inside("c1", row("c1-m2", "message", "text")),
+      inside("c1", row("c1-think", "thinking", "hmm")),
+      inside("c1", toolStart("t1")),
+      inside("c1", row("done-t1", "tool_complete", "ok", { toolCallId: "t1" })),
+      header("g1", "c1", "completed"),
+      inside("g1", message("grandchild", "g1-m")),
+    ];
+    const parts = assistantParts(rows);
+    expect(parts.map((p) => p.toolName ?? p.type)).toEqual([NATIVE_SUBAGENT_NAME, "text"]);
+    expect(parts[1]!.text).toBe("main text");
+    const card = payload(parts[0]!);
+    expect(card).toMatchObject({ id: "c1", name: "Agent c1", task: "task for c1", state: null, unresolved: true });
+    expect(card.items.map((i: { type: string }) => i.type)).toEqual(["text", "reasoning", "tool", "subagent"]);
+    expect(card.items[0].text).toBe("child text");
+    expect(card.items[2].result.id).toBe("done-t1");
+    expect(card.items[3].subagent).toMatchObject({ id: "g1", state: "completed", items: [{ text: "grandchild" }] });
+    expect(card.items[3].subagent.endedAt).toBe(AT);
+    // Still running while the turn is.
+    const busy = activityToThreadMessages(rows, true).find((m) => m.role === "assistant")!;
+    expect(payload((busy.content as Part[])[0]!).unresolved).toBe(false);
   });
 });
 

@@ -1352,6 +1352,11 @@ fn transcript_lines(
     let mut i = 0;
     while i < rows.len() {
         let row = &rows[i];
+        // A subagent's own rows stay behind its one-line summary.
+        if row.subagent_id.is_some() {
+            i += 1;
+            continue;
+        }
         match row.kind {
             TranscriptRowKind::Message => {
                 // Consecutive chunks of one group form one bubble.
@@ -1396,6 +1401,17 @@ fn transcript_lines(
             | TranscriptRowKind::ToolError
             | TranscriptRowKind::ToolStopped => {
                 // Rendered with their `tool_start`, which the server always provides.
+            }
+            TranscriptRowKind::Subagent => {
+                if let Some(info) = &row.subagent {
+                    let state = info.state.as_deref().unwrap_or("running");
+                    let task = row.text.lines().next().unwrap_or_default();
+                    out.push(note_line(
+                        NoteKind::Info,
+                        &format!("subagent {} ({state}): {task}", info.name),
+                    ));
+                    out.push(Line::default());
+                }
             }
             TranscriptRowKind::ElicitationAnswered => {
                 if row.elicitation_answers.is_empty() {

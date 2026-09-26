@@ -10,6 +10,9 @@ vi.mock("../../lib/snippetHighlighter", () => ({
   langHintForPath: () => "",
 }));
 
+// Transcript markdown needs the assistant-ui runtime, which the app mounts around every card.
+vi.mock("./Markdown", () => ({ Markdown: ({ text }: { text: string }) => <div>{text}</div> }));
+
 vi.mock("../../hooks/useShikiTheme", () => ({
   useShikiTheme: () => ({ theme: "dark-plus", appearance: "dark" }),
 }));
@@ -29,6 +32,7 @@ import { buildSkillIndex, type SkillIndex } from "../../lib/skillProvenance";
 import { AcpFileRefContext } from "./AcpFileRefContext";
 import { BackgroundAgentsContext } from "./backgroundAgentsContext";
 import { AsyncSubagentCard, extractTaskResult, SubagentCard, ToolGroupCard } from "./GroupToolCards";
+import { NativeSubagentCard } from "./NativeSubagentCard";
 import { TodoGroupCard } from "./TodoCards";
 import { formatDurationMs, formatDurationSeconds } from "./ToolCardChrome";
 import { ToolCard } from "./ToolCards";
@@ -654,6 +658,52 @@ describe("ToolGroupCard", () => {
 
   it("renders nothing for an empty run", () => {
     expect(render(<ToolGroupCard items={[]} />).container.textContent).toBe("");
+  });
+});
+
+describe("NativeSubagentCard", () => {
+  const readRow = (id: string): ActivityRow => ({
+    id: `start-${id}`,
+    kind: "tool_start",
+    text: "Read",
+    at: "2026-05-12T00:00:00Z",
+    toolCallId: id,
+    tool: makeToolCall({ id, name: "Read", kind: "read", args_preview: args({ path: "src/lines.ts" }) }),
+  });
+  const subagent = (over: Partial<Parameters<typeof NativeSubagentCard>[0]["subagent"]> = {}) => ({
+    id: "c1",
+    name: "Explorer",
+    task: "Count the lines",
+    state: null,
+    unresolved: false,
+    startedAt: "2026-05-12T00:00:00Z",
+    items: [
+      { type: "tool" as const, start: readRow("t1"), result: makeCompletion() },
+      { type: "text" as const, text: "a.txt has 2 lines" },
+    ],
+    ...over,
+  });
+
+  it("shows what the running subagent is doing, then its task, tools, and reply when expanded", () => {
+    const { container, getByRole } = render(<NativeSubagentCard subagent={subagent()} />);
+    expect(container.textContent).toContain("Explorer");
+    expect(container.textContent).toContain("1 tool");
+    expect(container.textContent).toContain("running");
+    fireEvent.click(getByRole("button", { name: /Explorer/ }));
+    for (const text of ["Count the lines", "src/lines.ts", "a.txt has 2 lines"]) {
+      expect(container.textContent).toContain(text);
+    }
+  });
+
+  it.each([
+    [{ state: "completed" }, "done"],
+    [{ state: "failed" }, "failed"],
+    [{ state: "cancelled" }, "stopped"],
+    [{ unresolved: true }, "stopped"],
+  ])("labels %o as %s", (over, badge) => {
+    const { container } = render(<NativeSubagentCard subagent={subagent(over)} />);
+    expect(container.textContent).toContain(badge);
+    expect(container.textContent).not.toContain("running");
   });
 });
 

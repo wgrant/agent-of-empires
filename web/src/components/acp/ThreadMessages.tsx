@@ -1,19 +1,25 @@
 import { useMemo } from "react";
 
 import { MessagePrimitive, useAuiState } from "@assistant-ui/react";
-import { useContext } from "react";
 
 import { isElicitationAnswersPayload, type ActivityRow, type ToolCall, type ToolOutputBlock } from "../../lib/acpTypes";
 import { parseJsonObject } from "../../lib/acpArgs";
 import { pickMemoryRecall } from "../../lib/memoryRecall";
-import { ThinkingDisplayContext } from "../../lib/thinkingDisplay";
 import { ArtifactImage } from "./artifactMedia";
+import { AssistantReasoning } from "./AssistantReasoning";
 import { DiffCommentsUserCard } from "../diff/comments/DiffCommentsUserCard";
 import { isDiffCommentsCardPayload, parseDiffCommentsSentinel } from "../diff/comments/buildPrompt";
-import { SUBAGENT_TASK_NAME, TODO_GROUP_NAME, TOOL_GROUP_NAME } from "./activityMessages";
+import {
+  NATIVE_SUBAGENT_NAME,
+  SUBAGENT_TASK_NAME,
+  TODO_GROUP_NAME,
+  TOOL_GROUP_NAME,
+  type NativeSubagent,
+} from "./activityMessages";
 import { ElicitationAnswerCard } from "./ElicitationAnswerCard";
 import { Markdown } from "./Markdown";
 import { AsyncSubagentCard, SubagentCard, ToolGroupCard } from "./GroupToolCards";
+import { NativeSubagentCard } from "./NativeSubagentCard";
 import { TodoGroupCard } from "./TodoCards";
 import { ToolCard } from "./ToolCards";
 
@@ -82,26 +88,6 @@ export function AssistantMessage() {
         />
       </div>
     </MessagePrimitive.Root>
-  );
-}
-
-export function AssistantReasoning({ text }: { text: string }) {
-  const display = useContext(ThinkingDisplayContext);
-  if (!text || display === "hidden") return null;
-  // Keyed so switching the display re-applies its default open state.
-  return (
-    <details
-      key={display}
-      open={display === "expanded"}
-      className="my-2 rounded-lg border border-surface-700 bg-surface-900/40 text-text-secondary"
-    >
-      <summary className="cursor-pointer select-none px-3 py-2 text-xs font-medium hover:text-text-primary">
-        Thinking trace
-      </summary>
-      <div className="max-h-80 overflow-y-auto border-t border-surface-700 px-3 py-2 text-xs leading-relaxed">
-        <Markdown text={text} smooth={false} />
-      </div>
-    </details>
   );
 }
 
@@ -232,6 +218,10 @@ function AssistantToolCall(props: ToolPart) {
       return <AssistantToolGroup {...props} />;
     case TODO_GROUP_NAME:
       return <AssistantTodoGroup {...props} />;
+    case NATIVE_SUBAGENT_NAME: {
+      const subagent = props.argsText ? (parseJsonObject(props.argsText) as NativeSubagent | null) : null;
+      return subagent ? <NativeSubagentCard subagent={subagent} /> : null;
+    }
     case SUBAGENT_TASK_NAME:
       return <AssistantSubagent {...props} />;
     default: {

@@ -2733,6 +2733,22 @@
       "components": ["web/src/components/WorkspaceSidebar.tsx", "web/src/components/acp/Composer.tsx"]
     },
     {
+      "id": "acp.native-subagents",
+      "kind": "live-playwright",
+      "risk": "medium",
+      "specs": [
+        "tests/live/acp-stories/native-subagents.spec.ts",
+        "src/components/acp/activityMessages.test.ts",
+        "src/components/acp/ToolCards.render.test.tsx"
+      ],
+      "components": [
+        "web/src/components/acp/NativeSubagentCard.tsx",
+        "web/src/components/acp/AssistantReasoning.tsx",
+        "web/src/components/acp/activityMessages.ts",
+        "web/src/components/acp/ThreadMessages.tsx"
+      ]
+    },
+    {
       "id": "acp.switch-agent-session-settings",
       "kind": "vitest",
       "risk": "low",
