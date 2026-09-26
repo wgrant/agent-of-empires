@@ -18,6 +18,7 @@ mod opencode;
 mod pending;
 mod permission_handlers;
 mod plan;
+mod quota;
 mod rate_limit;
 mod raw_input;
 mod reset;

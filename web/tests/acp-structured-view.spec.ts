@@ -302,6 +302,40 @@ test("mobile composer shows a compact usage hint inside the viewport", async ({ 
   expect(box.x + box.width).toBeLessThanOrEqual(page.viewportSize()!.width);
 });
 
+test("mobile composer shows plan quota in place of cost, inside the viewport", async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 740 });
+  const inMins = (mins: number) => new Date(Date.now() + mins * 60_000).toISOString();
+  const mock = await mockAcpSession(page, {
+    title: "story-quota-mobile",
+    initialEvents: [
+      usageUpdated({
+        used: 120_000,
+        size: 200_000,
+        cost: { amount: 39.26, currency: "USD" },
+        quota: {
+          windows: [
+            { id: "five_hour", duration_mins: 300, used_percent: 62, resets_at: inMins(37) },
+            { id: "seven_day", duration_mins: 10080, used_percent: 7, resets_at: inMins(60 * 24 * 5) },
+          ],
+          limited: false,
+          observed_at: new Date().toISOString(),
+        },
+      }),
+    ],
+  });
+  await openStructuredSession(page, mock);
+
+  const usage = page.getByTestId("composer-mobile-status").getByTestId("composer-usage");
+  await expect(usage).toContainText("5h 62%", { timeout: 15_000 });
+  await expect(usage).toContainText("7d 7%");
+  await expect(usage).not.toContainText("39.26");
+  await expect(usage).toHaveAccessibleName(/5h: 62% used, resets/);
+
+  const box = (await usage.boundingBox())!;
+  expect(box.x).toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(360);
+});
+
 // ────────────────────────── memory recall ─────────────────────────
 const DIRTY =
   "<system-reminder>\n     1\t# User profile\n     2\t\n     3\tUser is a senior engineer.\n     4\t\n     5\t- terse\n     6\t- no em dashes\n</system-reminder>";

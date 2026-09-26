@@ -14,9 +14,9 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { AssistantRuntimeProvider, useExternalStoreRuntime, type ThreadMessageLike } from "@assistant-ui/react";
 
 import { Composer } from "./Composer";
-import type { SessionUsage } from "../../lib/acpTypes";
+import type { AgentQuota, SessionUsage } from "../../lib/acpTypes";
 
-function Harness({ usage }: { usage: SessionUsage | null }) {
+function Harness({ usage, quota = null }: { usage: SessionUsage | null; quota?: AgentQuota | null }) {
   const runtime = useExternalStoreRuntime<ThreadMessageLike>({
     messages: [],
     isRunning: false,
@@ -35,6 +35,7 @@ function Harness({ usage }: { usage: SessionUsage | null }) {
         pendingConfigOption={null}
         setConfigOption={() => {}}
         sessionUsage={usage}
+        quota={quota}
         availableCommands={[]}
         availability={{ kind: "send_now" }}
         turnActive={false}
@@ -102,5 +103,36 @@ describe("composer usage indicator tooltip", () => {
     const tip = screen.getByRole("tooltip").textContent ?? "";
     expect(tip).toContain(`${(50_000).toLocaleString()} of ${(200_000).toLocaleString()} tokens used (25%)`);
     expect(tip).not.toContain("cumulative session spend");
+  });
+
+  it("shows plan quota instead of cost and moves the cost into the tooltip", () => {
+    const soon = (mins: number) => new Date(Date.now() + mins * 60_000).toISOString();
+    render(
+      <Harness
+        usage={{ used: 50_000, size: 200_000, cost: { amount: 39.26, currency: "USD" } }}
+        quota={{
+          windows: [
+            { id: "five_hour", duration_mins: 300, used_percent: 91.5, resets_at: soon(37) },
+            { id: "seven_day", duration_mins: 10080, used_percent: 7, resets_at: soon(60 * 24 * 5) },
+            { id: "seven_day_opus", duration_mins: 10080, scope: "Opus", used_percent: 50, resets_at: soon(60) },
+          ],
+          limited: false,
+          observed_at: new Date().toISOString(),
+        }}
+      />,
+    );
+    const usage = screen.getAllByTestId("composer-usage")[0]!;
+    const windows = screen.getAllByTestId("composer-quota-window").filter((w) => usage.contains(w));
+    expect(windows.map((w) => w.textContent)).toEqual(["· 5h 92%", "· 7d 7%"]);
+    expect(windows[0]!.className).toContain("text-rose-400");
+    expect(usage.textContent).not.toContain("$");
+
+    fireEvent.mouseEnter(usage.parentElement!);
+    const tip = screen.getByRole("tooltip").textContent ?? "";
+    // The clock ticks by the minute, so the countdown can read a minute long.
+    expect(tip).toMatch(/5h: 92% used, resets .+ \(in 3[78]m\)/);
+    expect(tip).toContain("Opus 7d: 50% used");
+    expect(tip).toContain("Plan usage as of just now");
+    expect(tip).toContain("cumulative session spend");
   });
 });

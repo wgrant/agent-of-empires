@@ -613,6 +613,7 @@ function ComposerDock({
           pendingConfigOption={state.pendingConfigOption}
           setConfigOption={ctx.setConfigOption}
           sessionUsage={state.sessionUsage}
+          quota={state.quota}
           availableCommands={state.availableCommands}
           availability={availability}
           turnActive={state.turnActive}
