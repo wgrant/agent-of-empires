@@ -70,3 +70,13 @@ export function composerStatusParts({
 export function composerStatusText(parts: ComposerStatusParts): string {
   return [parts.agent, parts.permission, parts.model, parts.effort].filter(Boolean).join(" · ");
 }
+
+/** "Opus 5.5 (1M context)" as "Opus 5.5", for narrow footers. */
+export function compactModelName(model: string): string {
+  return model.replace(/\s*\([^)]*\)\s*$/, "") || model;
+}
+
+/** The mobile summary: the model already implies the agent. */
+export function compactComposerStatusText(parts: ComposerStatusParts): string {
+  return [parts.permission, parts.model && compactModelName(parts.model), parts.effort].filter(Boolean).join(" · ");
+}

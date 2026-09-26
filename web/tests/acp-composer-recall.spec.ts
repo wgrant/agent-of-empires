@@ -35,7 +35,7 @@ test.describe("Structured-view composer queue recall (#2147)", () => {
     await openStructuredSession(page);
 
     const composer = page.getByRole("textbox", {
-      name: /Send a message|Queue a follow-up/i,
+      name: "Message the agent",
     });
 
     // Send the first prompt to put the turn active, then queue two follow-ups.

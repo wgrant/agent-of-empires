@@ -47,7 +47,7 @@ import {
   insertSlashCommand,
   IOS_ACCESSORY_BAR_PX,
 } from "./composerInput";
-import { composerStatusParts, composerStatusText } from "./composerStatus";
+import { compactComposerStatusText, composerStatusParts, composerStatusText } from "./composerStatus";
 import { SessionSettingsControl } from "./SessionSettings";
 import { SwitchAgentModal } from "./SwitchAgentModal";
 import {
@@ -287,7 +287,7 @@ export function Composer(props: Props) {
                         {attachments.supported.length} file{attachments.supported.length === 1 ? "" : "s"} ·
                       </span>
                     )}
-                    {summary}
+                    {compactComposerStatusText(statusParts)}
                   </span>
                 </button>
                 {queuedPrompts.length > 0 && (
@@ -338,6 +338,7 @@ export function Composer(props: Props) {
 
             <ComposerPrimitive.Input
               ref={taRef}
+              aria-label="Message the agent"
               rows={2}
               // Touch-primary Enter inserts a newline; sending is the Send button's job.
               unstable_insertNewlineOnTouchEnter
@@ -346,13 +347,13 @@ export function Composer(props: Props) {
               placeholder={
                 turnActive
                   ? availability.kind === "steer_now"
-                    ? "Add to the current turn… (the agent picks it up mid-work)"
-                    : "Queue a follow-up… (sent when current turn ends)"
+                    ? "Steer the current turn…"
+                    : "Queue a follow-up…"
                   : availability.kind === "blocked"
-                    ? "Sending is unavailable; your draft will be preserved"
+                    ? "Sending is unavailable; your draft is kept"
                     : availability.kind === "wake_agent"
-                      ? "Send a message… (wakes the dormant agent)"
-                      : "Send a message…  Type @ for files, / for commands"
+                      ? "Message to wake the agent…"
+                      : "Message… @ for files, / for commands"
               }
               onInput={(e) => fitTextarea(e.currentTarget)}
               onFocus={() => {
@@ -403,22 +404,20 @@ export function Composer(props: Props) {
               <AttachmentChips attachments={attachments.supported} onRemove={attachments.remove} />
             </div>
 
-            {/* The left cluster wraps rather than scrolls, which would clip the upward model dropdown. */}
+            {/* One row when the footer is wide enough, else tools and settings above usage and actions. */}
             <div
               data-testid="composer-footer"
-              className={`${mobileExpanded ? "flex" : "hidden sm:flex"} items-end gap-2 border-t border-surface-800/60 px-2 pb-2 pt-1.5`}
+              className={`${mobileExpanded ? "flex" : "hidden sm:flex"} @container flex-wrap items-center gap-x-2 gap-y-1.5 border-t border-surface-800/60 px-2 pb-2 pt-1.5`}
             >
-              <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-0.5 gap-y-1">
+              <div className="flex min-w-0 flex-1 basis-full items-center gap-x-0.5 @lg:basis-auto">
                 <ToolbarButton
                   icon={<AtSign className="h-3.5 w-3.5" />}
                   label="Add file context (@)"
-                  hint="@"
                   onClick={() => insertAtCaret(taRef, "@")}
                 />
                 <ToolbarButton
                   icon={<Slash className="h-3.5 w-3.5" />}
                   label="Slash command (/)"
-                  hint="/"
                   onClick={() => insertAtCaret(taRef, "/")}
                 />
                 <ToolbarButton
@@ -460,34 +459,36 @@ export function Composer(props: Props) {
                   summary={statusParts}
                 />
                 <AuthStatusHint authStatus={props.authStatus} />
+              </div>
+
+              <div className="ml-auto flex w-full items-center justify-end gap-2 @lg:w-auto">
                 <UsageHint
                   usage={props.sessionUsage}
                   quota={props.quota}
                   lastModel={props.lastModel}
                   lastTurnUsage={props.lastTurnUsage}
                 />
-              </div>
-
-              <div data-testid="composer-actions" className="flex shrink-0 items-center gap-2">
-                <PluginComposerActions sessionId={sessionId} getSnapshot={() => pluginSnapshot(client, taRef)} />
-                {turnActive ? (
-                  <>
-                    <StopButton />
-                    <QueueSendButton
+                <div data-testid="composer-actions" className="flex shrink-0 items-center gap-2">
+                  <PluginComposerActions sessionId={sessionId} getSnapshot={() => pluginSnapshot(client, taRef)} />
+                  {turnActive ? (
+                    <>
+                      <StopButton />
+                      <QueueSendButton
+                        availability={availability}
+                        disabled={submissionBlocked || !canSend || attachments.preparing}
+                        preparing={attachments.preparing}
+                        onSend={submitComposer}
+                      />
+                    </>
+                  ) : (
+                    <SendButton
                       availability={availability}
                       disabled={submissionBlocked || !canSend || attachments.preparing}
                       preparing={attachments.preparing}
                       onSend={submitComposer}
                     />
-                  </>
-                ) : (
-                  <SendButton
-                    availability={availability}
-                    disabled={submissionBlocked || !canSend || attachments.preparing}
-                    preparing={attachments.preparing}
-                    onSend={submitComposer}
-                  />
-                )}
+                  )}
+                </div>
               </div>
             </div>
           </ComposerPrimitive.Root>
