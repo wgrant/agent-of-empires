@@ -25,7 +25,7 @@ afterEach(() => {
 });
 
 describe("isSyncedKey", () => {
-  it("syncs preference keys but not device-local layout, caches, or per-session keys", () => {
+  it("matches the synced preference keys (exact + dynamic group and session prefixes)", () => {
     for (const k of [
       "aoe-welcome-seen",
       "aoe.acp.toolDensity.v1",
@@ -40,9 +40,13 @@ describe("isSyncedKey", () => {
       "aoe-repo-collapsed-/home/me/repo",
       "aoe-group-collapsed-feature",
       "aoe-nested-group-collapsed-x",
+      "aoe-session-thinking-display-abc",
     ]) {
-      expect(isSyncedKey(k), k).toBe(true);
+      expect(isSyncedKey(k)).toBe(true);
     }
+  });
+
+  it("excludes device-local layout, caches, and per-session state", () => {
     for (const k of [
       "aoe-sidebar-width",
       "aoe-split-ratio",
@@ -54,7 +58,7 @@ describe("isSyncedKey", () => {
       "aoe-acp-draft-abc",
       "unrelated",
     ]) {
-      expect(isSyncedKey(k), k).toBe(false);
+      expect(isSyncedKey(k)).toBe(false);
     }
   });
 });
@@ -87,9 +91,18 @@ describe("hydrateWebUiStateFromServer", () => {
     expect(patchWebUiState).toHaveBeenCalledWith({ "aoe-welcome-seen": "1" });
   });
 
-  it("server values win and local-only keys are not resurrected once the server is non-empty", async () => {
-    localStorage.setItem("aoe-sidebar-axis", "repo");
+  it("does NOT backfill (resurrect) local-only keys once the server is non-empty", async () => {
     localStorage.setItem("aoe-welcome-seen", "1");
+    getWebUiState.mockResolvedValue({ "aoe-sidebar-axis": "group" });
+
+    await hydrateWebUiStateFromServer();
+
+    expect(localStorage.getItem("aoe-sidebar-axis")).toBe("group");
+    expect(patchWebUiState).not.toHaveBeenCalled();
+  });
+
+  it("server values win over a differing local value", async () => {
+    localStorage.setItem("aoe-sidebar-axis", "repo");
     getWebUiState.mockResolvedValue({ "aoe-sidebar-axis": "group" });
 
     await hydrateWebUiStateFromServer();

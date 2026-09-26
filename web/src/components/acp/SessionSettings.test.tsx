@@ -1,12 +1,16 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ConfigOptionDescriptor } from "../../lib/acpTypes";
+import { sessionThinkingDisplayKey } from "../../lib/thinkingDisplay";
 import { AgentProfileProvider } from "../../lib/agentProfileContext";
 import { SessionSettingsControl } from "./SessionSettings";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  localStorage.clear();
+});
 
 const MODE: ConfigOptionDescriptor = {
   id: "mode",
@@ -63,8 +67,9 @@ describe("SessionSettingsControl", () => {
   it("changes the mode in place and keeps the dialog open", () => {
     const { setConfigOption } = mount([MODE, MODEL]);
     fireEvent.click(trigger());
-    expect(screen.getByRole("radio", { name: /Default/ }).getAttribute("aria-checked")).toBe("true");
-    fireEvent.click(screen.getByRole("radio", { name: /Bypass Permissions/ }));
+    const modes = within(screen.getByTestId("session-mode-options"));
+    expect(modes.getByRole("radio", { name: /Default/ }).getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(modes.getByRole("radio", { name: /Bypass Permissions/ }));
     expect(setConfigOption).toHaveBeenCalledWith("mode", "bypassPermissions");
     expect(dialog()).not.toBeNull();
   });
@@ -81,6 +86,22 @@ describe("SessionSettingsControl", () => {
 
     fireEvent.keyDown(document, { key: "Escape" });
     expect(dialog()).toBeNull();
+  });
+
+  it("overrides the thinking display for this session and returns it to the default", () => {
+    mount([MODEL]);
+    fireEvent.click(trigger());
+    const choice = (value: string) => screen.getByTestId(`thinking-display-value-${value}`);
+    expect(choice("default").getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByText(/dashboard setting \(Collapsed\)/)).toBeTruthy();
+
+    fireEvent.click(choice("hidden"));
+    expect(choice("hidden").getAttribute("aria-checked")).toBe("true");
+    expect(localStorage.getItem(sessionThinkingDisplayKey("s1"))).toBe("hidden");
+
+    fireEvent.click(choice("default"));
+    expect(choice("default").getAttribute("aria-checked")).toBe("true");
+    expect(localStorage.getItem(sessionThinkingDisplayKey("s1"))).toBeNull();
   });
 
   it("closes from Done", () => {
