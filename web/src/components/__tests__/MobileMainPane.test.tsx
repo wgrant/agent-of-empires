@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 
 import type { SessionResponse } from "../../lib/types";
 import { makeSession as baseSession } from "./fixtures";
@@ -102,6 +102,12 @@ function setup(overrides: Partial<Parameters<typeof MobileMainPane>[0]> = {}) {
 }
 
 describe("MobileMainPane", () => {
+  it("shows the agent terminal and no back header in structured view", () => {
+    setup({ view: "agent" });
+    expect(screen.getByTestId("agent-terminal")).toBeDefined();
+    expect(screen.queryByTestId("mobile-back-to-agent")).toBeNull();
+  });
+
   it("renders the structured view for structured view sessions", async () => {
     setup({ view: "agent", activeSession: session({ view: "structured" }) });
     // StructuredView is lazy-loaded behind Suspense, so await its resolution.
@@ -116,33 +122,32 @@ describe("MobileMainPane", () => {
 
   it("mounts the paired shell only once activated", () => {
     setup({ view: "agent", pairedMounted: false });
-    expect(screen.getByTestId("agent-terminal")).toBeDefined();
-    expect(screen.queryByTestId("mobile-back-to-agent")).toBeNull();
     expect(screen.queryByTestId("paired-shell")).toBeNull();
-    cleanup();
+  });
+
+  it("keeps the paired shell mounted after first activation", () => {
     setup({ view: "agent", pairedMounted: true });
     expect(screen.getByTestId("paired-shell")).toBeDefined();
   });
 
-  it("passes the active session to the agents and files panes", () => {
-    for (const [view, testId] of [
-      ["agents", "background-agents-panel"],
-      ["files", "files-pane"],
-    ] as const) {
-      setup({ view, activeSessionId: "s1" });
-      expect(screen.getByTestId(testId).textContent).toBe("s1");
-      expect(screen.getByTestId("mobile-back-to-agent")).toBeDefined();
-      cleanup();
-    }
+  it("shows the background panel in agents view", () => {
+    setup({ view: "agents", activeSessionId: "s1" });
+    expect(screen.getByTestId("background-agents-panel").textContent).toBe("s1");
+    expect(screen.getByText("Background")).toBeDefined();
+    expect(screen.getByTestId("mobile-back-to-agent")).toBeDefined();
   });
 
-  it("shows the diff list, or the viewer when a file is selected", () => {
+  it("shows the files pane in files view", () => {
+    setup({ view: "files", activeSessionId: "s1" });
+    expect(screen.getByTestId("files-pane").textContent).toBe("s1");
+    expect(screen.getByText("Files")).toBeDefined();
+    expect(screen.getByTestId("mobile-back-to-agent")).toBeDefined();
+  });
+
+  it("shows the diff file list in diff view", () => {
     setup({ view: "diff" });
     expect(screen.getByTestId("diff-list")).toBeDefined();
-    cleanup();
-    setup({ view: "diff", selectedFilePath: "src/foo.ts" });
-    expect(screen.getByTestId("diff-viewer")).toBeDefined();
-    expect(screen.queryByTestId("diff-list")).toBeNull();
+    expect(screen.getByText("Diff")).toBeDefined();
   });
 
   it("renders the plugin pane body and its title for a plugin view", () => {

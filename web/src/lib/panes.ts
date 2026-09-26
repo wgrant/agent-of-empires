@@ -1,6 +1,6 @@
 // Built-in dockable panes; plugin panes come from the `pane` UI slot.
 
-import { Bot, FileDiff, FolderTree, SquareTerminal, type LucideIcon } from "lucide-react";
+import { FileDiff, FolderTree, Layers, SquareTerminal, type LucideIcon } from "lucide-react";
 
 export type BuiltinPaneId = "diff" | "terminal" | "agents" | "files";
 
@@ -17,7 +17,7 @@ export const BUILTIN_PANES: PaneDescriptor[] = [
   { id: "diff", title: "Diff", icon: FileDiff, defaultDock: "right" },
   { id: "files", title: "Files", icon: FolderTree, defaultDock: "right" },
   { id: "terminal", title: "Terminal", icon: SquareTerminal, defaultDock: "right" },
-  { id: "agents", title: "Sub agents", icon: Bot, defaultDock: "right" },
+  { id: "agents", title: "Background", icon: Layers, defaultDock: "right" },
 ];
 
 // Terminals are the only multi-instance pane: tab `terminal:<n>` maps to tmux index n.

@@ -1,126 +1,174 @@
-// Sub-agents of the active session, from the store fed by StructuredView's
-// existing WebSocket, so this pane opens no connection of its own.
+// The Background pane: the session's sub-agents and background tasks
+// (workflows, shells, monitors), read from the store fed by StructuredView's
+// existing WebSocket, so it opens no connection of its own.
 
 import { useEffect, useState } from "react";
 import { Bot, ChevronDown, Eye, Layers, Maximize2, Square, SquareTerminal, Workflow, X } from "lucide-react";
 
 import { useAsyncTasks, useBackgroundAgents } from "../../hooks/useAcpSession";
-import {
-  asyncTaskRunning,
-  type AsyncTask,
-  type BackgroundAgent,
-  type BackgroundAgentStatus,
-  type BackgroundAgentTool,
-} from "../../lib/acpTypes";
+import type { BackgroundAgent, BackgroundAgentStatus, BackgroundAgentTool } from "../../lib/acpTypes";
+import { backgroundItems, type BackgroundItem, type BackgroundKind } from "../../lib/backgroundWork";
 import { formatTokens } from "../../lib/turnUsage";
 
 export function BackgroundAgentsPanel({ sessionId }: { sessionId: string | null }) {
   const agents = useBackgroundAgents(sessionId);
   const tasks = useAsyncTasks(sessionId);
+  const items = backgroundItems(agents, tasks);
+  const running = items.filter((i) => i.state === "running");
+  const finished = items.filter((i) => i.state !== "running");
+  // History folds away while something is live; with nothing running it is the content.
+  const [showFinished, setShowFinished] = useState<boolean | null>(null);
+  const finishedOpen = showFinished ?? running.length === 0;
 
-  if (agents.length === 0 && tasks.length === 0) {
+  if (items.length === 0) {
     return (
       <div className="flex h-full items-center justify-center px-4 text-center text-xs text-text-dim">
-        No sub-agents or background tasks yet. Background sub-agents, native subagent sessions, workflows, and
-        background shells show up here with live progress.
+        Nothing in the background yet. Sub-agents, workflows, and background shells show up here while they run.
       </div>
     );
   }
+  // ACP has no per-agent cancel, so a running sub-agent only stops with the turn.
+  const interruptible = running.some((i) => i.agent?.status === "running");
   return (
     <div className="flex h-full flex-col overflow-y-auto">
-      {agents.length > 0 && <AgentsSection sessionId={sessionId} agents={agents} />}
-      {tasks.length > 0 && <TasksSection sessionId={sessionId} tasks={tasks} />}
+      {running.length > 0 && (
+        <>
+          <GroupHeader label={`Running · ${running.length}`}>
+            {interruptible && sessionId && <StopButton sessionId={sessionId} />}
+          </GroupHeader>
+          {running.map((item) => (
+            <ItemRow key={item.key} item={item} sessionId={sessionId} />
+          ))}
+        </>
+      )}
+      {finished.length > 0 && (
+        <>
+          <button
+            type="button"
+            aria-expanded={finishedOpen}
+            onClick={() => setShowFinished(!finishedOpen)}
+            className="flex items-center gap-1 border-b border-surface-700 px-3 py-1.5 text-left text-[11px] uppercase tracking-wider text-text-dim hover:text-text-secondary"
+          >
+            <ChevronDown className={`h-3 w-3 transition-transform ${finishedOpen ? "" : "-rotate-90"}`} aria-hidden />
+            Finished · {finished.length}
+          </button>
+          {finishedOpen && finished.map((item) => <ItemRow key={item.key} item={item} sessionId={sessionId} />)}
+        </>
+      )}
     </div>
   );
 }
 
-function AgentsSection({ sessionId, agents }: { sessionId: string | null; agents: BackgroundAgent[] }) {
-  // Running first, then most-recently-started within each group.
-  const sorted = [...agents].sort((a, b) => {
-    const ra = isActive(a.status) ? 0 : 1;
-    const rb = isActive(b.status) ? 0 : 1;
-    if (ra !== rb) return ra - rb;
-    return b.startedAt.localeCompare(a.startedAt);
-  });
-  // A stalled agent is no longer writing, so cancel would be a no-op.
-  const anyRunning = agents.some((a) => a.status === "running");
-
+function GroupHeader({ label, children }: { label: string; children?: React.ReactNode }) {
   return (
-    <div className="flex flex-col">
-      <div className="flex items-center gap-2 border-b border-surface-700 px-3 py-1.5">
-        <span className="flex-1 text-[11px] uppercase tracking-wider text-text-dim">Sub-agents · {agents.length}</span>
-        {anyRunning && sessionId && <StopButton sessionId={sessionId} />}
-      </div>
-      <p className="border-b border-surface-800 px-3 py-1 text-[11px] leading-snug text-text-dim">
-        Background sub-agents show here, and so does every sub-agent of a native subagent session. The rest run inline
-        in the transcript.
-      </p>
-      <div className="flex flex-col">
-        {sorted.map((a) => (
-          <AgentRow key={a.agentId} agent={a} />
-        ))}
-      </div>
+    <div className="flex items-center gap-2 border-b border-surface-700 px-3 py-1.5">
+      <span className="flex-1 text-[11px] uppercase tracking-wider text-text-dim">{label}</span>
+      {children}
     </div>
   );
 }
 
-const TASK_ICONS: Record<string, typeof Layers> = { workflow: Workflow, shell: SquareTerminal, monitor: Eye };
+const KIND_ICONS: Record<BackgroundKind, typeof Layers> = {
+  subagent: Bot,
+  workflow: Workflow,
+  shell: SquareTerminal,
+  monitor: Eye,
+  task: Layers,
+};
 
-function TasksSection({ sessionId, tasks }: { sessionId: string | null; tasks: AsyncTask[] }) {
-  const sorted = [...tasks].sort((a, b) => {
-    const ra = asyncTaskRunning(a) ? 0 : 1;
-    const rb = asyncTaskRunning(b) ? 0 : 1;
-    return ra !== rb ? ra - rb : b.startedAt.localeCompare(a.startedAt);
-  });
-  return (
-    <div className="flex flex-col">
-      <div className="border-b border-surface-700 px-3 py-1.5 text-[11px] uppercase tracking-wider text-text-dim">
-        Background tasks · {tasks.length}
-      </div>
-      {sorted.map((task) => (
-        <TaskRow key={task.id} sessionId={sessionId} task={task} />
-      ))}
-    </div>
-  );
-}
+const STATE_DOTS: Record<BackgroundItem["state"], string> = {
+  running: "animate-pulse bg-status-waiting",
+  done: "bg-status-running",
+  failed: "bg-status-error",
+  stopped: "bg-text-dim/60",
+};
 
-function taskUsage(task: AsyncTask): string | null {
-  if (!task.usage) return null;
+function counts(item: BackgroundItem): string | null {
   const parts = [
-    task.usage.tool_uses > 0 ? `${task.usage.tool_uses} ${task.usage.tool_uses === 1 ? "tool" : "tools"}` : null,
-    task.usage.total_tokens > 0 ? `${formatTokens(task.usage.total_tokens)} tokens` : null,
+    item.toolCount ? `${item.toolCount} ${item.toolCount === 1 ? "tool" : "tools"}` : null,
+    item.tokens ? `${formatTokens(item.tokens)} tokens` : null,
   ];
   return parts.filter(Boolean).join(" · ") || null;
 }
 
-function TaskRow({ sessionId, task }: { sessionId: string | null; task: AsyncTask }) {
-  const running = asyncTaskRunning(task);
-  const Icon = TASK_ICONS[task.taskType] ?? Layers;
-  const detail = running ? task.activity : (task.summary ?? task.description);
-  const usage = taskUsage(task);
+function ItemRow({ item, sessionId }: { item: BackgroundItem; sessionId: string | null }) {
+  const [open, setOpen] = useState(false);
+  const [modal, setModal] = useState(false);
+  const Icon = KIND_ICONS[item.kind];
+  const running = item.state === "running";
+  const usage = counts(item);
+  const label = item.stateLabel || (running ? item.kind : item.state);
   return (
-    <div data-testid="async-task-row" className="border-b border-surface-800 px-3 py-2">
-      <div className="flex items-center gap-2">
-        <span
-          className={`h-2 w-2 shrink-0 rounded-full ${
-            running ? "animate-pulse bg-brand-400" : task.state === "failed" ? "bg-status-error" : "bg-surface-600"
-          }`}
-        />
-        <Icon className="h-3.5 w-3.5 shrink-0 text-text-dim" aria-hidden />
-        <span className="min-w-0 flex-1 truncate text-xs text-text-secondary" title={task.description ?? task.name}>
-          {task.name}
-        </span>
-        <Elapsed startedAt={task.startedAt} endedAt={task.endedAt} active={running} />
-        <span className="shrink-0 text-[11px] text-text-dim">{running ? task.taskType : task.state}</span>
-        {running && task.canStop && sessionId && <StopTaskButton sessionId={sessionId} taskId={task.id} />}
+    <div data-testid="background-item" className="border-b border-surface-800">
+      <div className="flex items-center hover:bg-surface-800">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-left"
+        >
+          <span className={`h-2 w-2 shrink-0 rounded-full ${STATE_DOTS[item.state]}`} />
+          <Icon className="h-3.5 w-3.5 shrink-0 text-text-dim" aria-hidden />
+          <span className="min-w-0 flex-1 truncate text-xs text-text-secondary">{item.name}</span>
+          <Elapsed startedAt={item.startedAt} endedAt={item.endedAt} active={running} />
+          <span className={`shrink-0 text-[11px] ${item.state === "failed" ? "text-status-error" : "text-text-dim"}`}>
+            {label}
+          </span>
+          <ChevronDown
+            className={`h-3.5 w-3.5 shrink-0 text-text-dim transition-transform ${open ? "rotate-180" : ""}`}
+          />
+        </button>
+        {item.stopTaskId && sessionId && <StopTaskButton sessionId={sessionId} taskId={item.stopTaskId} />}
+        {item.agent && (
+          <button
+            type="button"
+            onClick={() => setModal(true)}
+            title="Open full details"
+            aria-label="Open full details"
+            className="shrink-0 px-2 py-2 text-text-dim hover:text-text-secondary"
+          >
+            <Maximize2 className="h-3.5 w-3.5" />
+          </button>
+        )}
       </div>
-      {(detail || usage) && (
-        <div className="mt-0.5 flex gap-2 pl-[1.625rem] text-[11px] text-text-dim">
-          {detail && <span className="min-w-0 flex-1 truncate">{detail}</span>}
-          {usage && <span className="shrink-0 tabular-nums">{usage}</span>}
+      {!open && (item.activity || usage) && (
+        <div className="flex gap-2 px-3 pb-1.5 pl-[2.375rem] text-[11px] text-text-dim">
+          {item.activity && <span className="min-w-0 flex-1 truncate">{item.activity}</span>}
+          {usage && <span className="ml-auto shrink-0 tabular-nums">{usage}</span>}
         </div>
       )}
+      {open && (
+        <div className="space-y-2 border-t border-surface-800 bg-surface-900/30 px-3 py-2 pl-[2.375rem] text-[11px]">
+          {usage && <Field label="usage" value={usage} />}
+          {item.agent ? <AgentFields agent={item.agent} clamp /> : <TaskFields item={item} />}
+        </div>
+      )}
+      {modal && item.agent && <AgentDetailModal agent={item.agent} onClose={() => setModal(false)} />}
     </div>
+  );
+}
+
+function TaskFields({ item }: { item: BackgroundItem }) {
+  const task = item.task!;
+  return (
+    <>
+      {task.description && task.description !== task.name && <Field label="task" value={task.description} clamp />}
+      {task.activity && <Field label="latest" value={task.activity} />}
+      {task.summary && <Field label="result" value={task.summary} clamp />}
+    </>
+  );
+}
+
+/** A native subagent reports no model; only a real one is worth a row. */
+function AgentFields({ agent, clamp }: { agent: BackgroundAgent; clamp?: boolean }) {
+  return (
+    <>
+      {agent.warning && <Field label="warning" value={agent.warning} tone="warn" />}
+      {agent.model && <Field label="model" value={agent.model} mono />}
+      {agent.tools.length > 0 && <ToolList tools={agent.tools} />}
+      {agent.prompt && <Field label="task" value={agent.prompt} clamp={clamp} />}
+      {agent.result && <Field label="result" value={agent.result} clamp={clamp} />}
+    </>
   );
 }
 
@@ -157,10 +205,6 @@ function StopTaskButton({ sessionId, taskId }: { sessionId: string; taskId: stri
   );
 }
 
-function isActive(status: BackgroundAgentStatus): boolean {
-  return status === "running" || status === "stalled";
-}
-
 /** ACP has no per-agent cancel; cancelling the session stops its async sub-agents. */
 function StopButton({ sessionId }: { sessionId: string }) {
   const [busy, setBusy] = useState(false);
@@ -187,57 +231,8 @@ function StopButton({ sessionId }: { sessionId: string }) {
       ].join(" ")}
     >
       <Square className="h-3 w-3 fill-current" strokeWidth={0} />
-      Stop
+      Interrupt
     </button>
-  );
-}
-
-function AgentRow({ agent }: { agent: BackgroundAgent }) {
-  const [open, setOpen] = useState(false);
-  const [modal, setModal] = useState(false);
-  return (
-    <div className="border-b border-surface-800">
-      <div className="flex items-center hover:bg-surface-800">
-        <button
-          type="button"
-          onClick={() => setOpen((v) => !v)}
-          className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-left"
-        >
-          <StatusDot status={agent.status} />
-          <Bot className="h-3.5 w-3.5 shrink-0 text-text-dim" />
-          <span className="min-w-0 flex-1 truncate text-xs text-text-secondary">
-            {agent.description || "Sub-agent"}
-          </span>
-          <Elapsed startedAt={agent.startedAt} endedAt={agent.endedAt} active={isActive(agent.status)} />
-          <StatusLabel status={agent.status} toolCount={agent.toolCount} />
-          <ChevronDown
-            className={`h-3.5 w-3.5 shrink-0 text-text-dim transition-transform ${open ? "rotate-180" : ""}`}
-          />
-        </button>
-        <button
-          type="button"
-          onClick={() => setModal(true)}
-          title="Open full details"
-          aria-label="Open full details"
-          className="shrink-0 px-2 py-2 text-text-dim hover:text-text-secondary"
-        >
-          <Maximize2 className="h-3.5 w-3.5" />
-        </button>
-      </div>
-      {!open && agent.lastText && (
-        <div className="truncate px-3 pb-1.5 pl-9 text-[11px] text-text-dim">{agent.lastText}</div>
-      )}
-      {open && (
-        <div className="space-y-2 border-t border-surface-800 bg-surface-900/30 px-3 py-2 pl-9 text-[11px]">
-          {agent.warning && <Field label="warning" value={agent.warning} tone="warn" />}
-          <Field label="model" value={agent.model || "unknown"} mono />
-          {agent.tools.length > 0 && <ToolList tools={agent.tools} />}
-          <Field label="prompt" value={agent.prompt || "(none)"} clamp />
-          {agent.result && <Field label="result" value={agent.result} clamp />}
-        </div>
-      )}
-      {modal && <AgentDetailModal agent={agent} onClose={() => setModal(false)} />}
-    </div>
   );
 }
 
@@ -278,11 +273,7 @@ function AgentDetailModal({ agent, onClose }: { agent: BackgroundAgent; onClose:
           </button>
         </div>
         <div className="space-y-3 overflow-y-auto px-4 py-3 text-[12px]">
-          {agent.warning && <Field label="warning" value={agent.warning} tone="warn" />}
-          <Field label="model" value={agent.model || "unknown"} mono />
-          {agent.tools.length > 0 && <ToolList tools={agent.tools} />}
-          <Field label="prompt" value={agent.prompt || "(none)"} />
-          {agent.result && <Field label="result" value={agent.result} />}
+          <AgentFields agent={agent} />
         </div>
       </div>
     </div>
@@ -343,18 +334,6 @@ function Field({
       </span>
     </div>
   );
-}
-
-function StatusDot({ status }: { status: BackgroundAgentStatus }) {
-  const cls =
-    status === "running"
-      ? "bg-status-waiting animate-pulse"
-      : status === "completed"
-        ? "bg-status-running"
-        : status === "error"
-          ? "bg-status-error"
-          : "bg-text-dim/60"; // stalled / detached
-  return <span className={`h-2 w-2 shrink-0 rounded-full ${cls}`} />;
 }
 
 function StatusLabel({ status, toolCount }: { status: BackgroundAgentStatus; toolCount: number }) {
