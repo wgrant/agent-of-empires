@@ -511,17 +511,36 @@ impl TranscriptModel {
                     "stopped" => "cancelled",
                     other => other,
                 };
-                self.patch_subagent(id, |info| {
+                let mut deltas = self.patch_subagent(id, |info| {
                     info.state = Some(state.to_string());
                     info.ended_at = Some(*at);
                     Some(())
-                })
+                });
+                // claude-agent-acp never forwards a workflow agent's tool
+                // result, and reports `stopped` just before `completed`.
+                deltas.extend(self.close_open_tools(
+                    seq,
+                    Some(id),
+                    TranscriptRowKind::ToolComplete,
+                    *at,
+                ));
+                deltas
             }
-            Event::SubagentStateChanged { id, state, at } => self.patch_subagent(id, |info| {
-                info.state = Some(state.clone());
-                info.ended_at = Some(*at);
-                Some(())
-            }),
+            Event::SubagentStateChanged { id, state, at } => {
+                let mut deltas = self.patch_subagent(id, |info| {
+                    info.state = Some(state.clone());
+                    info.ended_at = Some(*at);
+                    Some(())
+                });
+                // An interrupted subagent's open calls were cut short too.
+                let kind = if state == "completed" {
+                    TranscriptRowKind::ToolComplete
+                } else {
+                    TranscriptRowKind::ToolStopped
+                };
+                deltas.extend(self.close_open_tools(seq, Some(id), kind, *at));
+                deltas
+            }
             Event::ThinkingStarted => {
                 self.turn_active = true;
                 self.turn_has_output = true;
@@ -663,27 +682,45 @@ impl TranscriptModel {
     /// Close every `tool_start` without a terminal row with a `tool_stopped`
     /// carrying any buffered output.
     fn sweep_open_tools(&mut self, seq: u64) -> Vec<TranscriptDelta> {
+        self.close_open_tools(seq, None, TranscriptRowKind::ToolStopped, Utc::now())
+    }
+
+    /// Close tool calls that never reported an end, all of them or one
+    /// subagent's. A closing row keeps its call's subagent so a client pairs it.
+    fn close_open_tools(
+        &mut self,
+        seq: u64,
+        owner: Option<&str>,
+        kind: TranscriptRowKind,
+        at: DateTime<Utc>,
+    ) -> Vec<TranscriptDelta> {
         let mut seen = self.terminal_tools.clone();
-        let open: Vec<String> = self
+        let open: Vec<(String, Option<String>)> = self
             .rows
             .iter()
             .filter(|row| row.kind == TranscriptRowKind::ToolStart)
-            .filter_map(|row| row.tool_call_id.clone())
-            .filter(|id| seen.insert(id.clone()))
+            .filter(|row| owner.is_none_or(|owner| row.subagent_id.as_deref() == Some(owner)))
+            .filter_map(|row| Some((row.tool_call_id.clone()?, row.subagent_id.clone())))
+            .filter(|(id, _)| seen.insert(id.clone()))
             .collect();
-        let now = Utc::now();
+        let prefix = if kind == TranscriptRowKind::ToolStopped {
+            "stopped"
+        } else {
+            "done"
+        };
         open.into_iter()
-            .map(|id| {
+            .map(|(id, subagent_id)| {
                 self.terminal_tools.insert(id.clone());
                 let buffered = self.tool_outputs.remove(&id).unwrap_or_default();
                 let mut row = TranscriptRow::new(
-                    format!("stopped-{id}-{seq}"),
+                    format!("{prefix}-{id}-{seq}"),
                     format!("tool-{id}"),
-                    TranscriptRowKind::ToolStopped,
+                    kind,
                     buffered,
                 );
-                row.at = now;
+                row.at = at;
                 row.tool_call_id = Some(id);
+                row.subagent_id = subagent_id;
                 self.append(row)
             })
             .collect()
@@ -1044,14 +1081,18 @@ mod tests {
                 at: at(20),
             },
         ]);
+        // The adapter never forwards a workflow agent's tool result, so its end closes the call.
         assert_eq!(
             kinds(&model),
             [
                 TranscriptRowKind::UserPrompt,
                 TranscriptRowKind::Subagent,
-                TranscriptRowKind::ToolStart
+                TranscriptRowKind::ToolStart,
+                TranscriptRowKind::ToolComplete
             ]
         );
+        assert_eq!(model.rows()[3].subagent_id.as_deref(), Some("wf1"));
+        assert_eq!(model.rows()[3].at, at(20));
         let header = &model.rows()[1];
         let info = header.subagent.as_ref().unwrap();
         assert_eq!(
@@ -1112,6 +1153,8 @@ mod tests {
                 (TranscriptRowKind::Message, None, "main text"),
                 (TranscriptRowKind::Message, Some("c1"), "child more"),
                 (TranscriptRowKind::ToolStart, Some("c1"), "Read"),
+                // A completed subagent finished what it started.
+                (TranscriptRowKind::ToolComplete, Some("c1"), ""),
             ]
         );
         let header = &model.rows()[1];

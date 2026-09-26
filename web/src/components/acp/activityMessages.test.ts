@@ -237,9 +237,10 @@ describe("native subagents", () => {
       header("g1", "c1", "completed"),
       inside("g1", message("grandchild", "g1-m")),
     ];
-    const parts = assistantParts(rows);
+    const parts = assistantParts([...rows, message("later", "m2")]);
     expect(parts.map((p) => p.toolName ?? p.type)).toEqual([NATIVE_SUBAGENT_NAME, "text"]);
-    expect(parts[1]!.text).toBe("main text");
+    // The child's rows in between render in its card, so the main replies meet here.
+    expect(parts[1]!.text).toBe("main text\n\nlater");
     const card = payload(parts[0]!);
     expect(card).toMatchObject({ id: "c1", name: "Agent c1", task: "task for c1", state: null, unresolved: true });
     expect(card.items.map((i: { type: string }) => i.type)).toEqual(["text", "reasoning", "tool", "subagent"]);
