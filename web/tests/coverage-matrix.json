@@ -2739,10 +2739,13 @@
       "specs": [
         "tests/live/acp-stories/native-subagents.spec.ts",
         "src/components/acp/activityMessages.test.ts",
-        "src/components/acp/ToolCards.render.test.tsx"
+        "src/components/acp/ToolCards.render.test.tsx",
+        "src/lib/acpTypes.reducer.test.ts",
+        "src/components/acp/__tests__/BackgroundAgentsPanel.test.tsx"
       ],
       "components": [
         "web/src/components/acp/NativeSubagentCard.tsx",
+        "web/src/components/acp/BackgroundAgentsPanel.tsx",
         "web/src/components/acp/AssistantReasoning.tsx",
         "web/src/components/acp/activityMessages.ts",
         "web/src/components/acp/ThreadMessages.tsx"

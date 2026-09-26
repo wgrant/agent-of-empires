@@ -56,6 +56,8 @@ pub struct SubagentInfo {
     /// `None` while it runs; then `completed`, `failed`, `cancelled`, or `disconnected`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub state: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ended_at: Option<DateTime<Utc>>,
 }
 
 /// The kind discriminant for a [`TranscriptRow`]. Mirrors the web
@@ -466,6 +468,7 @@ impl TranscriptModel {
                 parent,
                 name,
                 task,
+                at,
             } => {
                 let row_id = format!("subagent-{id}");
                 if self.row_ids.contains(&row_id) {
@@ -473,15 +476,17 @@ impl TranscriptModel {
                 }
                 self.turn_has_output = true;
                 let mut row = self.grouped_row(row_id, TranscriptRowKind::Subagent, task.clone());
+                row.at = *at;
                 row.subagent_id = parent.clone();
                 row.subagent = Some(SubagentInfo {
                     id: id.clone(),
                     name: name.clone(),
                     state: None,
+                    ended_at: None,
                 });
                 vec![self.append(row)]
             }
-            Event::SubagentStateChanged { id, state } => {
+            Event::SubagentStateChanged { id, state, at } => {
                 let Some(row) = self
                     .rows
                     .iter_mut()
@@ -491,6 +496,7 @@ impl TranscriptModel {
                 };
                 if let Some(info) = row.subagent.as_mut() {
                     info.state = Some(state.clone());
+                    info.ended_at = Some(*at);
                 }
                 vec![patch(row)]
             }
@@ -968,6 +974,7 @@ mod tests {
                 parent: None,
                 name: "Explorer".into(),
                 task: "Find it".into(),
+                at: at(10),
             },
             chunk("main "),
             child(chunk("child ")),
@@ -977,6 +984,7 @@ mod tests {
             Event::SubagentStateChanged {
                 id: "c1".into(),
                 state: "completed".into(),
+                at: at(20),
             },
         ]);
         let rows: Vec<(TranscriptRowKind, Option<&str>, &str)> = model
@@ -994,10 +1002,16 @@ mod tests {
                 (TranscriptRowKind::ToolStart, Some("c1"), "Read"),
             ]
         );
-        let header = model.rows()[1].subagent.as_ref().unwrap();
+        let header = &model.rows()[1];
+        let info = header.subagent.as_ref().unwrap();
         assert_eq!(
-            (header.name.as_str(), header.state.as_deref()),
-            ("Explorer", Some("completed"))
+            (
+                info.name.as_str(),
+                info.state.as_deref(),
+                header.at,
+                info.ended_at
+            ),
+            ("Explorer", Some("completed"), at(10), Some(at(20)))
         );
     }
 

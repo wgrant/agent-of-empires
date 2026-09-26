@@ -1,4 +1,4 @@
-// Async sub-agents of the active session, from the store fed by StructuredView's
+// Sub-agents of the active session, from the store fed by StructuredView's
 // existing WebSocket, so this pane opens no connection of its own.
 
 import { useEffect, useState } from "react";
@@ -13,8 +13,7 @@ export function BackgroundAgentsPanel({ sessionId }: { sessionId: string | null 
   if (agents.length === 0) {
     return (
       <div className="flex h-full items-center justify-center px-4 text-center text-xs text-text-dim">
-        No background sub-agents launched yet. When the agent dispatches an async{" "}
-        <span className="font-mono">Task</span>, it shows up here with live progress.
+        No sub-agents yet. Background sub-agents, and every native subagent session, show up here with live progress.
       </div>
     );
   }
@@ -32,14 +31,12 @@ export function BackgroundAgentsPanel({ sessionId }: { sessionId: string | null 
   return (
     <div className="flex h-full flex-col overflow-y-auto">
       <div className="flex items-center gap-2 border-b border-surface-700 px-3 py-1.5">
-        <span className="flex-1 text-[11px] uppercase tracking-wider text-text-dim">
-          Background agents · {agents.length}
-        </span>
+        <span className="flex-1 text-[11px] uppercase tracking-wider text-text-dim">Sub-agents · {agents.length}</span>
         {anyRunning && sessionId && <StopButton sessionId={sessionId} />}
       </div>
       <p className="border-b border-surface-800 px-3 py-1 text-[11px] leading-snug text-text-dim">
-        Only async (background) <span className="font-mono">Task</span> sub-agents show here. Synchronous sub-agents run
-        inline in the transcript.
+        Background sub-agents show here, and so does every sub-agent of a native subagent session. The rest run inline
+        in the transcript.
       </p>
       <div className="flex flex-col">
         {sorted.map((a) => (

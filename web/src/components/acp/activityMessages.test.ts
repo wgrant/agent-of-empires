@@ -219,7 +219,7 @@ describe("tool-call grouping", () => {
 describe("native subagents", () => {
   const header = (id: string, parent?: string, state?: string) =>
     row(`subagent-${id}`, "subagent", `task for ${id}`, {
-      subagent: { id, name: `Agent ${id}`, state },
+      subagent: { id, name: `Agent ${id}`, state, ended_at: state ? "2026-05-12T00:01:00Z" : null },
       ...(parent ? { subagentId: parent } : {}),
     });
   const inside = (owner: string, r: ActivityRow): ActivityRow => ({ ...r, subagentId: owner });
@@ -246,7 +246,7 @@ describe("native subagents", () => {
     expect(card.items[0].text).toBe("child text");
     expect(card.items[2].result.id).toBe("done-t1");
     expect(card.items[3].subagent).toMatchObject({ id: "g1", state: "completed", items: [{ text: "grandchild" }] });
-    expect(card.items[3].subagent.endedAt).toBe(AT);
+    expect(card.items[3].subagent.endedAt).toBe("2026-05-12T00:01:00Z");
     // Still running while the turn is.
     const busy = activityToThreadMessages(rows, true).find((m) => m.role === "assistant")!;
     expect(payload((busy.content as Part[])[0]!).unresolved).toBe(false);

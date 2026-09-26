@@ -254,6 +254,11 @@ impl Shared {
                 ..
             } = &event
             {
+                // Claude also reports a native subagent as an async launch under
+                // the child's own session id, which already streams its work.
+                if self.ingress.is_subagent(&SessionId::new(agent_id.clone())) {
+                    continue;
+                }
                 if !suppressing && !output_file.is_empty() {
                     spawn_tailer(
                         agent_id.clone(),

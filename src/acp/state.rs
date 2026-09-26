@@ -832,11 +832,13 @@ pub enum Event {
         parent: Option<String>,
         name: String,
         task: String,
+        at: DateTime<Utc>,
     },
     /// A native subagent ended: `completed`, `failed`, `cancelled`, or `disconnected`.
     SubagentStateChanged {
         id: String,
         state: String,
+        at: DateTime<Utc>,
     },
     /// A transcript event from a native subagent's session, kept apart from the main reply.
     SubagentUpdate {
