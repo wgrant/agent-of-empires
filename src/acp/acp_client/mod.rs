@@ -4,6 +4,7 @@
 //! connection task (see `connection`) that owns the session; this module holds
 //! the public surface, and each concern lives in a submodule.
 
+mod async_tasks;
 mod between_prompt;
 mod commands;
 mod config_options;
@@ -47,7 +48,7 @@ pub use reset::ResetSessionOutcome;
 pub use resolve_command::{resolve_agent_command, ResolvedAgentCommand};
 pub use session_sandbox::SessionSandbox;
 pub(crate) use spawn::host_environment_denyreason;
-pub use spawn::SpawnConfig;
+pub use spawn::{ClientExtensions, SpawnConfig};
 
 use crate::acp::agent_compat::ExpectedAgent;
 use crate::acp::agent_profiles;
@@ -156,7 +157,7 @@ struct Launch {
     default_effort: Option<String>,
     default_mode: Option<String>,
     default_model: Option<String>,
-    native_subagents: bool,
+    extensions: ClientExtensions,
     mcp_servers: Vec<McpServer>,
 }
 
@@ -197,7 +198,7 @@ impl Launch {
             default_effort: self.default_effort,
             default_mode: self.default_mode,
             default_model: self.default_model,
-            native_subagents: self.native_subagents,
+            extensions: self.extensions,
             mcp_servers: self.mcp_servers,
             runner,
         };
@@ -324,6 +325,7 @@ impl AcpClient {
                 ClientCmd::ForceStop => "force_stop",
                 ClientCmd::SetMode(_) => "set_mode",
                 ClientCmd::SetConfigOption { .. } => "set_config_option",
+                ClientCmd::StopAsyncTask(_) => "stop_async_task",
                 ClientCmd::ResumeBackgroundTailing(_) => "resume_background_tailing",
                 ClientCmd::DeleteSession { respond_to, .. } => {
                     let _ = respond_to.send(DeleteSessionOutcome::UnsupportedMethod);
@@ -406,7 +408,7 @@ impl AcpClient {
             default_effort: config.default_effort.clone(),
             default_mode: config.default_mode.clone(),
             default_model: config.default_model.clone(),
-            native_subagents: config.native_subagents,
+            extensions: config.extensions,
             mcp_servers: config.mcp_servers.clone(),
         };
 
@@ -540,7 +542,7 @@ impl AcpClient {
             default_mode: None,
             default_model: None,
             // The runner answers a reattach from its first handshake.
-            native_subagents: false,
+            extensions: ClientExtensions::default(),
             mcp_servers: Vec::new(),
         };
         Self::connect_via_socket(socket_path, launch).await
@@ -597,6 +599,11 @@ impl AcpClient {
     /// Config-option mode wins over legacy `session/set_mode` when both exist.
     pub async fn set_mode(&self, mode_id: &str) -> Result<(), AcpError> {
         self.send_cmd(ClientCmd::SetMode(mode_id.to_string())).await
+    }
+
+    pub async fn stop_async_task(&self, task_id: &str) -> Result<(), AcpError> {
+        self.send_cmd(ClientCmd::StopAsyncTask(task_id.to_string()))
+            .await
     }
 
     pub async fn set_config_option(&self, config_id: &str, value: &str) -> Result<(), AcpError> {

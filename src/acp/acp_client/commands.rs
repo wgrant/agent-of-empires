@@ -18,6 +18,8 @@ pub(super) enum ClientCmd {
     /// the drain task kill the worker process group + respawn. See #1727.
     ForceStop,
     SetMode(String),
+    /// Stop one background task by its async task id.
+    StopAsyncTask(String),
     /// Send `session/set_config_option` for the given (`config_id`,
     /// `value`) pair. The connection task fires the request detached so
     /// the cmd_rx loop keeps polling for Cancel during the round-trip.

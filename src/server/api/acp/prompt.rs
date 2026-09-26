@@ -318,6 +318,20 @@ pub async fn acp_attachment(
 /// Cancel the in-flight turn, ordered behind any prompt submission in flight.
 /// The guard can also be held by a queue drain or a rename, so a long wait is
 /// logged: the UI shows no progress meanwhile.
+/// Stop one background task (a workflow, shell, or monitor) the agent reported.
+pub async fn acp_stop_async_task(
+    State(state): State<Arc<AppState>>,
+    Path((id, task_id)): Path<(String, String)>,
+) -> impl IntoResponse {
+    if let Some(resp) = read_only_block(&state) {
+        return resp;
+    }
+    match state.acp_supervisor.stop_async_task(&id, &task_id).await {
+        Ok(()) => StatusCode::ACCEPTED.into_response(),
+        Err(e) => supervisor_error_response("stop async task failed", &e),
+    }
+}
+
 pub async fn acp_cancel(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,

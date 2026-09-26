@@ -80,7 +80,7 @@ pub(super) struct ConnectionParams {
     pub(super) default_effort: Option<String>,
     pub(super) default_mode: Option<String>,
     pub(super) default_model: Option<String>,
-    pub(super) native_subagents: bool,
+    pub(super) extensions: crate::acp::acp_client::ClientExtensions,
     pub(super) mcp_servers: Vec<McpServer>,
     pub(super) runner: Option<RunnerLink>,
 }
@@ -147,7 +147,7 @@ pub(super) async fn run_connection_task<W, R>(
         default_effort,
         default_mode,
         default_model,
-        native_subagents,
+        extensions,
         mcp_servers,
         runner,
     } = params;
@@ -353,7 +353,7 @@ pub(super) async fn run_connection_task<W, R>(
         default_effort,
         default_mode,
         default_model,
-        native_subagents,
+        extensions,
         source_profile,
         agent_cwd: resources.agent_cwd(),
         cmd_rx,

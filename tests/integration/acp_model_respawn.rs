@@ -46,7 +46,7 @@ fn spawn_config(
         provider_env: env,
         host_environment: vec![],
         default_effort_explicit: default_effort.is_some(),
-        native_subagents: false,
+        extensions: Default::default(),
         default_effort,
         default_mode: None,
         default_model,

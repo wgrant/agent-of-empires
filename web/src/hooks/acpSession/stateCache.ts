@@ -1,7 +1,13 @@
 // Per-session ACP state: an in-memory LRU backed by versioned localStorage entries.
 
 import { useCallback, useSyncExternalStore } from "react";
-import { emptyAcpState, normaliseTurnState, type AcpState, type BackgroundAgent } from "../../lib/acpTypes";
+import {
+  emptyAcpState,
+  normaliseTurnState,
+  type AcpState,
+  type AsyncTask,
+  type BackgroundAgent,
+} from "../../lib/acpTypes";
 import {
   STORAGE_KEY_PREFIX,
   STATE_TTL_MS,
@@ -260,6 +266,21 @@ export function useBackgroundAgents(sessionId: string | null): BackgroundAgent[]
   );
   const getSnapshot = useCallback(
     () => (sessionId ? stateCache.get(sessionId)?.backgroundAgents : undefined) ?? EMPTY_BACKGROUND_AGENTS,
+    [sessionId],
+  );
+  return useSyncExternalStore(subscribe, getSnapshot);
+}
+
+const EMPTY_ASYNC_TASKS: AsyncTask[] = [];
+
+/** Background tasks for a session, read from the cache like `useBackgroundAgents`. */
+export function useAsyncTasks(sessionId: string | null): AsyncTask[] {
+  const subscribe = useCallback(
+    (cb: () => void) => (sessionId ? subscribeAcpState(sessionId, cb) : () => {}),
+    [sessionId],
+  );
+  const getSnapshot = useCallback(
+    () => (sessionId ? stateCache.get(sessionId)?.asyncTasks : undefined) ?? EMPTY_ASYNC_TASKS,
     [sessionId],
   );
   return useSyncExternalStore(subscribe, getSnapshot);

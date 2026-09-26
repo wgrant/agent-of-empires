@@ -516,6 +516,12 @@ pub struct AcpConfig {
     #[serde(default)]
     #[setting(label = "Native subagent sessions", widget = "toggle", advanced)]
     pub native_subagents: bool,
+    /// Ask agents to report background work (Claude workflows, background
+    /// shells, and monitors) as tasks, so each shows live progress and can
+    /// be stopped on its own. Takes effect when an agent next starts.
+    #[serde(default = "default_true")]
+    #[setting(label = "Background task tracking", widget = "toggle", advanced)]
+    pub async_tasks: bool,
     /// Show a dismissable reminder in the structured view once the agent's
     /// context window passes `compaction_reminder_percent`, suggesting
     /// `/compact`. Off by default: the composer's usage chip already
@@ -663,6 +669,7 @@ impl Default for AcpConfig {
             node_path: String::new(),
             show_tool_durations: true,
             native_subagents: false,
+            async_tasks: true,
             compaction_reminder: false,
             compaction_reminder_percent: default_compaction_reminder_percent(),
             silent_orphan_grace_secs: default_silent_orphan_grace_secs(),

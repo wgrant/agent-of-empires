@@ -2,22 +2,39 @@
 // existing WebSocket, so this pane opens no connection of its own.
 
 import { useEffect, useState } from "react";
-import { Bot, ChevronDown, Maximize2, Square, X } from "lucide-react";
+import { Bot, ChevronDown, Eye, Layers, Maximize2, Square, SquareTerminal, Workflow, X } from "lucide-react";
 
-import { useBackgroundAgents } from "../../hooks/useAcpSession";
-import type { BackgroundAgent, BackgroundAgentStatus, BackgroundAgentTool } from "../../lib/acpTypes";
+import { useAsyncTasks, useBackgroundAgents } from "../../hooks/useAcpSession";
+import {
+  asyncTaskRunning,
+  type AsyncTask,
+  type BackgroundAgent,
+  type BackgroundAgentStatus,
+  type BackgroundAgentTool,
+} from "../../lib/acpTypes";
+import { formatTokens } from "../../lib/turnUsage";
 
 export function BackgroundAgentsPanel({ sessionId }: { sessionId: string | null }) {
   const agents = useBackgroundAgents(sessionId);
+  const tasks = useAsyncTasks(sessionId);
 
-  if (agents.length === 0) {
+  if (agents.length === 0 && tasks.length === 0) {
     return (
       <div className="flex h-full items-center justify-center px-4 text-center text-xs text-text-dim">
-        No sub-agents yet. Background sub-agents, and every native subagent session, show up here with live progress.
+        No sub-agents or background tasks yet. Background sub-agents, native subagent sessions, workflows, and
+        background shells show up here with live progress.
       </div>
     );
   }
+  return (
+    <div className="flex h-full flex-col overflow-y-auto">
+      {agents.length > 0 && <AgentsSection sessionId={sessionId} agents={agents} />}
+      {tasks.length > 0 && <TasksSection sessionId={sessionId} tasks={tasks} />}
+    </div>
+  );
+}
 
+function AgentsSection({ sessionId, agents }: { sessionId: string | null; agents: BackgroundAgent[] }) {
   // Running first, then most-recently-started within each group.
   const sorted = [...agents].sort((a, b) => {
     const ra = isActive(a.status) ? 0 : 1;
@@ -29,7 +46,7 @@ export function BackgroundAgentsPanel({ sessionId }: { sessionId: string | null 
   const anyRunning = agents.some((a) => a.status === "running");
 
   return (
-    <div className="flex h-full flex-col overflow-y-auto">
+    <div className="flex flex-col">
       <div className="flex items-center gap-2 border-b border-surface-700 px-3 py-1.5">
         <span className="flex-1 text-[11px] uppercase tracking-wider text-text-dim">Sub-agents · {agents.length}</span>
         {anyRunning && sessionId && <StopButton sessionId={sessionId} />}
@@ -44,6 +61,99 @@ export function BackgroundAgentsPanel({ sessionId }: { sessionId: string | null 
         ))}
       </div>
     </div>
+  );
+}
+
+const TASK_ICONS: Record<string, typeof Layers> = { workflow: Workflow, shell: SquareTerminal, monitor: Eye };
+
+function TasksSection({ sessionId, tasks }: { sessionId: string | null; tasks: AsyncTask[] }) {
+  const sorted = [...tasks].sort((a, b) => {
+    const ra = asyncTaskRunning(a) ? 0 : 1;
+    const rb = asyncTaskRunning(b) ? 0 : 1;
+    return ra !== rb ? ra - rb : b.startedAt.localeCompare(a.startedAt);
+  });
+  return (
+    <div className="flex flex-col">
+      <div className="border-b border-surface-700 px-3 py-1.5 text-[11px] uppercase tracking-wider text-text-dim">
+        Background tasks · {tasks.length}
+      </div>
+      {sorted.map((task) => (
+        <TaskRow key={task.id} sessionId={sessionId} task={task} />
+      ))}
+    </div>
+  );
+}
+
+function taskUsage(task: AsyncTask): string | null {
+  if (!task.usage) return null;
+  const parts = [
+    task.usage.tool_uses > 0 ? `${task.usage.tool_uses} ${task.usage.tool_uses === 1 ? "tool" : "tools"}` : null,
+    task.usage.total_tokens > 0 ? `${formatTokens(task.usage.total_tokens)} tokens` : null,
+  ];
+  return parts.filter(Boolean).join(" · ") || null;
+}
+
+function TaskRow({ sessionId, task }: { sessionId: string | null; task: AsyncTask }) {
+  const running = asyncTaskRunning(task);
+  const Icon = TASK_ICONS[task.taskType] ?? Layers;
+  const detail = running ? task.activity : (task.summary ?? task.description);
+  const usage = taskUsage(task);
+  return (
+    <div data-testid="async-task-row" className="border-b border-surface-800 px-3 py-2">
+      <div className="flex items-center gap-2">
+        <span
+          className={`h-2 w-2 shrink-0 rounded-full ${
+            running ? "animate-pulse bg-brand-400" : task.state === "failed" ? "bg-status-error" : "bg-surface-600"
+          }`}
+        />
+        <Icon className="h-3.5 w-3.5 shrink-0 text-text-dim" aria-hidden />
+        <span className="min-w-0 flex-1 truncate text-xs text-text-secondary" title={task.description ?? task.name}>
+          {task.name}
+        </span>
+        <Elapsed startedAt={task.startedAt} endedAt={task.endedAt} active={running} />
+        <span className="shrink-0 text-[11px] text-text-dim">{running ? task.taskType : task.state}</span>
+        {running && task.canStop && sessionId && <StopTaskButton sessionId={sessionId} taskId={task.id} />}
+      </div>
+      {(detail || usage) && (
+        <div className="mt-0.5 flex gap-2 pl-[1.625rem] text-[11px] text-text-dim">
+          {detail && <span className="min-w-0 flex-1 truncate">{detail}</span>}
+          {usage && <span className="shrink-0 tabular-nums">{usage}</span>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Stops this one task; the agent reports its new state. */
+function StopTaskButton({ sessionId, taskId }: { sessionId: string; taskId: string }) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <button
+      type="button"
+      disabled={busy}
+      aria-label="Stop task"
+      title="Stop this task"
+      onClick={async () => {
+        setBusy(true);
+        try {
+          await fetch(
+            `/api/sessions/${encodeURIComponent(sessionId)}/acp/async-tasks/${encodeURIComponent(taskId)}/stop`,
+            { method: "POST" },
+          );
+        } catch {
+          // The task keeps running; its row still offers Stop.
+        } finally {
+          setBusy(false);
+        }
+      }}
+      className={[
+        "inline-flex shrink-0 items-center rounded-md border border-surface-600 bg-surface-800 p-1",
+        "text-text-secondary transition-colors hover:border-rose-700/60 hover:bg-rose-950/30 hover:text-rose-300",
+        busy ? "opacity-50" : "",
+      ].join(" ")}
+    >
+      <Square className="h-3 w-3 fill-current" strokeWidth={0} />
+    </button>
   );
 }
 
