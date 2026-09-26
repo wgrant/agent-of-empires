@@ -245,6 +245,9 @@ export function Composer(props: Props) {
             ].join(" ")}
             onBlurCapture={() => {
               requestAnimationFrame(() => {
+                // iOS never focuses a tapped button, so taps inside the settings dialog blur to the body;
+                // collapsing would hide the still-open dialog with the footer.
+                if (rootRef.current?.querySelector('[role="dialog"]')) return;
                 if (!rootRef.current?.contains(document.activeElement)) setMobileExpanded(false);
               });
             }}

@@ -2548,6 +2548,7 @@
         "tests/acp-config-pickers-ui.spec.ts",
         "src/components/acp/SessionConfigControls.test.tsx",
         "src/components/acp/SessionSettings.test.tsx",
+        "tests/acp-session-settings-mobile.spec.ts",
         "src/hooks/useAcpSession.test.ts"
       ],
       "components": [
