@@ -6,6 +6,7 @@ import { resolveAgentProfile } from "../../lib/agentProfiles";
 import {
   activityToThreadMessages,
   clearFoldGeneration,
+  COMPACTION_NAME,
   NATIVE_SUBAGENT_NAME,
   SUBAGENT_TASK_NAME,
   TODO_GROUP_NAME,
@@ -392,12 +393,23 @@ describe("user and callout rows", () => {
     );
   });
 
+  it("renders a compaction as its own card among tool calls, carrying its summary", () => {
+    const tools = (ids: string[]) => ids.map((id) => toolStart(id));
+    const compacted = row("compacted-9", "compacted", "Kept: the plan", {
+      compaction: { state: "completed", trigger: "automatic", pre_tokens: 900_000, post_tokens: 9_000 },
+    });
+    const parts = toolParts([...tools(["a", "b"]), compacted, ...tools(["c"])]);
+    expect(names(parts)).toEqual(["read", "read", COMPACTION_NAME, "read"]);
+    expect(payload(parts[2]!)).toEqual({
+      state: "completed",
+      trigger: "automatic",
+      pre_tokens: 900_000,
+      post_tokens: 9_000,
+      summary: "Kept: the plan",
+    });
+  });
+
   it.each<[string, ActivityRow, string]>([
-    [
-      "a compaction summary",
-      row("cs-1", "compaction_summary", "Kept: the plan\nand the test list"),
-      "> 📝 **What compaction kept**\n>\n> Kept: the plan\n> and the test list",
-    ],
     [
       "a warning notice with its description",
       row("n-1", "agent_notice", "Config\nDeprecated key", { severity: "warning" }),

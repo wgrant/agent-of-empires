@@ -2704,6 +2704,22 @@
       ]
     },
     {
+      "id": "acp.compaction-card",
+      "kind": "live-playwright",
+      "risk": "low",
+      "specs": [
+        "tests/live/acp-stories/compaction.spec.ts",
+        "tests/live/acp-transcript.spec.ts",
+        "src/components/acp/activityMessages.test.ts",
+        "src/components/acp/ToolCards.render.test.tsx"
+      ],
+      "components": [
+        "web/src/components/acp/CompactionCard.tsx",
+        "web/src/components/acp/activityMessages.ts",
+        "web/src/components/acp/ThreadMessages.tsx"
+      ]
+    },
+    {
       "id": "acp.native-subagents",
       "kind": "live-playwright",
       "risk": "medium",

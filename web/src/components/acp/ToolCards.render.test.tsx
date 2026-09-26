@@ -33,6 +33,7 @@ import { AcpFileRefContext } from "./AcpFileRefContext";
 import { BackgroundAgentsContext } from "./backgroundAgentsContext";
 import { AsyncSubagentCard, extractTaskResult, SubagentCard, ToolGroupCard } from "./GroupToolCards";
 import { requestCardFocus } from "../../hooks/useCardFocus";
+import { CompactionCard } from "./CompactionCard";
 import { NativeSubagentCard } from "./NativeSubagentCard";
 import { TodoGroupCard } from "./TodoCards";
 import { formatDurationMs, formatDurationSeconds } from "./ToolCardChrome";
@@ -957,5 +958,37 @@ describe("HighlightedBlock stale-content transitions (#3974)", () => {
 
     expect(text).toContain("plain readme text");
     expect(html).not.toContain("OLD_A");
+  });
+});
+
+describe("CompactionCard", () => {
+  const card = (over: Partial<Parameters<typeof CompactionCard>[0]["compaction"]> = {}) =>
+    render(<CompactionCard compaction={{ state: "completed", summary: "", ...over }} />);
+
+  it("states the outcome and measurements, with the kept summary folded until toggled", () => {
+    const { container, getByRole, queryByTestId } = card({
+      summary: "Kept: the plan",
+      trigger: "automatic",
+      pre_tokens: 966_795,
+      post_tokens: 10_147,
+      duration_ms: 72_000,
+    });
+    expect(container.textContent).toContain("Context compacted· 967k → 10k tokens");
+    expect(container.textContent).toContain("auto · 1m 12s");
+    expect(queryByTestId("compaction-body")).toBeNull();
+    fireEvent.click(getByRole("button"));
+    expect(queryByTestId("compaction-body")?.textContent).toContain("Kept: the plan");
+  });
+
+  it.each([
+    ["with nothing kept to show", { state: "completed" }, "Context compacted", false],
+    ["while running", { state: "running" }, "Compacting context…", false],
+    ["interrupted", { state: "interrupted" }, "Compaction interrupted", false],
+    ["failed, opened on its error", { state: "failed", error: "too long" }, "too long", true],
+  ])("renders a compaction %s", (_name, over, text, open) => {
+    const { container, queryByRole, queryByTestId } = card(over);
+    expect(container.textContent).toContain(text);
+    expect(queryByTestId("compaction-body") !== null).toBe(open);
+    expect(queryByRole("button") !== null).toBe(open);
   });
 });

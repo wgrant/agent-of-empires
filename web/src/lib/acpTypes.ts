@@ -754,7 +754,6 @@ export interface ActivityRow {
     | "notice"
     | "session_cleared"
     | "compacted"
-    | "compaction_summary"
     | "summary"
     | "agent_notice"
     | "subagent";
@@ -779,7 +778,21 @@ export interface ActivityRow {
   subagentId?: string;
   /** The subagent a `subagent` row introduces; `text` holds its task. */
   subagent?: SubagentInfo;
+  /** The compaction a `compacted` row reports; `text` holds its kept summary. */
+  compaction?: CompactionInfo;
   at: string; // ISO-8601
+}
+
+/** Wire mirror of the Rust `CompactionInfo`. */
+export interface CompactionInfo {
+  /** `running`, then `completed`, `failed`, `cancelled`, or `interrupted`. */
+  state: string;
+  error?: string | null;
+  /** `automatic` or `manual`. */
+  trigger?: string | null;
+  pre_tokens?: number | null;
+  post_tokens?: number | null;
+  duration_ms?: number | null;
 }
 
 /** Wire mirror of the Rust `SubagentInfo`. */
@@ -817,6 +830,7 @@ export interface TranscriptRow {
   severity?: string | null;
   subagent_id?: string | null;
   subagent?: SubagentInfo | null;
+  compaction?: CompactionInfo | null;
 }
 
 export type TranscriptDelta =
@@ -870,6 +884,7 @@ export function transcriptRowToActivity(row: TranscriptRow, sessionId: string): 
     ...(row.async_subagent ? { asyncSubagent: true } : {}),
     ...(row.subagent_id ? { subagentId: row.subagent_id } : {}),
     ...(row.subagent ? { subagent: row.subagent } : {}),
+    ...(row.compaction ? { compaction: row.compaction } : {}),
   };
 }
 

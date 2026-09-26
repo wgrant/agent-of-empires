@@ -269,6 +269,8 @@ test("the spinner names the compaction phase and hides the force-end hatch", asy
 
   const spinner = page.getByTestId("acp-working-spinner");
   await expect(spinner).toContainText(/Compaction in progress/i, { timeout: 10_000 });
+  await expect(page.getByRole("button", { name: /compaction.*Compacting context/ })).toHaveCount(0);
+  await expect(page.getByText(/compaction.*Compacting context/)).toBeVisible();
   await composer.fill("also check the tests");
   await composer.press("Enter");
   await expect(page.getByRole("button", { name: /^also check the tests$/ })).toBeVisible({ timeout: 5_000 });
@@ -279,6 +281,7 @@ test("the spinner names the compaction phase and hides the force-end hatch", asy
 
   releaseTurn(serve);
   await expect(page.getByText("Compacting completed.")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText(/compaction.*Context compacted/)).toHaveCount(1);
   await expect(page.getByText("answered after compaction")).toBeVisible({ timeout: 15_000 });
   const json = await replayJson(serve.baseUrl, sessionId);
   expect(json).toContain("ConversationCompactionStarted");
