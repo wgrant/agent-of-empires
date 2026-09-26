@@ -27,7 +27,6 @@ import { PluginComposerActions } from "../plugin/PluginSlots";
 import { composerDraftOperation, type ComposerDraftOperation } from "../plugin/composerDraftOperation";
 import {
   AttachmentChips,
-  ModePicker,
   PopoverItems,
   QueueSendButton,
   SendButton,
@@ -49,7 +48,7 @@ import {
   insertSlashCommand,
   IOS_ACCESSORY_BAR_PX,
 } from "./composerInput";
-import { SessionConfigControls } from "./SessionConfigControls";
+import { SessionSettingsControl } from "./SessionSettings";
 import { SwitchAgentModal } from "./SwitchAgentModal";
 import {
   useAttachments,
@@ -436,7 +435,7 @@ export function Composer(props: Props) {
                   }}
                 />
                 <span className="mx-1 h-4 w-px bg-surface-700" aria-hidden />
-                <ModePicker
+                <SessionSettingsControl
                   sessionId={sessionId}
                   currentAgent={props.currentAgent}
                   yoloMode={props.yoloMode ?? false}
@@ -446,15 +445,7 @@ export function Composer(props: Props) {
                   configOptions={props.configOptions}
                   pendingConfigOption={props.pendingConfigOption}
                   setConfigOption={props.setConfigOption}
-                />
-                <SessionConfigControls
-                  configOptions={props.configOptions}
-                  pendingConfigOption={props.pendingConfigOption}
-                  onSetConfigOption={props.setConfigOption}
-                  provider={provider.current}
-                  providerPending={provider.pending}
-                  onSetProvider={provider.set}
-                  providerLockedReason={turnActive ? "Switch providers once the turn finishes" : null}
+                  summary={summary}
                 />
                 <AuthStatusHint authStatus={props.authStatus} />
                 <UsageHint usage={props.sessionUsage} />

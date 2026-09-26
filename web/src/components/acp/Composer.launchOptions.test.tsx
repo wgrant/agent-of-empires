@@ -87,10 +87,11 @@ describe("OpenCode launch options", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<Harness />);
 
-    fireEvent.click(screen.getByTitle("Agent mode and launch options: Build"));
-    expect(screen.getByRole("menuitemradio", { name: /Build/ }).getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(screen.getByTestId("session-settings-trigger"));
+    expect(screen.getByRole("radio", { name: /Build/ }).getAttribute("aria-checked")).toBe("true");
     expect(screen.getByText(/Launch options · restart required/)).toBeTruthy();
-    fireEvent.click(screen.getByRole("menuitemcheckbox", { name: /Yolo/ }));
+    fireEvent.click(screen.getByRole("switch", { name: /Yolo/ }));
+    expect(screen.queryByTestId("session-settings-dialog")).toBeNull();
 
     expect(screen.getByRole("dialog").textContent).toContain("Enable Yolo and restart agent?");
     fireEvent.click(screen.getByTestId("launch-option-confirm"));

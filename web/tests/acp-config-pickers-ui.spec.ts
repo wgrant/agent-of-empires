@@ -4,7 +4,13 @@
 // the adapter's confirmation or rejection. The live spec pins the wire shape.
 
 import { test, expect } from "./helpers/mockedTest";
-import { mockAcpSession, openStructuredSession, configOptionsUpdated } from "./helpers/acpMock";
+import {
+  mockAcpSession,
+  openStructuredSession,
+  openSessionSettings,
+  configOptionsUpdated,
+  configOptionSwitchFailed,
+} from "./helpers/acpMock";
 
 function modelOption(current: string) {
   return {
@@ -65,6 +71,24 @@ function openCodeLongModelOption() {
   };
 }
 
+test("user sees model and effort pickers after the adapter advertises config options", async ({ page }) => {
+  const mock = await mockAcpSession(page, {
+    title: "ui-pickers-render",
+    initialEvents: [snapshot("claude-opus-4-7", "default")],
+  });
+  await openStructuredSession(page, mock);
+
+  await openSessionSettings(page);
+  const modelChip = page.getByTestId("config-option-model");
+  await expect(modelChip).toBeVisible({ timeout: 15_000 });
+  await expect(modelChip).toContainText("Claude Opus 4.7");
+
+  const effortControl = page.getByTestId("config-option-effort");
+  await expect(effortControl).toBeVisible();
+  await expect(effortControl).toContainText("Default");
+  await expect(effortControl).toContainText("High");
+});
+
 test("OpenCode's long model menu stays within the mobile viewport and scrolls", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 664 });
   const mock = await mockAcpSession(page, {
@@ -77,6 +101,7 @@ test("OpenCode's long model menu stays within the mobile viewport and scrolls", 
     .getByTestId("composer-mobile-status")
     .getByRole("button", { name: /Open message composer/ })
     .click();
+  await openSessionSettings(page);
   const modelChip = page.getByTestId("config-option-model");
   await expect(modelChip).toBeVisible({ timeout: 15_000 });
   await modelChip.click();
@@ -96,9 +121,7 @@ test("OpenCode's long model menu stays within the mobile viewport and scrolls", 
   await expect(page.getByTestId("config-option-model-value-model-30")).toBeVisible();
 });
 
-test("advertised pickers render; switching the model posts it and the chip follows the adapter confirmation", async ({
-  page,
-}) => {
+test("user switches the model and the chip reflects the adapter confirmation", async ({ page }) => {
   const mock = await mockAcpSession(page, {
     title: "ui-pickers-switch-model",
     initialEvents: [snapshot("claude-opus-4-7", "default")],
@@ -108,12 +131,10 @@ test("advertised pickers render; switching the model posts it and the chip follo
   });
   await openStructuredSession(page, mock);
 
+  await openSessionSettings(page);
   const modelChip = page.getByTestId("config-option-model");
   await expect(modelChip).toBeVisible({ timeout: 15_000 });
   await expect(modelChip).toContainText("Claude Opus 4.7");
-  const effortControl = page.getByTestId("config-option-effort");
-  await expect(effortControl).toContainText("Default");
-  await expect(effortControl).toContainText("High");
 
   await modelChip.click();
   await page.getByTestId("config-option-model-value-claude-sonnet-4-6").click();
@@ -131,6 +152,29 @@ test("advertised pickers render; switching the model posts it and the chip follo
   });
 });
 
+test("user picks reasoning effort and the segment becomes active", async ({ page }) => {
+  const mock = await mockAcpSession(page, {
+    title: "ui-pickers-switch-effort",
+    initialEvents: [snapshot("claude-opus-4-7", "default")],
+    onConfigOption: (body) => [snapshot("claude-opus-4-7", body.value)],
+  });
+  await openStructuredSession(page, mock);
+
+  await openSessionSettings(page);
+  const effortControl = page.getByTestId("config-option-effort");
+  await expect(effortControl).toBeVisible({ timeout: 15_000 });
+
+  const highSegment = page.getByTestId("config-option-effort-value-high");
+  await highSegment.click();
+
+  // After the adapter confirms, the High radio reports
+  // aria-checked=true and Default no longer does.
+  await expect(highSegment).toHaveAttribute("aria-checked", "true", {
+    timeout: 10_000,
+  });
+  await expect(page.getByTestId("config-option-effort-value-default")).toHaveAttribute("aria-checked", "false");
+});
+
 test("model menu stays on-screen and scrollable on a short viewport", async ({ page }) => {
   // A long option list plus a short viewport is exactly the geometry the
   // fixed max-height missed: the menu opens upward from the composer
@@ -143,6 +187,7 @@ test("model menu stays on-screen and scrollable on a short viewport", async ({ p
   });
   await openStructuredSession(page, mock);
 
+  await openSessionSettings(page);
   const modelChip = page.getByTestId("config-option-model");
   await expect(modelChip).toBeVisible({ timeout: 15_000 });
   await modelChip.click();
@@ -166,4 +211,33 @@ test("model menu stays on-screen and scrollable on a short viewport", async ({ p
     clientHeight: el.clientHeight,
   }));
   expect(scrollHeight).toBeGreaterThan(clientHeight);
+});
+
+test("rejected switch renders a dismissable non-blocking notice", async ({ page }) => {
+  const mock = await mockAcpSession(page, {
+    title: "ui-pickers-reject",
+    initialEvents: [snapshot("claude-opus-4-7", "default")],
+    // The adapter rejects the switch; the daemon broadcasts the failure
+    // frame instead of a confirming snapshot.
+    onConfigOption: (body) => [configOptionSwitchFailed(body.config_id, body.value, "rate limited (test)")],
+  });
+  await openStructuredSession(page, mock);
+
+  await openSessionSettings(page);
+  const modelChip = page.getByTestId("config-option-model");
+  await expect(modelChip).toBeVisible({ timeout: 15_000 });
+  await modelChip.click();
+  await page.getByTestId("config-option-model-value-claude-sonnet-4-6").click();
+
+  const notice = page.getByTestId("config-option-switch-failed-notice");
+  await expect(notice).toBeVisible({ timeout: 10_000 });
+  await expect(notice).toContainText("rate limited (test)");
+
+  // Chip stays on the previously-current value: pessimistic UI.
+  await expect(modelChip).toContainText("Claude Opus 4.7");
+
+  // The notice sits behind the dialog; manual dismiss removes it once the dialog closes.
+  await page.getByRole("button", { name: "Done" }).click();
+  await notice.getByRole("button", { name: "Dismiss notice" }).click();
+  await expect(notice).toHaveCount(0);
 });
