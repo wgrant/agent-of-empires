@@ -69,7 +69,7 @@ pub(super) struct EstablishCtx {
     pub(super) default_effort: Option<String>,
     pub(super) default_mode: Option<String>,
     pub(super) default_model: Option<String>,
-    pub(super) native_subagents: bool,
+    pub(super) extensions: crate::acp::acp_client::ClientExtensions,
     pub(super) source_profile: Option<String>,
     pub(super) agent_cwd: PathBuf,
     pub(super) cmd_rx: mpsc::Receiver<ClientCmd>,
@@ -94,7 +94,7 @@ pub(super) async fn establish(
     let init: InitializeResponse = match ctx.control.as_ref() {
         Some(control) => serde_json::from_value(
             control
-                .initialize(initialize_params(ctx.native_subagents))
+                .initialize(initialize_params(ctx.extensions))
                 .await?,
         )
         .map_err(|e| acp_internal_error(format!("deserialize initialize result: {e}")))?,

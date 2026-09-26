@@ -42,7 +42,7 @@ fn spawn_config_with_shim_env(shim: PathBuf, env: Vec<(String, String)>) -> Spaw
         host_environment: vec![],
         default_effort: None,
         default_effort_explicit: false,
-        native_subagents: false,
+        extensions: Default::default(),
         default_mode: None,
         default_model: None,
         socket_path: None,

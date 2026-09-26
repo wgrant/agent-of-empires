@@ -39,8 +39,7 @@ pub struct SpawnConfig {
     /// after every establish and reset, for adapters that ignore
     /// `AOE_AGENT_MODEL`. Skipped when already current.
     pub default_model: Option<String>,
-    /// Declare native subagent sessions in the initialize handshake.
-    pub native_subagents: bool,
+    pub extensions: ClientExtensions,
     /// Runner socket; `None` spawns the agent over in-proc stdio.
     pub socket_path: Option<PathBuf>,
     /// Loaded via `session/load` when the agent supports it.
@@ -71,6 +70,15 @@ pub struct SpawnConfig {
     /// outrank both, and a respawn that re-derives `host_environment` from
     /// `base_host_environment` must not drop it.
     pub provider_routing: Vec<(String, String)>,
+}
+
+/// Protocol extensions AoE declares in the initialize handshake.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ClientExtensions {
+    /// Native subagent sessions (draft ACP RFD #1992).
+    pub native_subagents: bool,
+    /// AIR async tasks: background workflows, shells, and monitors.
+    pub async_tasks: bool,
 }
 
 /// Request-sourced keys may not redirect infrastructure the operator env

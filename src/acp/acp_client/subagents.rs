@@ -4,7 +4,6 @@
 //! session id on the same connection.
 
 use agent_client_protocol::schema::v1::{SessionId, SessionUpdate};
-use serde_json::Value;
 
 use super::extension_updates::extension_update;
 use crate::acp::state::Event;
@@ -54,7 +53,11 @@ pub(super) fn child_events(id: &str, events: Vec<Event>) -> Vec<Event> {
                 task,
                 at,
             }),
-            Event::SubagentStateChanged { .. } => Some(event),
+            // A child's background tasks are the session's, like the main agent's.
+            Event::SubagentStateChanged { .. }
+            | Event::AsyncTaskSpawned { .. }
+            | Event::AsyncTaskProgress { .. }
+            | Event::AsyncTaskStateChanged { .. } => Some(event),
             Event::AgentMessageChunk { .. }
             | Event::AgentMessageSnapshot { .. }
             | Event::AgentThoughtChunk { .. }
@@ -70,16 +73,6 @@ pub(super) fn child_events(id: &str, events: Vec<Event>) -> Vec<Event> {
             _ => None,
         })
         .collect()
-}
-
-/// The `clientCapabilities` additions that opt in: the canonical field, and the
-/// JetBrains AIR `_meta` form for SDKs that strip unknown capability fields.
-pub(super) fn declare_capability(client_capabilities: &mut Value) {
-    client_capabilities["subagents"] = serde_json::json!({});
-    client_capabilities["_meta"]["jetbrains"]["air"] = serde_json::json!({
-        "version": 1,
-        "capabilities": ["nativeSubagentSessions"],
-    });
 }
 
 #[cfg(test)]

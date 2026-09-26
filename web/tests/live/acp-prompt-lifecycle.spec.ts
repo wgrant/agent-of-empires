@@ -279,6 +279,37 @@ test("native subagent sessions reach the event store apart from the main reply",
   for (const leaked of ["CHILD_TEXT", "STRANGER_TEXT", "permission_option="]) expect(mainText).not.toContain(leaked);
 });
 
+test("a background workflow keeps the session running until its task is stopped", async ({ spawnServe }) => {
+  const { serve, sessionId } = await startAcpSession(spawnServe, {
+    title: "acp-async-task",
+    fakeAcpScript: script(
+      endTurn(
+        chunk("Launched."),
+        {
+          sessionUpdate: "async_task_spawned",
+          asyncTaskId: "wf1",
+          name: "calc-bug-check",
+          taskType: "workflow",
+          canStop: true,
+        },
+        { sessionUpdate: "async_task_progress", asyncTaskId: "wf1", description: "Review: review:average" },
+      ),
+    ),
+  });
+  await postPrompt(serve.baseUrl, sessionId, "run a workflow");
+  await waitForReplayContains(serve.baseUrl, sessionId, "prompt_complete");
+  const status = async () => (await listSessions(serve.baseUrl)).find((s) => s.id === sessionId)?.status;
+  // The turn ended, but the workflow is still working.
+  await expect.poll(status, { timeout: 15_000 }).toBe("Running");
+
+  expect2xx(await postAcp(serve.baseUrl, sessionId, "/async-tasks/wf1/stop"));
+  await waitForReplayContains(serve.baseUrl, sessionId, "AsyncTaskStateChanged");
+  const replay = await replayJson(serve.baseUrl, sessionId);
+  expect(replay).toContain('"state":"stopped"');
+  expect(replay).toContain("Review: review:average");
+  await expect.poll(status, { timeout: 15_000 }).toBe("Idle");
+});
+
 test("an agent-generated title renames a default-named session", async ({ spawnServe }) => {
   const { serve, sessionId } = await startAcpSession(spawnServe, {
     title: "Franks",

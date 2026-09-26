@@ -317,6 +317,39 @@ describe("applyEvent / background agents", () => {
     expect(agent(launched, running, completed)[0]).toMatchObject({ status: "completed", result: "done" });
   });
 
+  it("records a background task's progress and final state", () => {
+    const at = (s: number) => `2026-06-27T00:00:0${s}Z`;
+    const tasks = (...events: AcpEvent[]) => events.reduce((st, e, i) => ev(st, i + 1, e), emptyAcpState()).asyncTasks;
+    const events: AcpEvent[] = [
+      { AsyncTaskSpawned: { id: "w1", name: "calc", task_type: "workflow", can_stop: true, at: at(0) } },
+      {
+        AsyncTaskProgress: {
+          id: "w1",
+          description: "Review: review:average",
+          usage: { total_tokens: 10, tool_uses: 1, duration_ms: 5 },
+          tool_call_id: "toolu_1",
+          at: at(1),
+        },
+      },
+      { AsyncTaskProgress: { id: "w1", at: at(2) } },
+    ];
+    expect(tasks(...events)[0]).toMatchObject({
+      state: "running",
+      activity: "Review: review:average",
+      usage: { tool_uses: 1 },
+      toolCallId: "toolu_1",
+      startedAt: at(0),
+      endedAt: null,
+    });
+    // The adapter can report a stop just before the completion.
+    const ended = tasks(
+      ...events,
+      { AsyncTaskStateChanged: { id: "w1", state: "stopped", at: at(3) } },
+      { AsyncTaskStateChanged: { id: "w1", state: "completed", summary: "3 bugs", at: at(4) } },
+    )[0];
+    expect(ended).toMatchObject({ state: "completed", summary: "3 bugs", endedAt: at(3) });
+  });
+
   it("records a native subagent from its own session's events", () => {
     const inside = (event: AcpEvent): AcpEvent => ({ SubagentUpdate: { id: "c1", event } });
     const tool = { id: "t1", name: "Read notes", kind: "read", args_preview: "{}", started_at: "2026-06-27T00:00:01Z" };

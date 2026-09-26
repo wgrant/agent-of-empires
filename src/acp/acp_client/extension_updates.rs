@@ -1,6 +1,6 @@
 //! Session-update kinds the ACP crate cannot represent yet: `notice`,
-//! `compaction_update`, `compaction_summary_chunk`, and the native subagent
-//! lifecycle. The handshake advertises the capabilities that unlock them;
+//! `compaction_update`, `compaction_summary_chunk`, the native subagent
+//! lifecycle, and AIR async tasks. The handshake advertises the capabilities that unlock them;
 //! see `initialize_params`. They are tunnelled
 //! through a `session_info_update`'s `_meta`, keeping the typed pipeline's
 //! session-identity and ordering guarantees.
@@ -10,7 +10,7 @@ use serde_json::{json, Value};
 
 use super::lifecycle::LifecycleSignal;
 use super::update_events::compaction_completed_events;
-use crate::acp::state::Event;
+use crate::acp::state::{AsyncTaskUsage, Event};
 
 const TUNNEL_META_KEY: &str = "aoe/extensionUpdate";
 const EXTENSION_KINDS: &[&str] = &[
@@ -19,6 +19,9 @@ const EXTENSION_KINDS: &[&str] = &[
     "compaction_summary_chunk",
     "subagent_spawned",
     "subagent_state_update",
+    "async_task_spawned",
+    "async_task_progress",
+    "async_task_state_update",
 ];
 
 /// Rewrite an extension update inside `session/update` params into its tunnelled form.
@@ -58,6 +61,54 @@ fn field<'a>(update: &'a Value, name: &str) -> Option<&'a str> {
         .get(name)
         .and_then(Value::as_str)
         .filter(|s| !s.is_empty())
+}
+
+fn owned(update: &Value, name: &str) -> Option<String> {
+    field(update, name).map(str::to_string)
+}
+
+fn async_task_usage(update: &Value) -> Option<AsyncTaskUsage> {
+    let usage = update.get("usage")?;
+    let n = |key: &str| usage.get(key).and_then(Value::as_u64).unwrap_or(0);
+    Some(AsyncTaskUsage {
+        total_tokens: n("totalTokens"),
+        tool_uses: n("toolUses"),
+        duration_ms: n("durationMs"),
+    })
+}
+
+fn async_task_events(kind: &str, update: &Value) -> Option<Event> {
+    let id = owned(update, "asyncTaskId")?;
+    let at = chrono::Utc::now();
+    let tool_call_id = owned(update, "toolCallId");
+    Some(match kind {
+        "async_task_spawned" => Event::AsyncTaskSpawned {
+            name: owned(update, "name").unwrap_or_else(|| "Background task".into()),
+            task_type: owned(update, "taskType").unwrap_or_else(|| "task".into()),
+            description: owned(update, "description"),
+            can_stop: update
+                .get("canStop")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+            id,
+            tool_call_id,
+            at,
+        },
+        "async_task_progress" => Event::AsyncTaskProgress {
+            description: owned(update, "description"),
+            usage: async_task_usage(update),
+            id,
+            tool_call_id,
+            at,
+        },
+        _ => Event::AsyncTaskStateChanged {
+            state: owned(update, "state")?,
+            summary: owned(update, "summary"),
+            id,
+            tool_call_id,
+            at,
+        },
+    })
 }
 
 fn notice(severity: &str, title: &str, description: Option<&str>) -> Event {
@@ -123,6 +174,9 @@ pub(super) fn extension_events(update: &Value) -> Vec<Event> {
                 }],
                 _ => Vec::new(),
             }
+        }
+        Some(kind @ ("async_task_spawned" | "async_task_progress" | "async_task_state_update")) => {
+            async_task_events(kind, update).into_iter().collect()
         }
         // The summary also arrives whole on the completed update.
         _ => Vec::new(),
@@ -203,6 +257,21 @@ mod tests {
                 Some("Progress"),
             ),
             (
+                json!({"sessionUpdate": "async_task_spawned", "asyncTaskId": "w1", "name": "calc-bug-check", "taskType": "workflow", "description": "Check calc.py", "showInTranscript": false, "canStop": true}),
+                vec!["AsyncTaskSpawned:w1:calc-bug-check:workflow:true"],
+                None,
+            ),
+            (
+                json!({"sessionUpdate": "async_task_progress", "asyncTaskId": "w1", "description": "Review: review:average", "usage": {"totalTokens": 12957, "toolUses": 1, "durationMs": 1779}}),
+                vec!["AsyncTaskProgress:w1:Review: review:average:12957/1"],
+                None,
+            ),
+            (
+                json!({"sessionUpdate": "async_task_state_update", "asyncTaskId": "w1", "state": "completed", "toolCallId": "toolu_1"}),
+                vec!["AsyncTaskStateChanged:w1:completed:toolu_1"],
+                None,
+            ),
+            (
                 json!({"sessionUpdate": "subagent_state_update", "subagentSessionId": "c9", "state": "failed"}),
                 vec!["SubagentStateChanged:c9:failed"],
                 Some("Progress"),
@@ -237,6 +306,36 @@ mod tests {
                         task,
                         ..
                     } => format!("SubagentSpawned:{id}:{name}:{task}"),
+                    Event::AsyncTaskSpawned {
+                        id,
+                        name,
+                        task_type,
+                        can_stop,
+                        ..
+                    } => format!("AsyncTaskSpawned:{id}:{name}:{task_type}:{can_stop}"),
+                    Event::AsyncTaskProgress {
+                        id,
+                        description,
+                        usage,
+                        ..
+                    } => {
+                        let usage = usage.as_ref().unwrap();
+                        format!(
+                            "AsyncTaskProgress:{id}:{}:{}/{}",
+                            description.as_deref().unwrap_or(""),
+                            usage.total_tokens,
+                            usage.tool_uses
+                        )
+                    }
+                    Event::AsyncTaskStateChanged {
+                        id,
+                        state,
+                        tool_call_id,
+                        ..
+                    } => format!(
+                        "AsyncTaskStateChanged:{id}:{state}:{}",
+                        tool_call_id.as_deref().unwrap_or("")
+                    ),
                     Event::SubagentStateChanged { id, state, .. } => {
                         format!("SubagentStateChanged:{id}:{state}")
                     }

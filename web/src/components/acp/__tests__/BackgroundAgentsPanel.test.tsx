@@ -2,13 +2,15 @@
 import { fireEvent, render } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import type { BackgroundAgent } from "../../../lib/acpTypes";
+import type { AsyncTask, BackgroundAgent } from "../../../lib/acpTypes";
 
 // The panel reads the live list from the useAcpSession store; mock it so
 // the test drives the rendering purely from a fixed agent list.
 const agentsMock = vi.fn<() => BackgroundAgent[]>(() => []);
+const tasksMock = vi.fn<() => AsyncTask[]>(() => []);
 vi.mock("../../../hooks/useAcpSession", () => ({
   useBackgroundAgents: () => agentsMock(),
+  useAsyncTasks: () => tasksMock(),
 }));
 
 import { BackgroundAgentsPanel } from "../BackgroundAgentsPanel";
@@ -37,7 +39,42 @@ describe("BackgroundAgentsPanel", () => {
   it("shows an empty state with no agents", () => {
     agentsMock.mockReturnValue([]);
     const { container } = render(<BackgroundAgentsPanel sessionId="s-1" />);
-    expect(container.textContent).toContain("No sub-agents yet");
+    expect(container.textContent).toContain("No sub-agents or background tasks yet");
+  });
+
+  it("lists background tasks with live activity and stops one on its own", () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal("fetch", fetchMock);
+    const task = (over: Partial<AsyncTask>): AsyncTask => ({
+      id: "wj242",
+      name: "calc-bug-check",
+      taskType: "workflow",
+      description: "Check calc.py",
+      toolCallId: "toolu_1",
+      canStop: true,
+      state: "running",
+      activity: "Review: review:average",
+      usage: { total_tokens: 12957, tool_uses: 4, duration_ms: 1779 },
+      summary: null,
+      startedAt: new Date(Date.now() - 5000).toISOString(),
+      endedAt: null,
+      ...over,
+    });
+    tasksMock.mockReturnValue([
+      task({ id: "done-shell", name: "npm run dev", taskType: "shell", state: "completed", summary: "exited 0" }),
+      task({}),
+    ]);
+    const { container, getAllByTestId, getByRole } = render(<BackgroundAgentsPanel sessionId="s-1" />);
+    expect(container.textContent).toContain("Background tasks · 2");
+    const [running, done] = getAllByTestId("async-task-row");
+    for (const text of ["calc-bug-check", "workflow", "Review: review:average", "4 tools · 13k tokens"]) {
+      expect(running!.textContent).toContain(text);
+    }
+    expect(done!.textContent).toContain("exited 0");
+    fireEvent.click(getByRole("button", { name: "Stop task" }));
+    expect(fetchMock).toHaveBeenCalledWith("/api/sessions/s-1/acp/async-tasks/wj242/stop", { method: "POST" });
+    tasksMock.mockReturnValue([]);
+    vi.unstubAllGlobals();
   });
 
   it("lists a running agent with description, tool count, and last activity", () => {

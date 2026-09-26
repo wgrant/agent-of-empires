@@ -470,6 +470,15 @@ async function handleRequest(msg) {
     }
 
     // Content steered after the turn settled is `promptRequired`: not consumed, the host resends it.
+    // Like claude-agent-acp: acknowledge, then report the task stopped.
+    case "_session/async_task/stop": {
+      sendResult(id, { stopped: true });
+      sendNotification("session/update", {
+        sessionId: params?.sessionId,
+        update: { sessionUpdate: "async_task_state_update", asyncTaskId: params?.asyncTaskId, state: "stopped" },
+      });
+      return;
+    }
     case "_session/steering": {
       const sessionId = params?.sessionId;
       if (!STEERING_ENABLED) {

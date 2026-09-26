@@ -32,7 +32,7 @@ pub(crate) use history::{importable_sessions, list_error_response, read_log_tail
 pub use install::install_agent;
 pub use prompt::{
     acp_attachment, acp_cancel, acp_force_end_turn, acp_prompt, acp_prompt_diff_comments,
-    resolve_approval, resolve_elicitation,
+    acp_stop_async_task, resolve_approval, resolve_elicitation,
 };
 pub use view::{acp_disable, acp_enable};
 pub use worker::{
