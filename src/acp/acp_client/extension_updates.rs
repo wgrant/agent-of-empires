@@ -192,9 +192,13 @@ pub(super) fn extension_lifecycle_signal(update: &Value) -> Option<LifecycleSign
             "failed" | "cancelled" => Some(LifecycleSignal::CompactionFailed),
             _ => None,
         },
-        "compaction_summary_chunk" | "subagent_spawned" | "subagent_state_update" => {
-            Some(LifecycleSignal::Progress)
-        }
+        "compaction_summary_chunk" => Some(LifecycleSignal::Progress),
+        "subagent_spawned" => Some(LifecycleSignal::SubagentStarted {
+            id: field(update, "subagentSessionId")?.to_string(),
+        }),
+        "subagent_state_update" => Some(LifecycleSignal::SubagentEnded {
+            id: field(update, "subagentSessionId")?.to_string(),
+        }),
         _ => None,
     }
 }
@@ -254,7 +258,7 @@ mod tests {
             (
                 json!({"sessionUpdate": "subagent_spawned", "subagentSessionId": "c9", "name": "Explore", "task": "Find it", "capabilities": {}}),
                 vec!["SubagentSpawned:c9:Explore:Find it"],
-                Some("Progress"),
+                Some("SubagentStarted { id: \"c9\" }"),
             ),
             (
                 json!({"sessionUpdate": "async_task_spawned", "asyncTaskId": "w1", "name": "calc-bug-check", "taskType": "workflow", "description": "Check calc.py", "showInTranscript": false, "canStop": true}),
@@ -274,7 +278,7 @@ mod tests {
             (
                 json!({"sessionUpdate": "subagent_state_update", "subagentSessionId": "c9", "state": "failed"}),
                 vec!["SubagentStateChanged:c9:failed"],
-                Some("Progress"),
+                Some("SubagentEnded { id: \"c9\" }"),
             ),
         ];
         for (raw, want_events, want_signal) in cases {
