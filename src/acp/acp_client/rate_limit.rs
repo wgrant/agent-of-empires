@@ -49,6 +49,20 @@ pub(crate) fn is_unsupported_session_error(err: &agent_client_protocol::Error) -
     PHRASES.iter().any(|phrase| msg.contains(phrase))
 }
 
+/// A positive reset epoch from adapter metadata, in seconds.
+pub(super) fn epoch_secs(v: &serde_json::Value) -> Option<i64> {
+    let raw = v.as_i64().or_else(|| v.as_f64().map(|f| f as i64))?;
+    if raw <= 0 {
+        return None;
+    }
+    // Seconds past ~year 5138 are really milliseconds.
+    Some(if raw > 100_000_000_000 {
+        raw / 1000
+    } else {
+        raw
+    })
+}
+
 /// A rejected window from a `usage_update`'s `_meta["_claude/rateLimit"]`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct RateLimitRejection {
@@ -67,17 +81,7 @@ pub(super) fn rate_limit_rejection_from_meta(
     if info.get("status")?.as_str()? != "rejected" {
         return None;
     }
-    let v = info.get("resetsAt")?;
-    let raw = v.as_i64().or_else(|| v.as_f64().map(|f| f as i64))?;
-    if raw <= 0 {
-        return None;
-    }
-    // Seconds past ~year 5138 are really milliseconds.
-    let resets_at_secs = if raw > 100_000_000_000 {
-        raw / 1000
-    } else {
-        raw
-    };
+    let resets_at_secs = epoch_secs(info.get("resetsAt")?)?;
     Some(RateLimitRejection {
         window: info
             .get("rateLimitType")

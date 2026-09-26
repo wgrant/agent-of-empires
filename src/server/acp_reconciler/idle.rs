@@ -283,6 +283,7 @@ mod tests {
                         amount: 21.4,
                         currency: "USD".to_string(),
                     }),
+                    quota: None,
                 },
             }
         }
