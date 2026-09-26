@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { ConfigOptionDescriptor } from "../../lib/acpTypes";
-import { composerStatusParts, composerStatusText } from "./composerStatus";
+import { compactComposerStatusText, composerStatusParts, composerStatusText } from "./composerStatus";
 
 const configOptions: ConfigOptionDescriptor[] = [
   {
@@ -30,6 +30,12 @@ describe("composerStatusParts", () => {
     ["claude", undefined, false, "Claude · GPT-5.6 Terra · Medium"],
   ])("summarizes %s in %s (yolo %s)", (agent, mode, yoloMode, text) => {
     expect(composerStatusText(composerStatusParts({ agent, mode, yoloMode, configOptions }))).toBe(text);
+  });
+
+  it("drops the agent and the model's qualifier in the compact summary", () => {
+    const parts = { agent: "Claude", permission: "Auto", model: "Opus 5.5 (1M context)", effort: "High" };
+    expect(compactComposerStatusText(parts)).toBe("Auto · Opus 5.5 · High");
+    expect(compactComposerStatusText({ ...parts, model: "(custom)", permission: null })).toBe("(custom) · High");
   });
 
   it("keeps the permission separate so it can be tinted alone", () => {

@@ -33,7 +33,7 @@ test("Enter still submits a prompt while a background agent runs and the main tu
   });
   await openStructuredSession(page, mock);
 
-  const composer = page.getByRole("textbox", { name: /Send a message/i });
+  const composer = page.getByRole("textbox", { name: "Message the agent" });
   await expect(composer).toBeVisible({ timeout: 10_000 });
   await composer.fill("what's next");
   await composer.press("Enter");
@@ -45,8 +45,6 @@ test("Enter still submits a prompt while a background agent runs and the main tu
   expect(mock.promptBodies[0]?.text).toBe("what's next");
 
   // The textarea clears on a successful send, mirroring every other
-  // composer-submit spec's success signal. Re-query by role only: sending
-  // opens the turn, so the accessible name has already flipped away from
-  // "Send a message".
-  await expect(page.getByRole("textbox")).toHaveValue("");
+  // composer-submit spec's success signal.
+  await expect(composer).toHaveValue("");
 });

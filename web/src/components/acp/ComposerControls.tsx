@@ -104,13 +104,11 @@ export function AttachmentChips({
 export function ToolbarButton({
   icon,
   label,
-  hint,
   disabled,
   onClick,
 }: {
   icon: React.ReactNode;
   label: string;
-  hint?: string;
   disabled?: boolean;
   onClick?: () => void;
 }) {
@@ -122,14 +120,13 @@ export function ToolbarButton({
       disabled={disabled}
       onClick={onClick}
       className={[
-        "inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-text-dim",
+        "inline-flex items-center rounded-md p-1.5 text-text-dim",
         "hover:bg-surface-800 hover:text-text-secondary",
         "disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent disabled:hover:text-text-dim",
         "transition-colors",
       ].join(" ")}
     >
       {icon}
-      {hint && <span className="font-mono">{hint}</span>}
     </button>
   );
 }
@@ -211,10 +208,8 @@ export function UsageHint({
   ]
     .filter(Boolean)
     .join(quota || turnLines.length > 0 ? "\n" : " ");
-  // Last in the wrapping cluster: on a narrow footer it takes its own row
-  // instead of pushing Stop and Send off screen.
   return (
-    <span className="ml-auto pl-2">
+    <span className="min-w-0">
       <Tooltip text={explanation} multiline>
         <span
           data-testid="composer-usage"
@@ -224,7 +219,7 @@ export function UsageHint({
           {context && (
             <span className={contextTone}>
               <span className="hidden sm:inline">
-                {formatTokens(context.used)}/{formatTokens(context.size)}
+                {formatTokens(context.used)}/{formatTokens(context.size)}{" "}
               </span>
               <span className="opacity-70">
                 <span className="hidden sm:inline">(</span>
@@ -316,14 +311,14 @@ export function StopButton({ compact = false }: { compact?: boolean }) {
       className={[
         "inline-flex items-center justify-center gap-1.5",
         "rounded-lg border border-surface-600 bg-surface-800",
-        compact ? "px-2 py-1 text-[11px]" : "px-2.5 py-1.5 text-[12px]",
+        compact ? "p-1.5" : "px-2.5 py-1.5 text-[12px]",
         "font-medium text-text-secondary",
         "hover:border-rose-700/60 hover:bg-rose-950/30 hover:text-rose-300",
         "active:scale-[0.98] transition-all duration-100",
       ].join(" ")}
     >
       <Square className="h-3.5 w-3.5 fill-current" strokeWidth={0} />
-      <span>Stop</span>
+      {!compact && <span className="hidden @lg:inline">Stop</span>}
     </button>
   );
 }

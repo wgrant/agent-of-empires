@@ -12,7 +12,7 @@ import { resolveModeChannel, type ModeChannel } from "../../lib/modeChannel";
 import { THINKING_DISPLAY_LABELS, THINKING_DISPLAYS, type ThinkingDisplay } from "../../lib/thinkingDisplay";
 import { TOUR_ANCHORS, tourAnchor } from "../../lib/tourSteps";
 import { BRAND_BUTTON, ConfirmButton, Dialog } from "../Dialog";
-import { composerStatusText, type ComposerStatusParts } from "./composerStatus";
+import { compactModelName, composerStatusText, type ComposerStatusParts } from "./composerStatus";
 import { LaunchOptionRestartDialog } from "./LaunchOptionRestartDialog";
 import { SessionConfigControls } from "./SessionConfigControls";
 
@@ -93,7 +93,7 @@ export function SessionSettingsControl(props: Props) {
         aria-label={`Session settings: ${summaryText}`}
         // Narrow footers truncate the chip on the toolbar's line instead of wrapping it onto its own.
         className={[
-          "inline-flex min-w-0 max-w-full flex-1 basis-0 items-center gap-1.5 sm:flex-none sm:basis-auto",
+          "inline-flex min-w-0 max-w-full flex-1 basis-0 items-center gap-1.5 @lg:flex-none @lg:basis-auto",
           "rounded-md border border-surface-700 bg-surface-800 px-2 py-1 text-[11px] font-medium text-text-secondary",
           "transition-colors hover:border-surface-600",
         ].join(" ")}
@@ -135,19 +135,33 @@ export function SessionSettingsControl(props: Props) {
   );
 }
 
+/** Below a wide footer the agent and the model's qualifier drop out; the title keeps both. */
 function StatusSegments({ parts, permissionTone }: { parts: ComposerStatusParts; permissionTone?: string }) {
+  const model = parts.model && compactModelName(parts.model);
   const segments = [
-    { key: "agent", text: parts.agent },
+    { key: "agent", text: parts.agent, wideOnly: true },
     { key: "permission", text: parts.permission, className: permissionTone },
-    { key: "model", text: parts.model },
+    {
+      key: "model",
+      text:
+        model && model !== parts.model ? (
+          <>
+            <span className="@3xl:hidden">{model}</span>
+            <span className="hidden @3xl:inline">{parts.model}</span>
+          </>
+        ) : (
+          parts.model
+        ),
+    },
     { key: "effort", text: parts.effort },
   ].filter((segment) => segment.text);
+  // Each separator trails its segment, so hiding the agent takes its separator with it.
   return segments.map((segment, index) => (
-    <span key={segment.key}>
-      {index > 0 && " · "}
+    <span key={segment.key} className={segment.wideOnly ? "hidden @3xl:inline" : undefined}>
       <span data-testid={`session-summary-${segment.key}`} className={segment.className}>
         {segment.text}
       </span>
+      {index < segments.length - 1 && " · "}
     </span>
   ));
 }

@@ -34,7 +34,7 @@ test.describe("Structured-view transcript tap does not open the keyboard", () =>
     await expect(page.getByTestId("structured-view-root")).toBeVisible({ timeout: 10000 });
 
     await expect(page.getByTestId("composer-mobile-status")).toBeVisible();
-    await expect(page.getByPlaceholder(/Send a message/)).not.toBeFocused();
+    await expect(page.getByLabel("Message the agent")).not.toBeFocused();
   });
 
   test("tapping the transcript does not focus the composer; tapping the composer does", async ({ page }) => {
@@ -45,7 +45,7 @@ test.describe("Structured-view transcript tap does not open the keyboard", () =>
     // obtain the textarea, then blur so the transcript tap remains the sole
     // focus-changing interaction under test.
     await page.getByTestId("composer-mobile-status").click();
-    const composer = page.getByPlaceholder(/Send a message/);
+    const composer = page.getByLabel("Message the agent");
     await expect(composer).toBeVisible();
     // Establish a known-unfocused state so the transcript tap is the only thing
     // that could move focus.

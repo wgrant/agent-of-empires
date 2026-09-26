@@ -205,7 +205,7 @@ base("structured view surfaces", async ({ page }, testInfo) => {
     await waitForStructuredView(page);
 
     const composer = page.getByRole("textbox", {
-      name: /Send a message|Queue a follow-up/i,
+      name: "Message the agent",
     });
     await composer.fill("Wire auth into login() and add a health route.");
     await composer.press("Enter");
@@ -291,7 +291,7 @@ base("structured view approval card", async ({ page }, testInfo) => {
     await waitForStructuredView(page);
 
     const composer = page.getByRole("textbox", {
-      name: /Send a message|Queue a follow-up/i,
+      name: "Message the agent",
     });
     await composer.fill("push my changes");
     await composer.press("Enter");

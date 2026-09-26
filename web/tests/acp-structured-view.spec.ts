@@ -16,7 +16,7 @@ import {
 } from "./helpers/acpMock";
 import { iPhone13 } from "./helpers/viewports";
 
-const composerBox = (page: Page) => page.getByRole("textbox", { name: /Send a message/i });
+const composerBox = (page: Page) => page.getByRole("textbox", { name: "Message the agent" });
 const acpViewport = (page: Page) => page.getByTestId("acp-viewport");
 
 /** The element's horizontal overflow, in px. */

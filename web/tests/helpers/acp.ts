@@ -200,11 +200,12 @@ export function releaseTurn(serve: ServeHandle): void {
 
 /** The composer textbox in either its idle or mid-turn state. */
 export function composer(page: Page): Locator {
-  return page.getByRole("textbox", { name: /Send a message|Queue a follow-up/i });
+  return page.getByRole("textbox", { name: "Message the agent" });
 }
 
+/** The composer while no turn runs: only then does its placeholder start with "Message". */
 export function idleComposer(page: Page): Locator {
-  return page.getByRole("textbox", { name: /Send a message/i });
+  return composer(page).and(page.getByPlaceholder(/^Message/));
 }
 
 export function stopButton(page: Page): Locator {
