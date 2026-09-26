@@ -27,8 +27,10 @@ import {
   SCHEDULE_TOOLS,
   SkillToolCard,
   SpecialToolCard,
+  WorkflowToolCard,
   classifySkill,
   classifySpecialTool,
+  classifyWorkflow,
 } from "./NamedToolCards";
 import { classifyTodoWrite, TodoUpdateCard } from "./TodoCards";
 import { statusFor } from "./ToolCardChrome";
@@ -79,6 +81,7 @@ function renderToolCard(tool: ToolCall, result: ActivityRow | undefined, profile
   if (capabilities.skills) {
     const skill = classifySkill(tool, profile);
     if (skill.isSkill) return <SkillToolCard tool={tool} result={result} skillName={skill.name} />;
+    if (classifyWorkflow(tool)) return <WorkflowToolCard tool={tool} result={result} />;
   }
   if (capabilities.todos) {
     const todos = classifyTodoWrite(tool, profile);

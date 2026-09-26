@@ -256,10 +256,20 @@ pub(super) async fn run_connection_task<W, R>(
                             Ok(guard) => guard,
                             Err(error) => return reply(responder, Err(error)),
                         };
-                        let subagent = shared
-                            .ingress
-                            .is_subagent(&request.session_id)
-                            .then(|| request.session_id.0.to_string());
+                        // A workflow agent's request, like its tool calls, names no workflow.
+                        let subagent = if shared.ingress.is_subagent(&request.session_id) {
+                            Some(request.session_id.0.to_string())
+                        } else {
+                            shared
+                                .workflows
+                                .lock()
+                                .expect("workflow attribution mutex poisoned")
+                                .owner(
+                                    &request.tool_call.tool_call_id.0,
+                                    true,
+                                    shared.prompt_in_flight.load(Ordering::Relaxed),
+                                )
+                        };
                         let outcome = handle_permission_request(
                             request,
                             shared.event_tx.clone(),

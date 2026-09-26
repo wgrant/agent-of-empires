@@ -53,6 +53,12 @@ pub struct TranscriptRow {
 pub struct SubagentInfo {
     pub id: String,
     pub name: String,
+    /// `workflow` for a Claude workflow run; a native subagent has none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    /// What a workflow is doing now, such as its current agent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub activity: Option<String>,
     /// `None` while it runs; then `completed`, `failed`, `cancelled`, or `disconnected`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub state: Option<String>,
@@ -457,25 +463,65 @@ impl TranscriptModel {
                 row.subagent = Some(SubagentInfo {
                     id: id.clone(),
                     name: name.clone(),
+                    kind: None,
+                    activity: None,
                     state: None,
                     ended_at: None,
                 });
                 vec![self.append(row)]
             }
-            Event::SubagentStateChanged { id, state, at } => {
-                let Some(row) = self
-                    .rows
-                    .iter_mut()
-                    .find(|row| row.subagent.as_ref().is_some_and(|s| &s.id == id))
-                else {
+            // A workflow's agents report into it like a subagent's session does.
+            Event::AsyncTaskSpawned {
+                id,
+                name,
+                task_type,
+                description,
+                at,
+                ..
+            } if task_type == "workflow" => {
+                let row_id = format!("subagent-{id}");
+                if self.row_ids.contains(&row_id) {
                     return Vec::new();
-                };
-                if let Some(info) = row.subagent.as_mut() {
-                    info.state = Some(state.clone());
-                    info.ended_at = Some(*at);
                 }
-                vec![patch(row)]
+                self.turn_has_output = true;
+                let text = description.clone().unwrap_or_default();
+                let mut row = self.grouped_row(row_id, TranscriptRowKind::Subagent, text);
+                row.at = *at;
+                row.subagent = Some(SubagentInfo {
+                    id: id.clone(),
+                    name: name.clone(),
+                    kind: Some("workflow".into()),
+                    activity: None,
+                    state: None,
+                    ended_at: None,
+                });
+                vec![self.append(row)]
             }
+            Event::AsyncTaskProgress {
+                id,
+                description: Some(activity),
+                ..
+            } => self.patch_subagent(id, |info| {
+                (info.activity.as_ref() != Some(activity))
+                    .then(|| info.activity = Some(activity.clone()))
+            }),
+            Event::AsyncTaskStateChanged { id, state, at, .. } => {
+                let state = match state.as_str() {
+                    "running" | "paused" => return Vec::new(),
+                    "stopped" => "cancelled",
+                    other => other,
+                };
+                self.patch_subagent(id, |info| {
+                    info.state = Some(state.to_string());
+                    info.ended_at = Some(*at);
+                    Some(())
+                })
+            }
+            Event::SubagentStateChanged { id, state, at } => self.patch_subagent(id, |info| {
+                info.state = Some(state.clone());
+                info.ended_at = Some(*at);
+                Some(())
+            }),
             Event::ThinkingStarted => {
                 self.turn_active = true;
                 self.turn_has_output = true;
@@ -656,6 +702,25 @@ impl TranscriptModel {
             self.row_ids = self.rows.iter().map(|r| r.id.clone()).collect();
         }
         removed
+    }
+
+    /// Patch a subagent row's info; `update` returns `None` when nothing changed.
+    fn patch_subagent(
+        &mut self,
+        id: &str,
+        update: impl FnOnce(&mut SubagentInfo) -> Option<()>,
+    ) -> Vec<TranscriptDelta> {
+        let Some(row) = self
+            .rows
+            .iter_mut()
+            .find(|row| row.subagent.as_ref().is_some_and(|s| s.id == id))
+        else {
+            return Vec::new();
+        };
+        match row.subagent.as_mut().and_then(update) {
+            Some(()) => vec![patch(row)],
+            None => Vec::new(),
+        }
     }
 
     /// Apply a subagent's event with its own text run, its rows stamped with its id.
@@ -935,6 +1000,77 @@ mod tests {
                 resolved: None,
             },
         }
+    }
+
+    #[test]
+    fn a_workflow_task_heads_the_rows_its_agents_report() {
+        let model = fold([
+            prompt("run it"),
+            Event::AsyncTaskSpawned {
+                id: "wf1".into(),
+                name: "calc-bug-check".into(),
+                task_type: "workflow".into(),
+                description: Some("Check calc.py".into()),
+                tool_call_id: None,
+                can_stop: true,
+                at: at(10),
+            },
+            // A shell task has no card of its own.
+            Event::AsyncTaskSpawned {
+                id: "sh1".into(),
+                name: "npm run dev".into(),
+                task_type: "shell".into(),
+                description: None,
+                tool_call_id: None,
+                can_stop: true,
+                at: at(11),
+            },
+            Event::AsyncTaskProgress {
+                id: "wf1".into(),
+                description: Some("Review: review:clamp".into()),
+                usage: None,
+                tool_call_id: None,
+                at: at(12),
+            },
+            Event::SubagentUpdate {
+                id: "wf1".into(),
+                event: Box::new(started(tool("t1", "Bash"))),
+            },
+            Event::AsyncTaskStateChanged {
+                id: "wf1".into(),
+                state: "stopped".into(),
+                summary: None,
+                tool_call_id: None,
+                at: at(20),
+            },
+        ]);
+        assert_eq!(
+            kinds(&model),
+            [
+                TranscriptRowKind::UserPrompt,
+                TranscriptRowKind::Subagent,
+                TranscriptRowKind::ToolStart
+            ]
+        );
+        let header = &model.rows()[1];
+        let info = header.subagent.as_ref().unwrap();
+        assert_eq!(
+            (
+                header.text.as_str(),
+                info.kind.as_deref(),
+                info.activity.as_deref(),
+                info.state.as_deref(),
+                info.ended_at
+            ),
+            (
+                "Check calc.py",
+                Some("workflow"),
+                Some("Review: review:clamp"),
+                Some("cancelled"),
+                Some(at(20))
+            )
+        );
+        assert_eq!(model.rows()[2].subagent_id.as_deref(), Some("wf1"));
     }
 
     #[test]

@@ -786,6 +786,10 @@ export interface ActivityRow {
 export interface SubagentInfo {
   id: string;
   name: string;
+  /** `workflow` for a Claude workflow run; a native subagent has none. */
+  kind?: string | null;
+  /** What a workflow is doing now, such as its current agent. */
+  activity?: string | null;
   /** Absent while it runs; then `completed`, `failed`, `cancelled`, or `disconnected`. */
   state?: string | null;
   ended_at?: string | null;

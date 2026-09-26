@@ -661,6 +661,40 @@ describe("ToolGroupCard", () => {
   });
 });
 
+describe("Claude skill and workflow launches", () => {
+  it("renders a titled skill load as a skill card without the launch text", () => {
+    const tool = makeToolCall({
+      name: "Load skill: workflow-authoring",
+      args_preview: args({ skill: "workflow-authoring" }),
+    });
+    const card = renderCard(tool, makeCompletion({ text: "Launching skill: workflow-authoring" }), {
+      toolKey: "claude",
+    });
+    expect(card.text()).toContain("skill");
+    expect(card.text()).toContain("workflow-authoring");
+    expect(card.text()).not.toContain("Launching skill");
+  });
+
+  it("names a workflow from its script and keeps the script and model-facing result folded", () => {
+    const script =
+      "export const meta = {\n  name: 'calc-bug-check',\n  phases: [{ title: 'Review' }],\n}\nawait agent('go')";
+    const tool = makeToolCall({ name: "Workflow", args_preview: args({ script }) });
+    const result = makeCompletion({ text: "Workflow launched in background. Task ID: wj2\nUse /workflows to watch" });
+    const { container, getByRole } = render(
+      <AgentProfileProvider toolKey="claude">
+        <ToolCard tool={tool} result={result} />
+      </AgentProfileProvider>,
+    );
+    expect(container.textContent).toContain("workflow");
+    expect(container.textContent).toContain("calc-bug-check");
+    expect(container.textContent).toContain("launched");
+    expect(container.textContent).not.toContain("await agent");
+    fireEvent.click(getByRole("button"));
+    expect(container.textContent).toContain("await agent");
+    expect(container.textContent).not.toContain("/workflows");
+  });
+});
+
 describe("NativeSubagentCard", () => {
   const readRow = (id: string): ActivityRow => ({
     id: `start-${id}`,
@@ -673,6 +707,8 @@ describe("NativeSubagentCard", () => {
   const subagent = (over: Partial<Parameters<typeof NativeSubagentCard>[0]["subagent"]> = {}) => ({
     id: "c1",
     name: "Explorer",
+    kind: null,
+    activity: null,
     task: "Count the lines",
     state: null,
     unresolved: false,
@@ -693,6 +729,16 @@ describe("NativeSubagentCard", () => {
     for (const text of ["Count the lines", "src/lines.ts", "a.txt has 2 lines"]) {
       expect(container.textContent).toContain(text);
     }
+  });
+
+  it.each([
+    [{ kind: "workflow", activity: "Review: review:clamp" }, "workflow", "Review: review:clamp"],
+    [{ name: "/code-review" }, "skill", "Skill instructions"],
+  ])("labels %o as a %s", (over, label, shown) => {
+    const { container, getByRole } = render(<NativeSubagentCard subagent={subagent(over)} />);
+    expect(container.textContent).toContain(label);
+    fireEvent.click(getByRole("button", { name: new RegExp(label, "i") }));
+    expect(container.textContent).toContain(shown);
   });
 
   it.each([

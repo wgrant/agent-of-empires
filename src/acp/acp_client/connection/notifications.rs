@@ -18,7 +18,7 @@ use crate::acp::acp_client::lifecycle::{
 use crate::acp::acp_client::rate_limit::rate_limit_rejection_from_meta;
 use crate::acp::acp_client::session_identity::SessionIngress;
 use crate::acp::acp_client::session_sandbox::SessionSandbox;
-use crate::acp::acp_client::subagents::child_events;
+use crate::acp::acp_client::subagents::{child_events, tool_call_of, WorkflowAttribution};
 use crate::acp::acp_client::tool_context::{
     update_tool_context_cache, ToolCallContextCache, ToolContextCache,
 };
@@ -67,6 +67,7 @@ pub(super) struct Shared {
     /// Scoped to one turn; see `AgentMessageDedup` (#2281).
     pub(super) agent_msg_dedup: std::sync::Mutex<AgentMessageDedup>,
     pub(super) tool_context_cache: ToolContextCache,
+    pub(super) workflows: std::sync::Mutex<WorkflowAttribution>,
     bg_transcript_source: TranscriptSource,
 }
 
@@ -109,6 +110,7 @@ impl Shared {
             context_reset_emitted: AtomicBool::new(false),
             agent_msg_dedup: Default::default(),
             tool_context_cache: Arc::new(std::sync::Mutex::new(ToolCallContextCache::default())),
+            workflows: Default::default(),
             bg_transcript_source,
         }
     }
@@ -171,10 +173,23 @@ impl Shared {
     ) {
         self.last_event_at.store(now_ms(), Ordering::Relaxed);
         let suppressing = self.suppress_history_replay.load(Ordering::Relaxed);
-        let subagent = self
+        let native_subagent = self
             .ingress
             .is_subagent(&notification.session_id)
             .then(|| notification.session_id.0.to_string());
+        let workflow = match (&native_subagent, tool_call_of(&notification.update)) {
+            (None, Some((tool_call_id, started))) if !suppressing => self
+                .workflows
+                .lock()
+                .expect("workflow attribution mutex poisoned")
+                .owner(
+                    tool_call_id,
+                    started,
+                    self.prompt_in_flight.load(Ordering::Relaxed),
+                ),
+            _ => None,
+        };
+        let subagent = native_subagent.clone().or_else(|| workflow.clone());
         // Drop the adapter's leaked restatement before anything sees it
         // (#2281). Replayed history resets rather than feeds the deduper.
         {
@@ -196,10 +211,12 @@ impl Shared {
         // One epoch per notification, so its signals belong to the prompt
         // that was current when it arrived.
         let epoch = self.prompt_epoch.load(Ordering::Relaxed);
-        // A child's activity keeps the main turn alive but cannot end or wake it.
-        let (lifecycle, wakeup) = match subagent {
-            Some(_) => ((!suppressing).then_some(LifecycleSignal::Progress), None),
-            None => classify_watchdog_notification_signals(
+        // A child's activity keeps the main turn alive but cannot end or wake
+        // it; a workflow agent's runs outside any turn.
+        let (lifecycle, wakeup) = match (&native_subagent, &workflow) {
+            (Some(_), _) => ((!suppressing).then_some(LifecycleSignal::Progress), None),
+            (None, Some(_)) => (None, None),
+            (None, None) => classify_watchdog_notification_signals(
                 &notification.update,
                 self.profile,
                 suppressing,
@@ -286,6 +303,12 @@ impl Shared {
                 event => event,
             };
             update_tool_context_cache(&self.tool_context_cache, inner, &update_for_tool_context);
+            if subagent.is_none() {
+                self.workflows
+                    .lock()
+                    .expect("workflow attribution mutex poisoned")
+                    .observe(&event);
+            }
             if self.event_tx.send(event).await.is_err() {
                 break;
             }
