@@ -34,6 +34,8 @@ export interface AcpSessionMockOptions {
   /** Same, for `POST .../acp/config-option`: the returned events play
    *  the adapter's confirming snapshot (or rejection). */
   onConfigOption?: (body: { config_id: string; value: string }) => unknown[];
+  /** Report the session as launched in yolo mode. */
+  yoloMode?: boolean;
   /** Override the `/api/about` payload (e.g. `{ read_only: true }`). */
   about?: Record<string, unknown>;
   /** When set, the session is reported trashed (`trashed_at`) with a stopped
@@ -261,7 +263,7 @@ export async function mockAcpSession(page: Page, opts: AcpSessionMockOptions = {
             group_path: "/tmp",
             tool: "claude",
             status: opts.trashedAt || opts.archivedAt ? "Stopped" : "Running",
-            yolo_mode: false,
+            yolo_mode: opts.yoloMode ?? false,
             created_at: new Date().toISOString(),
             last_accessed_at: null,
             last_error: null,

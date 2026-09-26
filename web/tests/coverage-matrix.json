@@ -2549,6 +2549,8 @@
         "src/components/acp/SessionConfigControls.test.tsx",
         "src/components/acp/SessionSettings.test.tsx",
         "tests/acp-session-settings-mobile.spec.ts",
+        "tests/acp-session-settings-chip.spec.ts",
+        "src/components/acp/composerStatus.test.ts",
         "src/hooks/useAcpSession.test.ts"
       ],
       "components": [
