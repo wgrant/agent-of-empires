@@ -2,7 +2,8 @@
 // Fake ACP agent (newline-delimited JSON-RPC) for live structured view tests.
 //
 // FAKE_ACP_SCRIPT names a JSON file: { turns: [{ updates: [...session/update], stopReason, response }] },
-// where `response` merges extra fields such as `usage` and `_meta` into the prompt result.
+// where `response` merges extra fields such as `usage` and `_meta` into the prompt result, and
+// `afterTurn` updates play once the result is sent, like a background workflow's agents.
 // Each session/prompt consumes one turn; afterwards prompts get a default one-chunk turn. Pseudo
 // updates: wait_for_release (waits for `<script>.release`), wait_ms, permission_request and
 // elicitation_request (sent as real client requests and awaited).
@@ -693,6 +694,10 @@ async function handleRequest(msg) {
         ...turn.response,
         stopReason: wasCancelled ? "cancelled" : (turn.stopReason ?? "end_turn"),
       });
+      if (sessionId && turn.afterTurn) {
+        // After the result, so the host has ended the turn first.
+        setTimeout(() => void emitSessionUpdates(sessionId, turn.afterTurn), 50);
+      }
       return;
     }
 

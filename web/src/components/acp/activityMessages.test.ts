@@ -250,6 +250,10 @@ describe("native subagents", () => {
     // Still running while the turn is.
     const busy = activityToThreadMessages(rows, true).find((m) => m.role === "assistant")!;
     expect(payload((busy.content as Part[])[0]!).unresolved).toBe(false);
+    // A workflow keeps running after its turn.
+    const workflow = header("w1");
+    workflow.subagent = { ...workflow.subagent!, kind: "workflow" };
+    expect(payload(assistantParts([workflow])[0]!).unresolved).toBe(false);
   });
 });
 

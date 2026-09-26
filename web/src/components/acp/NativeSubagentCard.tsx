@@ -1,6 +1,7 @@
-// A native subagent session: its task, then its own messages, thinking, and tools.
+// A native subagent session or a workflow run: its task, then its own
+// messages, thinking, and tools.
 
-import { Sparkles } from "lucide-react";
+import { Sparkles, Workflow } from "lucide-react";
 
 import type { NativeSubagent, NativeSubagentItem } from "./activityMessages";
 import { AssistantReasoning } from "./AssistantReasoning";
@@ -49,16 +50,24 @@ function ItemView({ item }: { item: NativeSubagentItem }) {
 const itemKey = (item: NativeSubagentItem, index: number) =>
   item.type === "tool" ? item.start.id : item.type === "subagent" ? item.subagent.id : `${item.type}-${index}`;
 
+/** A skill that runs in its own context reports as a subagent named `/<skill>`. */
+function cardLabel(subagent: NativeSubagent): "workflow" | "skill" | "subagent" {
+  if (subagent.kind === "workflow") return "workflow";
+  return subagent.name.startsWith("/") ? "skill" : "subagent";
+}
+
 export function NativeSubagentCard({ subagent }: { subagent: NativeSubagent }) {
   const status = subagentStatus(subagent);
   const [open, setOpen] = useToolCardExpansion(status);
   const tools = subagent.items.filter((item) => item.type === "tool").length;
-  const latest = status === "running" ? latestActivity(subagent.items) : null;
+  const latest = status === "running" ? (subagent.activity ?? latestActivity(subagent.items)) : null;
+  const label = cardLabel(subagent);
+  const Icon = label === "workflow" ? Workflow : Sparkles;
   return (
     <CardChrome
       status={status}
-      icon={<Sparkles className="h-3.5 w-3.5" />}
-      label="subagent"
+      icon={<Icon className="h-3.5 w-3.5" />}
+      label={label}
       startedAt={subagent.startedAt}
       endedAt={subagent.endedAt}
       primary={
@@ -80,10 +89,20 @@ export function NativeSubagentCard({ subagent }: { subagent: NativeSubagent }) {
             data-testid="native-subagent-body"
             className="flex flex-col gap-1 border-t border-surface-800 bg-surface-900/30 px-3 py-2"
           >
-            {subagent.task && (
-              <p className="max-h-32 overflow-y-auto whitespace-pre-wrap break-words rounded border border-surface-800 bg-surface-900/60 px-2 py-1 text-xs text-text-secondary">
-                {subagent.task}
-              </p>
+            {subagent.task && label === "skill" ? (
+              // The skill's own recipe, not a task the agent wrote.
+              <details className="text-xs text-text-dim">
+                <summary className="cursor-pointer select-none hover:text-text-secondary">Skill instructions</summary>
+                <p className="mt-1 max-h-48 overflow-y-auto whitespace-pre-wrap break-words rounded border border-surface-800 bg-surface-900/60 px-2 py-1 text-text-secondary">
+                  {subagent.task}
+                </p>
+              </details>
+            ) : (
+              subagent.task && (
+                <p className="max-h-32 overflow-y-auto whitespace-pre-wrap break-words rounded border border-surface-800 bg-surface-900/60 px-2 py-1 text-xs text-text-secondary">
+                  {subagent.task}
+                </p>
+              )
             )}
             {subagent.items.map((item, index) => (
               <ItemView key={itemKey(item, index)} item={item} />
