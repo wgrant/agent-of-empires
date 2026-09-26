@@ -36,9 +36,9 @@ pub(super) fn is_transcript_event(event: &Event) -> bool {
             // create a running record with nothing to ever complete it.
             | Event::BackgroundAgentLaunched { .. }
             | Event::PromptRuntimeError { .. }
-            // Both halves of a `/compact` cycle are synthesized from
-            // `AgentMessageChunk` text, which is itself dropped here, so
-            // they must drop with their source chunk. Letting the
+            // Both halves of a `/compact` cycle come from `AgentMessageChunk`
+            // text or a `compaction_update`, both replayed on load, so they
+            // must drop with their source. Letting the
             // completion through (the pre-#3219 behavior) re-ran its
             // side effects on every reattach: a duplicate "conversation
             // compacted" divider, and on the web a re-based
@@ -50,6 +50,8 @@ pub(super) fn is_transcript_event(event: &Event) -> bool {
             // to clear it before the turn's own `Stopped`.
             | Event::ConversationCompactionStarted
             | Event::ConversationCompacted
+            | Event::ConversationCompactionSummary { .. }
+            | Event::AgentNotice { .. }
     )
 }
 
@@ -79,6 +81,8 @@ pub(super) fn transcript_event_kind(event: &Event) -> &'static str {
         Event::PromptRuntimeError { .. } => "prompt_runtime_error",
         Event::ConversationCompactionStarted => "conversation_compaction_started",
         Event::ConversationCompacted => "conversation_compacted",
+        Event::ConversationCompactionSummary { .. } => "conversation_compaction_summary",
+        Event::AgentNotice { .. } => "agent_notice",
         _ => "other",
     }
 }

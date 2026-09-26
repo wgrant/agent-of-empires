@@ -33,19 +33,30 @@ function parseDate(iso: string): Date | undefined {
   return Number.isFinite(d.getTime()) ? d : undefined;
 }
 
+const quoteLines = (text: string) =>
+  text
+    .split("\n")
+    .map((line) => `> ${line}`)
+    .join("\n");
+
+const NOTICE_ICONS: Record<string, string> = { error: "⛔", warning: "⚠️" };
+
 /** Rows rendered as an assistant blockquote callout, by kind. */
-const CALLOUTS: Partial<Record<ActivityRow["kind"], (text: string) => string>> = {
+const CALLOUTS: Partial<Record<ActivityRow["kind"], (text: string, row: ActivityRow) => string>> = {
   session_cleared: (text) => `> ⚠️ **Conversation cleared**; ${text.replace(/^Conversation cleared,?\s*/, "")}`,
   // `session/load` fallback after a restart: the model's window is empty.
   context_reset: (text) => `> ⚠️ **Conversation context reset**; ${text}`,
   compacted: (text) => `> ⚠️ **Conversation compacted**; ${text.replace(/^Conversation compacted[;,]?\s*/, "")}`,
   // The banner is capped and retired by the next prompt, so history lives here.
   advisory: (text) => `> ℹ️ **Notice**; ${text}`,
-  summary: (text) =>
-    `> 📝 **Summary of conversation so far**\n>\n${text
-      .split("\n")
-      .map((line) => `> ${line}`)
-      .join("\n")}`,
+  summary: (text) => `> 📝 **Summary of conversation so far**\n>\n${quoteLines(text)}`,
+  compaction_summary: (text) => `> 📝 **What compaction kept**\n>\n${quoteLines(text)}`,
+  // An agent notice is its title, then an optional description.
+  agent_notice: (text, row) => {
+    const [title, ...description] = text.split("\n");
+    const icon = NOTICE_ICONS[row.severity ?? ""] ?? "ℹ️";
+    return `> ${icon} **${title}**${description.length > 0 ? `\n>\n${quoteLines(description.join("\n"))}` : ""}`;
+  },
 };
 
 export function activityToThreadMessages(
@@ -83,7 +94,7 @@ export function activityToThreadMessages(
       messages.push({
         id: `assistant-${row.id}`,
         role: "assistant",
-        content: [{ type: "text", text: callout(row.text) }],
+        content: [{ type: "text", text: callout(row.text, row) }],
         createdAt: parseDate(row.at),
       });
       continue;

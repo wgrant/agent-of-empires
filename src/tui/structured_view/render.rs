@@ -1414,12 +1414,19 @@ fn transcript_lines(
             | TranscriptRowKind::ContextReset
             | TranscriptRowKind::SessionCleared
             | TranscriptRowKind::Compacted
+            | TranscriptRowKind::CompactionSummary
             | TranscriptRowKind::Summary
             | TranscriptRowKind::Notice
-            | TranscriptRowKind::Advisory => {
+            | TranscriptRowKind::Advisory
+            | TranscriptRowKind::AgentNotice => {
                 let kind = match row.kind {
                     // Failures the user must see.
                     TranscriptRowKind::Notice => NoteKind::Error,
+                    TranscriptRowKind::AgentNotice => match row.severity.as_deref() {
+                        Some("error") => NoteKind::Error,
+                        Some("warning") => NoteKind::Warning,
+                        _ => NoteKind::Info,
+                    },
                     TranscriptRowKind::ContextReset | TranscriptRowKind::SessionCleared => {
                         NoteKind::Warning
                     }
