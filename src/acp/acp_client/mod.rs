@@ -19,6 +19,7 @@ mod opencode;
 mod pending;
 mod permission_handlers;
 mod plan;
+mod prompt_response;
 mod quota;
 mod rate_limit;
 mod raw_input;
@@ -32,7 +33,6 @@ mod steer;
 mod terminal_handlers;
 #[cfg(test)]
 mod test_helpers;
-mod token_usage;
 mod tool_context;
 mod tool_output;
 mod transcript_filter;
