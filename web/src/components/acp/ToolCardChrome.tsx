@@ -133,6 +133,10 @@ interface CardChromeProps {
    *  real subprocess start, so they run long. */
   startedAt?: string;
   endedAt?: string;
+  /** Where a focus request from outside the transcript scrolls to. */
+  anchorRef?: React.Ref<HTMLDivElement>;
+  /** Marks the card just focused from outside the transcript. */
+  highlighted?: boolean;
 }
 
 export function CardChrome({
@@ -149,12 +153,20 @@ export function CardChrome({
   endedAt,
   neutralOnDone,
   navigate,
+  anchorRef,
+  highlighted,
 }: CardChromeProps) {
   const { showToolDurations } = useAcpPrefs();
   const Header = onToggle ? "button" : "div";
   const showNeutral = neutralOnDone === true && status !== "running";
   return (
-    <div className="my-1 overflow-hidden rounded-md border border-surface-700 bg-surface-800/50 text-sm">
+    <div
+      ref={anchorRef}
+      className={[
+        "my-1 overflow-hidden rounded-md border bg-surface-800/50 text-sm transition-colors",
+        highlighted ? "border-brand-500" : "border-surface-700",
+      ].join(" ")}
+    >
       <Header
         type={onToggle ? "button" : undefined}
         onClick={onToggle}

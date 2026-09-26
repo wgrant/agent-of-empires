@@ -2744,10 +2744,12 @@
         "src/components/acp/activityMessages.test.ts",
         "src/lib/backgroundWork.test.ts",
         "src/components/__tests__/ActivityBar.test.tsx",
-        "src/components/__tests__/TopBar.test.tsx"
+        "src/components/__tests__/TopBar.test.tsx",
+        "tests/live/acp-stories/native-subagents.spec.ts"
       ],
       "components": [
         "web/src/components/acp/BackgroundAgentsPanel.tsx",
+        "web/src/hooks/useCardFocus.ts",
         "web/src/lib/backgroundWork.ts",
         "web/src/components/ActivityBar.tsx",
         "web/src/components/MobileRightPanelPicker.tsx",
