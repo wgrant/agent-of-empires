@@ -86,6 +86,24 @@ export interface SessionUsage {
   size: number;
   /** Cumulative session cost, when reported. */
   cost?: { amount: number; currency: string } | null;
+  /** Plan quota, present only on updates that carried a reading. */
+  quota?: AgentQuota | null;
+}
+
+/** Wire mirror of the Rust `AgentQuota`: the account's plan windows as the agent last reported them. */
+export interface AgentQuota {
+  windows: QuotaWindow[];
+  limited: boolean;
+  observed_at: string;
+}
+
+export interface QuotaWindow {
+  id: string;
+  duration_mins?: number | null;
+  /** Which limit the window belongs to when an account has several (`Opus`, a Codex limit name). */
+  scope?: string | null;
+  used_percent: number;
+  resets_at?: string | null;
 }
 
 export interface AvailableCommand {
@@ -529,6 +547,8 @@ export interface AcpState {
   thinking: boolean;
   rateLimit: RateLimitInfo | null;
   sessionUsage: SessionUsage | null;
+  /** Latest plan quota reading; account-wide, so context boundaries keep it. */
+  quota: AgentQuota | null;
   /** Cost at the latest context boundary, subtracted from the agent's lifetime total. */
   usageBaseline: { cost: number } | null;
   /** Usage when the compaction reminder was dismissed, or null while armed. */
@@ -844,6 +864,7 @@ export function emptyAcpState(): AcpState {
     rateLimitRetriesExhausted: false,
     rateLimitParked: false,
     sessionUsage: null,
+    quota: null,
     usageBaseline: null,
     compactionReminderDismissed: null,
     activity: [],
@@ -957,6 +978,7 @@ export function applyEvent(state: AcpState, frame: AcpFrame): AcpState {
   if ("UsageUpdated" in event) {
     // Subtract the boundary baseline from the lifetime cost the agent reports.
     const incoming = event.UsageUpdated.usage;
+    if (incoming.quota) next.quota = incoming.quota;
     // Latch the largest window seen: upstream claude-agent-acp #596 flickers between 200k and 1M.
     const size = Math.max(incoming.size, next.sessionUsage?.size ?? 0);
     // Every boundary nulls sessionUsage, so a null previous snapshot re-arms the reminder.

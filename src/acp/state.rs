@@ -173,6 +173,34 @@ pub struct SessionUsage {
     pub size: u64,
     #[serde(default)]
     pub cost: Option<UsageCost>,
+    /// Plan quota when this update carried a reading; absent otherwise, so
+    /// consumers keep the previous one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quota: Option<AgentQuota>,
+}
+
+/// The account's plan quota (5-hour, weekly, ...) as last reported by the agent.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AgentQuota {
+    pub windows: Vec<QuotaWindow>,
+    /// The agent reports a window as exhausted.
+    #[serde(default)]
+    pub limited: bool,
+    pub observed_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct QuotaWindow {
+    /// Stable per agent: Claude's window name (`five_hour`), Codex's `<limitId>/primary`.
+    pub id: String,
+    #[serde(default)]
+    pub duration_mins: Option<u64>,
+    /// Which limit the window belongs to when one account has several (`Opus`, a Codex limit name).
+    #[serde(default)]
+    pub scope: Option<String>,
+    pub used_percent: f64,
+    #[serde(default)]
+    pub resets_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1834,6 +1862,7 @@ mod tests {
                             amount: 0.12,
                             currency: "USD".into(),
                         }),
+                        quota: None,
                     },
                 },
             ]

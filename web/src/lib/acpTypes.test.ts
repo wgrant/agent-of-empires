@@ -399,6 +399,26 @@ describe("cost baseline (#1354)", () => {
     const u = fold(emptyAcpState(), usage(10_000, 0.42), "SessionCleared", usage(5_000, 0.49)).sessionUsage;
     expect(u).toMatchObject({ used: 5_000, size: 200_000, cost: { currency: "USD" } });
   });
+
+  it("latches plan quota across quota-less updates and context boundaries", () => {
+    const reading = (used_percent: number): AcpEvent => ({
+      UsageUpdated: {
+        usage: {
+          used: 1,
+          size: 200_000,
+          quota: {
+            windows: [{ id: "five_hour", duration_mins: 300, used_percent }],
+            limited: false,
+            observed_at: "2026-09-26T03:43:00Z",
+          },
+        },
+      },
+    });
+    const pctOf = (state: AcpState) => state.quota?.windows[0]?.used_percent ?? null;
+    expect(pctOf(fold(emptyAcpState(), usage(1)))).toBeNull();
+    expect(pctOf(fold(emptyAcpState(), reading(40), usage(2), "SessionCleared", "ConversationCompacted"))).toBe(40);
+    expect(pctOf(fold(emptyAcpState(), reading(40), usage(2), reading(62)))).toBe(62);
+  });
 });
 
 describe("turnActive: daemon truth plus an optimistic overlay (#3417)", () => {

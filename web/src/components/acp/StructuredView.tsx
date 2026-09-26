@@ -618,6 +618,7 @@ function ComposerDock({
           setConfigOption={ctx.setConfigOption}
           sessionUsage={state.sessionUsage}
           authStatus={state.authStatus}
+          quota={state.quota}
           availableCommands={state.availableCommands}
           availability={availability}
           turnActive={state.turnActive}

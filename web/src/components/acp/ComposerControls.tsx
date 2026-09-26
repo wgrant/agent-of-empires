@@ -3,7 +3,15 @@
 import { ComposerPrimitive, useAui } from "@assistant-ui/react";
 import { LoaderCircle, Paperclip, ShieldCheck, Square, X } from "lucide-react";
 
+import { useMinuteClock } from "../../hooks/useMinuteClock";
 import type { AcpState, PromptAttachmentInput } from "../../lib/acpTypes";
+import {
+  compactQuotaWindows,
+  describeQuotaAge,
+  describeQuotaWindow,
+  quotaTone,
+  quotaWindowLabel,
+} from "../../lib/quota";
 import { badgeLabel, badgeTone, resolveSkillSource, type SkillIndex } from "../../lib/skillProvenance";
 import { TOUR_ANCHORS, tourAnchor } from "../../lib/tourSteps";
 import { ProvenanceBadge } from "../ProvenanceBadge";
@@ -178,15 +186,24 @@ export function AuthStatusHint({ authStatus }: { authStatus: AcpState["authStatu
   );
 }
 
-export function UsageHint({ usage }: { usage: AcpState["sessionUsage"] }) {
-  if (!usage || usage.size <= 0) return null;
-  const pct = Math.min(100, Math.round((usage.used / usage.size) * 100));
-  const tone = pct >= 90 ? "text-rose-400" : pct >= 75 ? "text-amber-400" : "text-text-dim";
-  const cost = usage.cost ? formatCost(usage.cost.amount, usage.cost.currency) : null;
-  const explanation =
-    `Context window: ${usage.used.toLocaleString()} of ${usage.size.toLocaleString()} tokens used (${pct}%). ` +
-    `The color warms as the window fills.` +
-    (cost ? ` ${cost} is cumulative session spend since the last /clear or /compact.` : "");
+export function UsageHint({ usage, quota = null }: { usage: AcpState["sessionUsage"]; quota?: AcpState["quota"] }) {
+  const now = useMinuteClock();
+  const windows = compactQuotaWindows(quota, now);
+  const context = usage && usage.size > 0 ? usage : null;
+  if (!context && windows.length === 0) return null;
+  const pct = context ? Math.min(100, Math.round((context.used / context.size) * 100)) : null;
+  const contextTone = pct === null ? "" : pct >= 90 ? "text-rose-400" : pct >= 75 ? "text-amber-400" : "text-text-dim";
+  const cost = usage?.cost ? formatCost(usage.cost.amount, usage.cost.currency) : null;
+  const explanation = [
+    context
+      ? `Context window: ${context.used.toLocaleString()} of ${context.size.toLocaleString()} tokens used (${pct}%). ` +
+        `The color warms as the window fills.`
+      : null,
+    ...(quota ? [...quota.windows.map((w) => describeQuotaWindow(w, now)), describeQuotaAge(quota, now)] : []),
+    cost ? `${cost} is cumulative session spend since the last /clear or /compact.` : null,
+  ]
+    .filter(Boolean)
+    .join(quota ? "\n" : " ");
   // Last in the wrapping cluster: on a narrow footer it takes its own row
   // instead of pushing Stop and Send off screen.
   return (
@@ -194,17 +211,28 @@ export function UsageHint({ usage }: { usage: AcpState["sessionUsage"] }) {
       <Tooltip text={explanation} multiline>
         <span
           data-testid="composer-usage"
-          className={`inline-flex items-center gap-1 text-[11px] tabular-nums ${tone}`}
+          className="inline-flex items-center gap-1 text-[11px] tabular-nums text-text-dim"
           aria-label={explanation}
         >
-          <span className="hidden sm:inline">
-            {formatTokens(usage.used)}/{formatTokens(usage.size)}
-          </span>
-          <span className="opacity-70">
-            <span className="hidden sm:inline">(</span>
-            {pct}%<span className="hidden sm:inline">)</span>
-          </span>
-          {cost ? <span className="opacity-70">· {cost}</span> : null}
+          {context && (
+            <span className={contextTone}>
+              <span className="hidden sm:inline">
+                {formatTokens(context.used)}/{formatTokens(context.size)}
+              </span>
+              <span className="opacity-70">
+                <span className="hidden sm:inline">(</span>
+                {pct}%<span className="hidden sm:inline">)</span>
+              </span>
+            </span>
+          )}
+          {windows.map((w, index) => (
+            <span key={w.id} data-testid="composer-quota-window" className={quotaTone(w.used_percent)}>
+              {(context || index > 0) && <span className="text-text-dim opacity-70">· </span>}
+              {quotaWindowLabel(w)} {Math.round(w.used_percent)}%
+            </span>
+          ))}
+          {/* Quota says more than spend on a subscription; cost stays in the tooltip then. */}
+          {cost && windows.length === 0 ? <span className="opacity-70">· {cost}</span> : null}
         </span>
       </Tooltip>
     </span>

@@ -573,6 +573,7 @@ mod tests {
                     used: 5_000,
                     size: 200_000,
                     cost: None,
+                    quota: None,
                 },
             },
         ]);

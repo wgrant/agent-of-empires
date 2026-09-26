@@ -2017,6 +2017,7 @@ mod tests {
             used,
             size,
             cost: None,
+            quota: None,
         }
     }
 
@@ -2564,7 +2565,12 @@ mod tests {
                 currency: currency.into(),
             })
         };
-        let with_cost = |used, size, cost| SessionUsage { used, size, cost };
+        let with_cost = |used, size, cost| SessionUsage {
+            used,
+            size,
+            cost,
+            quota: None,
+        };
         assert_eq!(
             format_usage(&with_cost(12_300, 200_000, cost(0.4231, "USD"))),
             "12k/200k (6%) · $0.4231"

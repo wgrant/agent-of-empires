@@ -79,6 +79,7 @@ interface Props {
   setConfigOption: (configId: string, value: string) => void | Promise<void>;
   sessionUsage: AcpState["sessionUsage"];
   authStatus: AcpState["authStatus"];
+  quota?: AcpState["quota"];
   availableCommands: AcpState["availableCommands"];
   /** Shared policy for what submitting the current draft means. */
   availability: Exclude<ComposerAvailability, { kind: "read_only" }>;
@@ -297,7 +298,7 @@ export function Composer(props: Props) {
                   </span>
                 )}
                 <div className="shrink-0">
-                  <UsageHint usage={props.sessionUsage} />
+                  <UsageHint usage={props.sessionUsage} quota={props.quota} />
                 </div>
                 {turnActive && <StopButton compact />}
               </div>
@@ -452,7 +453,7 @@ export function Composer(props: Props) {
                   summary={statusParts}
                 />
                 <AuthStatusHint authStatus={props.authStatus} />
-                <UsageHint usage={props.sessionUsage} />
+                <UsageHint usage={props.sessionUsage} quota={props.quota} />
               </div>
 
               <div data-testid="composer-actions" className="flex shrink-0 items-center gap-2">

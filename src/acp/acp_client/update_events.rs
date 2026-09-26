@@ -414,6 +414,7 @@ pub(super) fn map_update_to_events(
             let usage = SessionUsage {
                 used: u.used,
                 size: u.size,
+                quota: super::quota::quota_from_meta(u.meta.as_ref(), chrono::Utc::now()),
                 cost: u.cost.map(|c| UsageCost {
                     amount: c.amount,
                     currency: c.currency,
@@ -1007,5 +1008,35 @@ mod tests {
         assert!(!update("Monitor", Some(serde_json::json!({})))
             .iter()
             .any(|e| matches!(e, Event::MonitorArmed { .. })));
+    }
+
+    #[test]
+    fn usage_update_emits_typed_usage_event() {
+        use agent_client_protocol::schema::v1::{Cost, UsageUpdate};
+        let u = UsageUpdate::new(12_345, 200_000).cost(Cost::new(0.42, "USD"));
+        let events = claude(SessionUpdate::UsageUpdate(u));
+        let [Event::UsageUpdated { usage }] = events.as_slice() else {
+            panic!("expected UsageUpdated, got {events:?}");
+        };
+        assert_eq!((usage.used, usage.size), (12_345, 200_000));
+        let cost = usage.cost.as_ref().unwrap();
+        assert!((cost.amount - 0.42).abs() < f64::EPSILON);
+        assert_eq!(cost.currency, "USD");
+        assert!(usage.quota.is_none());
+
+        let with_quota = UsageUpdate::new(1, 2).meta(
+            serde_json::json!({"_claude/rateLimit": {
+                "status": "allowed",
+                "unifiedWindows": {"five_hour": {"utilization": 0.5, "resetsAt": 1_790_396_400}}
+            }})
+            .as_object()
+            .cloned(),
+        );
+        let events = claude(SessionUpdate::UsageUpdate(with_quota));
+        let [Event::UsageUpdated { usage }] = events.as_slice() else {
+            panic!("expected UsageUpdated, got {events:?}");
+        };
+        let quota = usage.quota.as_ref().expect("quota from rate-limit meta");
+        assert_eq!(quota.windows[0].id, "five_hour");
     }
 }
