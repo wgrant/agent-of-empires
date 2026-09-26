@@ -16,6 +16,74 @@ export const SUBAGENT_TASK_NAME = "_aoe_subagent_task";
 export const TOOL_GROUP_NAME = "_aoe_tool_group";
 /** Synthetic part for a folded run of todo snapshots. */
 export const TODO_GROUP_NAME = "_aoe_todo_group";
+/** Synthetic part for a native subagent session and its own transcript. */
+export const NATIVE_SUBAGENT_NAME = "_aoe_native_subagent";
+
+/** What a native subagent card renders, in its session's order. */
+export type NativeSubagentItem =
+  | { type: "text"; text: string }
+  | { type: "reasoning"; text: string }
+  | { type: "tool"; start: ActivityRow; result?: ActivityRow }
+  | { type: "subagent"; subagent: NativeSubagent };
+
+export interface NativeSubagent {
+  id: string;
+  name: string;
+  task: string;
+  /** Terminal state, or `null` while it runs. */
+  state: string | null;
+  /** No terminal state arrived and nothing is running any more. */
+  unresolved: boolean;
+  startedAt: string;
+  /** Its last row's time, once it has a terminal state. */
+  endedAt?: string;
+  items: NativeSubagentItem[];
+}
+
+/** A subagent's own rows in order, recursing into the subagents it spawned. */
+function nativeSubagent(
+  header: ActivityRow,
+  rowsByOwner: ReadonlyMap<string, ActivityRow[]>,
+  visiblyBusy: boolean,
+): NativeSubagent {
+  const info = header.subagent!;
+  const items: NativeSubagentItem[] = [];
+  const tools = new Map<string, Extract<NativeSubagentItem, { type: "tool" }>>();
+  const appendText = (type: "text" | "reasoning", text: string) => {
+    const last = items[items.length - 1];
+    if (last?.type === type) last.text += text;
+    else if (text) items.push({ type, text });
+  };
+  let lastAt = header.at;
+  for (const row of rowsByOwner.get(info.id) ?? []) {
+    lastAt = row.at;
+    if (row.kind === "subagent" && row.subagent) {
+      items.push({ type: "subagent", subagent: nativeSubagent(row, rowsByOwner, visiblyBusy) });
+    } else if (row.kind === "tool_start" && row.tool) {
+      const item = { type: "tool" as const, start: row };
+      tools.set(row.tool.id, item);
+      items.push(item);
+    } else if (row.kind === "tool_complete" || row.kind === "tool_error" || row.kind === "tool_stopped") {
+      const item = tools.get(row.toolCallId ?? "");
+      if (item) item.result = row;
+    } else if (row.kind === "thinking") {
+      appendText("reasoning", row.text);
+    } else if (row.kind === "message") {
+      appendText("text", row.text);
+    }
+  }
+  const state = info.state ?? null;
+  return {
+    id: info.id,
+    name: info.name,
+    task: header.text,
+    state,
+    unresolved: state === null && !visiblyBusy,
+    startedAt: header.at,
+    ...(state === null ? {} : { endedAt: lastAt }),
+    items,
+  };
+}
 
 /** Two in a row stay inline; three or more fold. */
 const TOOL_GROUP_MIN_RUN = 3;
@@ -84,8 +152,14 @@ export function activityToThreadMessages(
     messages.push({ id: row.id, role: "user", content, ...extra, createdAt: parseDate(row.at) });
   };
   const withCustom = (key: string, value: unknown) => ({ metadata: value ? { custom: { [key]: value } } : undefined });
+  // A native subagent's rows render inside its card, not the main flow.
+  const rowsByOwner = new Map<string, ActivityRow[]>();
+  for (const row of effectiveRows) {
+    if (row.subagentId) rowsByOwner.set(row.subagentId, [...(rowsByOwner.get(row.subagentId) ?? []), row]);
+  }
 
   for (const row of effectiveRows) {
+    if (row.subagentId) continue;
     const callout = CALLOUTS[row.kind];
     if (callout) {
       flushAssistant();
@@ -125,7 +199,9 @@ export function activityToThreadMessages(
     }
 
     currentAssistant ??= new AssistantBuilder(row.id, row.at);
-    if (row.kind === "tool_start" && row.tool) {
+    if (row.kind === "subagent") {
+      if (row.subagent) currentAssistant.appendSubagent(nativeSubagent(row, rowsByOwner, visiblyBusy));
+    } else if (row.kind === "tool_start" && row.tool) {
       currentAssistant.appendToolCall(row.tool);
     } else if (row.kind === "tool_complete" || row.kind === "tool_error" || row.kind === "tool_stopped") {
       currentAssistant.completeToolCall(
@@ -215,6 +291,15 @@ class AssistantBuilder {
       toolCallId: tool.id,
       toolName: tool.kind || "other",
       argsText: JSON.stringify(argsObj),
+    });
+  }
+
+  appendSubagent(subagent: NativeSubagent) {
+    this.parts.push({
+      type: "tool-call",
+      toolCallId: `native-subagent-${subagent.id}`,
+      toolName: NATIVE_SUBAGENT_NAME,
+      argsText: JSON.stringify(subagent),
     });
   }
 
@@ -326,7 +411,7 @@ function collapseToolRuns(parts: DraftPart[], todosEnabled: boolean): DraftPart[
     } else if (
       run.length >= TOOL_GROUP_MIN_RUN &&
       // A todo update among real work, or a subagent card, stays inline.
-      !run.some((p) => isTodo(p) || p.toolName === SUBAGENT_TASK_NAME)
+      !run.some((p) => isTodo(p) || p.toolName === SUBAGENT_TASK_NAME || p.toolName === NATIVE_SUBAGENT_NAME)
     ) {
       for (let i = 0; i < run.length; i += TOOL_GROUP_MAX_RUN) {
         const chunk = run.slice(i, i + TOOL_GROUP_MAX_RUN);

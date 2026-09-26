@@ -691,7 +691,8 @@ export interface ActivityRow {
     | "compacted"
     | "compaction_summary"
     | "summary"
-    | "agent_notice";
+    | "agent_notice"
+    | "subagent";
   text: string;
   sendFailure?: string;
   toolCallId?: string;
@@ -709,7 +710,19 @@ export interface ActivityRow {
   asyncSubagent?: boolean;
   /** An `agent_notice` row's severity: `info`, `warning`, or `error`. */
   severity?: string;
+  /** The native subagent whose session produced this row; on a `subagent` row, its spawner. */
+  subagentId?: string;
+  /** The subagent a `subagent` row introduces; `text` holds its task. */
+  subagent?: SubagentInfo;
   at: string; // ISO-8601
+}
+
+/** Wire mirror of the Rust `SubagentInfo`. */
+export interface SubagentInfo {
+  id: string;
+  name: string;
+  /** Absent while it runs; then `completed`, `failed`, `cancelled`, or `disconnected`. */
+  state?: string | null;
 }
 
 /** Wire mirror of the Rust `TranscriptRow` (src/acp/transcript.rs). */
@@ -732,6 +745,8 @@ export interface TranscriptRow {
   elicitation_answers?: ElicitationAnswer[];
   async_subagent?: boolean;
   severity?: string | null;
+  subagent_id?: string | null;
+  subagent?: SubagentInfo | null;
 }
 
 export type TranscriptDelta =
@@ -783,6 +798,8 @@ export function transcriptRowToActivity(row: TranscriptRow, sessionId: string): 
       ? { elicitationAnswers: row.elicitation_answers }
       : {}),
     ...(row.async_subagent ? { asyncSubagent: true } : {}),
+    ...(row.subagent_id ? { subagentId: row.subagent_id } : {}),
+    ...(row.subagent ? { subagent: row.subagent } : {}),
   };
 }
 

@@ -40,6 +40,22 @@ pub struct TranscriptRow {
     /// An `agent_notice` row's severity: `info`, `warning`, or `error`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub severity: Option<String>,
+    /// The native subagent whose session produced this row; on a `subagent`
+    /// row, the one that spawned it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subagent_id: Option<String>,
+    /// The subagent a `subagent` row introduces; `text` holds its task.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subagent: Option<SubagentInfo>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SubagentInfo {
+    pub id: String,
+    pub name: String,
+    /// `None` while it runs; then `completed`, `failed`, `cancelled`, or `disconnected`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub state: Option<String>,
 }
 
 /// The kind discriminant for a [`TranscriptRow`]. Mirrors the web
@@ -68,6 +84,8 @@ pub enum TranscriptRowKind {
     Notice,
     /// An advisory from the agent itself, carrying a severity.
     AgentNotice,
+    /// A native subagent the agent delegated to; its own rows name it in `subagent_id`.
+    Subagent,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -103,6 +121,10 @@ pub struct TranscriptModel {
     elicitation_tool_ids: HashSet<String>,
     /// The row receiving the current consecutive message or thought stream.
     open_text_run: Option<(TranscriptRowKind, usize)>,
+    /// Each subagent's own open run, so its text never joins the main agent's.
+    subagent_text_runs: HashMap<String, (TranscriptRowKind, usize)>,
+    /// The subagent whose event is being applied; stamped on the rows it appends.
+    scope: Option<String>,
     group_counter: u64,
     /// Frames at or below this seq are dropped, so replay overlap is harmless.
     last_seq: u64,
@@ -132,6 +154,13 @@ impl TranscriptModel {
             return Vec::new();
         }
         self.last_seq = seq;
+        self.apply(seq, event)
+    }
+
+    fn apply(&mut self, seq: u64, event: &Event) -> Vec<TranscriptDelta> {
+        if let Event::SubagentUpdate { id, event } = event {
+            return self.apply_in_subagent(seq, id, event);
+        }
         let incoming_text_kind = match event {
             Event::AgentMessageChunk { .. } | Event::AgentMessageSnapshot { .. } => {
                 Some(TranscriptRowKind::Message)
@@ -408,6 +437,39 @@ impl TranscriptModel {
                 row.severity = Some(severity.clone());
                 vec![self.append(row)]
             }
+            Event::SubagentSpawned {
+                id,
+                parent,
+                name,
+                task,
+            } => {
+                let row_id = format!("subagent-{id}");
+                if self.row_ids.contains(&row_id) {
+                    return Vec::new();
+                }
+                self.turn_has_output = true;
+                let mut row = self.grouped_row(row_id, TranscriptRowKind::Subagent, task.clone());
+                row.subagent_id = parent.clone();
+                row.subagent = Some(SubagentInfo {
+                    id: id.clone(),
+                    name: name.clone(),
+                    state: None,
+                });
+                vec![self.append(row)]
+            }
+            Event::SubagentStateChanged { id, state } => {
+                let Some(row) = self
+                    .rows
+                    .iter_mut()
+                    .find(|row| row.subagent.as_ref().is_some_and(|s| &s.id == id))
+                else {
+                    return Vec::new();
+                };
+                if let Some(info) = row.subagent.as_mut() {
+                    info.state = Some(state.clone());
+                }
+                vec![patch(row)]
+            }
             Event::ThinkingStarted => {
                 self.turn_active = true;
                 self.turn_has_output = true;
@@ -590,7 +652,23 @@ impl TranscriptModel {
         removed
     }
 
-    fn append(&mut self, row: TranscriptRow) -> TranscriptDelta {
+    /// Apply a subagent's event with its own text run, its rows stamped with its id.
+    fn apply_in_subagent(&mut self, seq: u64, id: &str, event: &Event) -> Vec<TranscriptDelta> {
+        let subagent_run = self.subagent_text_runs.remove(id);
+        let main_run = std::mem::replace(&mut self.open_text_run, subagent_run);
+        let main_scope = self.scope.replace(id.to_string());
+        let deltas = self.apply(seq, event);
+        self.scope = main_scope;
+        if let Some(run) = std::mem::replace(&mut self.open_text_run, main_run) {
+            self.subagent_text_runs.insert(id.to_string(), run);
+        }
+        deltas
+    }
+
+    fn append(&mut self, mut row: TranscriptRow) -> TranscriptDelta {
+        if row.subagent_id.is_none() {
+            row.subagent_id = self.scope.clone();
+        }
         self.row_ids.insert(row.id.clone());
         self.rows.push(row.clone());
         TranscriptDelta::Append(row)
@@ -684,6 +762,8 @@ impl TranscriptRow {
             elicitation_answers: Vec::new(),
             async_subagent: false,
             severity: None,
+            subagent_id: None,
+            subagent: None,
         }
     }
 }
@@ -849,6 +929,52 @@ mod tests {
                 resolved: None,
             },
         }
+    }
+
+    #[test]
+    fn subagent_rows_are_scoped_and_keep_their_own_text_runs() {
+        let child = |event: Event| Event::SubagentUpdate {
+            id: "c1".into(),
+            event: Box::new(event),
+        };
+        let model = fold([
+            prompt("delegate"),
+            Event::SubagentSpawned {
+                id: "c1".into(),
+                parent: None,
+                name: "Explorer".into(),
+                task: "Find it".into(),
+            },
+            chunk("main "),
+            child(chunk("child ")),
+            chunk("text"),
+            child(chunk("more")),
+            child(started(tool("t1", "Read"))),
+            Event::SubagentStateChanged {
+                id: "c1".into(),
+                state: "completed".into(),
+            },
+        ]);
+        let rows: Vec<(TranscriptRowKind, Option<&str>, &str)> = model
+            .rows()
+            .iter()
+            .map(|r| (r.kind, r.subagent_id.as_deref(), r.text.as_str()))
+            .collect();
+        assert_eq!(
+            rows,
+            [
+                (TranscriptRowKind::UserPrompt, None, "delegate"),
+                (TranscriptRowKind::Subagent, None, "Find it"),
+                (TranscriptRowKind::Message, None, "main text"),
+                (TranscriptRowKind::Message, Some("c1"), "child more"),
+                (TranscriptRowKind::ToolStart, Some("c1"), "Read"),
+            ]
+        );
+        let header = model.rows()[1].subagent.as_ref().unwrap();
+        assert_eq!(
+            (header.name.as_str(), header.state.as_deref()),
+            ("Explorer", Some("completed"))
+        );
     }
 
     fn fold(events: impl IntoIterator<Item = Event>) -> TranscriptModel {

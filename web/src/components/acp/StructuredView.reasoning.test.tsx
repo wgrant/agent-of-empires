@@ -8,7 +8,8 @@ vi.mock("./Markdown", () => ({
 }));
 
 import { ThinkingDisplayContext, type ThinkingDisplay } from "../../lib/thinkingDisplay";
-import { AssistantReasoning, AssistantText } from "./ThreadMessages";
+import { AssistantReasoning } from "./AssistantReasoning";
+import { AssistantText } from "./ThreadMessages";
 
 describe("AssistantReasoning", () => {
   it("keeps a thinking trace collapsed until requested", () => {

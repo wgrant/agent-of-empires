@@ -16,6 +16,8 @@ export const HISTORY_WINDOW_STEP = 150;
  * of rows, so it must not be the only one. In particular, completed tool
  * cards let the navigator reveal a long turn incrementally. */
 function endsVisualBlock(row: ActivityRow): boolean {
+  // A subagent's rows render inside its card, so the window keeps them with it.
+  if (row.subagentId) return false;
   switch (row.kind) {
     case "tool_complete":
     case "tool_error":
@@ -35,6 +37,7 @@ function endsVisualBlock(row: ActivityRow): boolean {
       return true;
     case "tool_start":
     case "notice":
+    case "subagent":
       return false;
   }
 }
