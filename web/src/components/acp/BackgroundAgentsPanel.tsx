@@ -3,14 +3,33 @@
 // existing WebSocket, so it opens no connection of its own.
 
 import { useEffect, useState } from "react";
-import { Bot, ChevronDown, Eye, Layers, Maximize2, Square, SquareTerminal, Workflow, X } from "lucide-react";
+import {
+  Bot,
+  ChevronDown,
+  Eye,
+  Layers,
+  LocateFixed,
+  Maximize2,
+  Square,
+  SquareTerminal,
+  Workflow,
+  X,
+} from "lucide-react";
 
 import { useAsyncTasks, useBackgroundAgents } from "../../hooks/useAcpSession";
+import { requestCardFocus } from "../../hooks/useCardFocus";
 import type { BackgroundAgent, BackgroundAgentStatus, BackgroundAgentTool } from "../../lib/acpTypes";
 import { backgroundItems, type BackgroundItem, type BackgroundKind } from "../../lib/backgroundWork";
 import { formatTokens } from "../../lib/turnUsage";
 
-export function BackgroundAgentsPanel({ sessionId }: { sessionId: string | null }) {
+export function BackgroundAgentsPanel({
+  sessionId,
+  onShowInTranscript,
+}: {
+  sessionId: string | null;
+  /** Reveal the transcript first, where it shares the screen with this pane (mobile). */
+  onShowInTranscript?: () => void;
+}) {
   const agents = useBackgroundAgents(sessionId);
   const tasks = useAsyncTasks(sessionId);
   const items = backgroundItems(agents, tasks);
@@ -37,7 +56,7 @@ export function BackgroundAgentsPanel({ sessionId }: { sessionId: string | null 
             {interruptible && sessionId && <StopButton sessionId={sessionId} />}
           </GroupHeader>
           {running.map((item) => (
-            <ItemRow key={item.key} item={item} sessionId={sessionId} />
+            <ItemRow key={item.key} item={item} sessionId={sessionId} onShowInTranscript={onShowInTranscript} />
           ))}
         </>
       )}
@@ -52,7 +71,10 @@ export function BackgroundAgentsPanel({ sessionId }: { sessionId: string | null 
             <ChevronDown className={`h-3 w-3 transition-transform ${finishedOpen ? "" : "-rotate-90"}`} aria-hidden />
             Finished · {finished.length}
           </button>
-          {finishedOpen && finished.map((item) => <ItemRow key={item.key} item={item} sessionId={sessionId} />)}
+          {finishedOpen &&
+            finished.map((item) => (
+              <ItemRow key={item.key} item={item} sessionId={sessionId} onShowInTranscript={onShowInTranscript} />
+            ))}
         </>
       )}
     </div>
@@ -91,7 +113,15 @@ function counts(item: BackgroundItem): string | null {
   return parts.filter(Boolean).join(" · ") || null;
 }
 
-function ItemRow({ item, sessionId }: { item: BackgroundItem; sessionId: string | null }) {
+function ItemRow({
+  item,
+  sessionId,
+  onShowInTranscript,
+}: {
+  item: BackgroundItem;
+  sessionId: string | null;
+  onShowInTranscript?: () => void;
+}) {
   const [open, setOpen] = useState(false);
   const [modal, setModal] = useState(false);
   const Icon = KIND_ICONS[item.kind];
@@ -119,6 +149,20 @@ function ItemRow({ item, sessionId }: { item: BackgroundItem; sessionId: string 
           />
         </button>
         {item.stopTaskId && sessionId && <StopTaskButton sessionId={sessionId} taskId={item.stopTaskId} />}
+        {item.cardId && (
+          <button
+            type="button"
+            onClick={() => {
+              onShowInTranscript?.();
+              requestCardFocus(item.cardId!);
+            }}
+            title="Show in transcript"
+            aria-label="Show in transcript"
+            className="shrink-0 px-2 py-2 text-text-dim hover:text-text-secondary"
+          >
+            <LocateFixed className="h-3.5 w-3.5" />
+          </button>
+        )}
         {item.agent && (
           <button
             type="button"

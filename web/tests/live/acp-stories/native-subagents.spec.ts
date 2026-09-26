@@ -36,4 +36,12 @@ test("a native subagent renders as a card holding its own transcript", async ({ 
   await expect(body.getByText("CHILD_REPLY")).toBeVisible();
   await expect(body.getByText("Count the lines")).toBeVisible();
   await expect(body.getByText("Read notes")).toBeVisible();
+
+  // The Background pane lists it and jumps back to its card, reopening it.
+  await card.click();
+  await expect(body).toHaveCount(0);
+  await page.getByRole("button", { name: /Toggle background pane/ }).click();
+  await expect(page.getByTestId("background-item").filter({ hasText: "Explorer" })).toBeVisible();
+  await page.getByRole("button", { name: "Show in transcript" }).click();
+  await expect(body.getByText("CHILD_REPLY")).toBeVisible();
 });

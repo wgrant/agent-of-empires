@@ -141,6 +141,23 @@ describe("BackgroundAgentsPanel", () => {
     expect(renderPanel([a]).queryByRole("button", { name: /Interrupt/ })).toBeNull();
   });
 
+  it("shows an item's transcript card, revealing the transcript first", () => {
+    const focused: string[] = [];
+    const onFocus = (e: Event) => focused.push((e as CustomEvent<string>).detail);
+    window.addEventListener("aoe:focus-transcript-card", onFocus);
+    const onShowInTranscript = vi.fn();
+    agentsMock.mockReturnValue([agent({ agentId: "kid", toolCallId: "" })]);
+    tasksMock.mockReturnValue([task({ taskType: "shell", id: "sh" })]);
+    const { getAllByRole } = render(<BackgroundAgentsPanel sessionId="s-1" onShowInTranscript={onShowInTranscript} />);
+    // A shell has no card to show.
+    const buttons = getAllByRole("button", { name: "Show in transcript" });
+    expect(buttons).toHaveLength(1);
+    fireEvent.click(buttons[0]!);
+    expect(onShowInTranscript).toHaveBeenCalled();
+    expect(focused).toEqual(["native-subagent-kid"]);
+    window.removeEventListener("aoe:focus-transcript-card", onFocus);
+  });
+
   it("opens a details modal showing the full task, result, and tools", () => {
     const { getByRole, queryByRole } = renderPanel([
       agent({

@@ -4,6 +4,7 @@
 import { Sparkles, Workflow } from "lucide-react";
 
 import type { NativeSubagent, NativeSubagentItem } from "./activityMessages";
+import { useCardFocus } from "../../hooks/useCardFocus";
 import { AssistantReasoning } from "./AssistantReasoning";
 import { Markdown } from "./Markdown";
 import { CardChrome, PlaceholderLine, useToolCardExpansion, type Status } from "./ToolCardChrome";
@@ -59,6 +60,7 @@ function cardLabel(subagent: NativeSubagent): "workflow" | "skill" | "subagent" 
 export function NativeSubagentCard({ subagent }: { subagent: NativeSubagent }) {
   const status = subagentStatus(subagent);
   const [open, setOpen] = useToolCardExpansion(status);
+  const focus = useCardFocus(`native-subagent-${subagent.id}`, () => setOpen(true));
   const tools = subagent.items.filter((item) => item.type === "tool").length;
   const latest = status === "running" ? (subagent.activity ?? latestActivity(subagent.items)) : null;
   const label = cardLabel(subagent);
@@ -66,6 +68,8 @@ export function NativeSubagentCard({ subagent }: { subagent: NativeSubagent }) {
   return (
     <CardChrome
       status={status}
+      anchorRef={focus.ref}
+      highlighted={focus.flash}
       icon={<Icon className="h-3.5 w-3.5" />}
       label={label}
       startedAt={subagent.startedAt}
@@ -80,7 +84,8 @@ export function NativeSubagentCard({ subagent }: { subagent: NativeSubagent }) {
           )}
         </>
       }
-      meta={latest && <span className="max-w-[40%] truncate text-[11px] text-text-dim">{latest}</span>}
+      // A narrow card keeps its name; the Background pane still shows the activity.
+      meta={latest && <span className="hidden max-w-[40%] truncate text-[11px] text-text-dim sm:inline">{latest}</span>}
       expanded={open}
       onToggle={() => setOpen((v) => !v)}
       body={
