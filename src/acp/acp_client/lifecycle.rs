@@ -38,6 +38,13 @@ pub(crate) enum LifecycleSignal {
     },
     CompactionStarted,
     CompactionCompleted,
+    /// A native subagent the adapter holds the turn open for.
+    SubagentStarted {
+        id: String,
+    },
+    SubagentEnded {
+        id: String,
+    },
     /// The adapter emits this after the turn's own terminal on a cancel, so
     /// it must never read as the start of new work.
     CompactionFailed,

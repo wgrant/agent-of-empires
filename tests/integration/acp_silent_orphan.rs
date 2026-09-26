@@ -6,7 +6,7 @@
 //!   2. never wrapped up: a real wedge, so the base grace expires and the
 //!      watchdog cancels with `prompt_orphaned`.
 //!   3. off-protocol work pending (async agent, backgrounded Bash, scheduled
-//!      wakeup): suppressed until the work can be over.
+//!      wakeup, live native subagent): suppressed until the work can be over.
 //!   4. grace = 0: watchdog skipped entirely.
 //!
 //! Scenarios that depend on a `usage_update` assert the daemon received it, so
@@ -258,6 +258,14 @@ async fn silent_orphan_suppressed_while_off_protocol_work_is_pending() {
             "WAKEUP_ORPHAN trigger",
             None,
             // The wakeup deadline must beat the fast grace this frame arms.
+            Some(Some(true)),
+        ),
+        (
+            // claude-agent-acp holds the turn open for a native subagent, which
+            // can work silently long after the turn's own accounting.
+            "silent-orphan-native-subagent",
+            "NATIVE_SUBAGENT_ORPHAN trigger",
+            None,
             Some(Some(true)),
         ),
     ];

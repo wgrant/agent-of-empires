@@ -3,7 +3,7 @@
 
 use crate::acp::agent_profiles;
 use agent_client_protocol::schema::v1::SessionUpdate;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 use tokio::time::Instant;
 
@@ -33,7 +33,8 @@ pub(super) struct SilentOrphanWatchdogConfig {
 
 /// Per-prompt silent-orphan state machine. Time is injected for tests.
 ///
-/// An open tool call or a future wake always suppresses firing. Off-protocol
+/// An open tool call, a live native subagent, or a future wake always
+/// suppresses firing. Off-protocol
 /// work uses the grace floor; `cost_seen` switches to the fast grace until the
 /// next non-accounting signal clears it.
 #[derive(Debug, Default)]
@@ -45,6 +46,9 @@ pub(super) struct SilentOrphanWatchdog {
     tool_calls_in_flight: HashMap<String, bool>,
     off_protocol_work_seen: Option<OffProtocolWorkKind>,
     wakeup_suppress_until: Option<Instant>,
+    /// Native subagents still running: the adapter holds the turn open for
+    /// them, silent as they may be, so the turn is not orphaned.
+    live_subagents: HashSet<String>,
     /// Distinguishes a stream that died mid-message from background work
     /// still producing tool activity.
     last_refresh_was_progress: bool,
@@ -70,6 +74,14 @@ impl SilentOrphanWatchdog {
             LifecycleSignal::CompactionStarted => {
                 self.refresh(now, true);
                 self.off_protocol_work_seen = Some(OffProtocolWorkKind::Compaction);
+            }
+            LifecycleSignal::SubagentStarted { id } => {
+                self.refresh(now, true);
+                self.live_subagents.insert(id);
+            }
+            LifecycleSignal::SubagentEnded { id } => {
+                self.refresh(now, true);
+                self.live_subagents.remove(&id);
             }
             LifecycleSignal::CompactionCompleted | LifecycleSignal::CompactionFailed => {
                 if self.off_protocol_work_seen == Some(OffProtocolWorkKind::Compaction) {
@@ -151,6 +163,7 @@ impl SilentOrphanWatchdog {
         }
         self.saw_first_progress
             && self.tool_calls_in_flight.is_empty()
+            && self.live_subagents.is_empty()
             && self.wakeup_suppress_until.is_none()
             && self
                 .last_progress_at
@@ -579,6 +592,39 @@ mod tests {
             w.apply_signal(sig, t0, chrono::Utc::now(), CFG);
             assert!(!w.should_fire(t0 + Duration::from_millis(120_400), CFG));
         }
+    }
+
+    #[test]
+    fn a_live_native_subagent_holds_off_the_watchdog() {
+        let cfg = SilentOrphanWatchdogConfig {
+            base_grace: Duration::from_secs(120),
+            fast_grace: Duration::from_secs(20),
+            off_protocol_grace_floor: OFF_PROTOCOL_WORK_GRACE_FLOOR,
+        };
+        let t0 = Instant::now();
+        let mut w = SilentOrphanWatchdog::default();
+        let apply = |w: &mut SilentOrphanWatchdog, sig, at| {
+            w.apply_signal(sig, at, chrono::Utc::now(), cfg)
+        };
+        apply(
+            &mut w,
+            LifecycleSignal::SubagentStarted { id: "kid".into() },
+            t0,
+        );
+        // The turn's accounting arrives, then the subagent works on silently.
+        apply(&mut w, LifecycleSignal::TerminalUsage, t0);
+        assert!(!w.should_fire(t0 + Duration::from_secs(600), cfg));
+        apply(
+            &mut w,
+            LifecycleSignal::SubagentEnded { id: "kid".into() },
+            t0 + Duration::from_secs(600),
+        );
+        apply(
+            &mut w,
+            LifecycleSignal::TerminalUsage,
+            t0 + Duration::from_secs(600),
+        );
+        assert!(w.should_fire(t0 + Duration::from_secs(621), cfg));
     }
 
     #[test]

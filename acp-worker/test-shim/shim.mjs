@@ -214,6 +214,18 @@ const PARKED_SCENARIOS = {
     { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "wedged mid-response" } },
     usage(120, false),
   ],
+  // A native subagent the adapter holds the turn open for, working silently
+  // after the turn's own accounting: the watchdog stays suppressed.
+  NATIVE_SUBAGENT_ORPHAN: [
+    {
+      sessionUpdate: "subagent_spawned",
+      subagentSessionId: "native-kid-1",
+      name: "Explorer",
+      task: "Read the large files",
+      capabilities: {},
+    },
+    usage(300, true),
+  ],
   // A Claude async agent launch: the watchdog stays suppressed.
   ASYNC_AGENT_ORPHAN: [
     {
@@ -273,7 +285,7 @@ async function handlePrompt(params, client) {
     notify({ sessionUpdate: "agent_message_chunk", content: { type: "text", text } });
 
   // Checked in this order, as the scenarios' keywords are distinct.
-  for (const keyword of ["COST_THEN_SILENCE", "SILENCE_NO_COST", "ASYNC_AGENT_ORPHAN"]) {
+  for (const keyword of ["COST_THEN_SILENCE", "SILENCE_NO_COST", "ASYNC_AGENT_ORPHAN", "NATIVE_SUBAGENT_ORPHAN"]) {
     if (userText.includes(keyword)) {
       for (const update of PARKED_SCENARIOS[keyword]) await notify(update);
       return park();

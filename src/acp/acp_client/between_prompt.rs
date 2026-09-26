@@ -39,6 +39,7 @@ pub(super) fn starts_agent_initiated_turn(signal: Option<&LifecycleSignal>) -> b
                 | LifecycleSignal::ToolStarted { .. }
                 | LifecycleSignal::ToolCompleted { .. }
                 | LifecycleSignal::CompactionStarted
+                | LifecycleSignal::SubagentStarted { .. }
         )
     )
 }
