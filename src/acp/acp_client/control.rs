@@ -260,6 +260,16 @@ impl DaemonControlClient {
         rx
     }
 
+    /// Release the waiter of a turn that ended without its response, such as
+    /// one the watchdog closed while the adapter held the prompt open. Its
+    /// late completion is then ignored and the next prompt can be sent.
+    pub(super) fn abandon_prompt(&self) {
+        let mut completion = self.completion.lock().expect("completion mutex poisoned");
+        if matches!(*completion, PromptCompletion::Pending { .. }) {
+            *completion = PromptCompletion::LocalIdle;
+        }
+    }
+
     pub(super) async fn cancel(&self) {
         let _ = self.send(ControlBody::Cancel).await;
     }
