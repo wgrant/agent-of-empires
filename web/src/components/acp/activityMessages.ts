@@ -164,7 +164,10 @@ export function activityToThreadMessages(
   }
 
   for (const row of effectiveRows) {
-    if (row.subagentId) continue;
+    if (row.subagentId) {
+      currentAssistant?.breakText();
+      continue;
+    }
     const callout = CALLOUTS[row.kind];
     if (callout) {
       flushAssistant();
@@ -262,6 +265,7 @@ class AssistantBuilder {
   private id: string;
   private createdAt?: Date;
   private parts: DraftPart[] = [];
+  private textBreak = false;
 
   constructor(id: string, createdAtIso: string) {
     this.id = `assistant-${id}`;
@@ -271,8 +275,14 @@ class AssistantBuilder {
   appendText(text: string) {
     if (!text) return;
     const last = this.parts[this.parts.length - 1];
-    if (last && last.type === "text") last.text += text;
+    if (last && last.type === "text") last.text += this.textBreak ? `\n\n${text}` : text;
     else this.parts.push({ type: "text", text });
+    this.textBreak = false;
+  }
+
+  /** Rows rendered elsewhere came between two replies, which must not run together. */
+  breakText() {
+    this.textBreak = true;
   }
 
   appendReasoning(text: string) {
