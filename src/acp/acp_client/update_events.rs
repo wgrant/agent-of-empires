@@ -11,6 +11,7 @@ use agent_client_protocol::schema::v1::{ContentBlock, MessageId, SessionUpdate};
 use tracing::debug;
 
 use super::config_options::map_acp_config_option;
+use super::extension_updates::{extension_events, extension_update};
 use super::lifecycle::{detect_off_protocol_work_completed, OffProtocolWorkKind};
 use super::plan::{extract_plan_from_switch_mode, map_plan_status, plan_status_to_str};
 use super::raw_input::{
@@ -126,6 +127,20 @@ fn wake_tool_event(
     }
 }
 
+/// A finished compaction; the model forgot its plan, so the plan strip clears too.
+pub(super) fn compaction_completed_events() -> Vec<Event> {
+    vec![
+        Event::ConversationCompacted,
+        Event::PlanUpdated {
+            plan: Plan {
+                plan_id: format!("plan-{}", chrono::Utc::now().timestamp_millis()),
+                version: 1,
+                steps: Vec::new(),
+            },
+        },
+    ]
+}
+
 /// Unmapped variants pass through as `RawAgentUpdate`. `profile` gates the
 /// claude-specific synthesis (subagent linkage, ExitPlanMode, wake tools).
 pub(super) fn map_update_to_events(
@@ -142,15 +157,7 @@ pub(super) fn map_update_to_events(
                     events.push(Event::ConversationCompactionStarted);
                 }
                 if is_compact_completion(&text.text) {
-                    events.push(Event::ConversationCompacted);
-                    // The model forgot its plan, so clear the plan strip.
-                    events.push(Event::PlanUpdated {
-                        plan: Plan {
-                            plan_id: format!("plan-{}", chrono::Utc::now().timestamp_millis()),
-                            version: 1,
-                            steps: Vec::new(),
-                        },
-                    });
+                    events.extend(compaction_completed_events());
                 }
                 events
             }
@@ -440,7 +447,9 @@ pub(super) fn map_update_to_events(
             vec![Event::ConfigOptionsUpdated { options }]
         }
         // AoE owns automatic renaming, so agent titles are ignored.
-        SessionUpdate::SessionInfoUpdate(_) => Vec::new(),
+        ref info @ SessionUpdate::SessionInfoUpdate(_) => extension_update(info)
+            .map(extension_events)
+            .unwrap_or_default(),
         other => vec![raw_event(&other)],
     }
 }

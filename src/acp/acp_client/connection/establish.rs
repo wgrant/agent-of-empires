@@ -28,7 +28,7 @@ use crate::acp::acp_client::config_options::{
 };
 use crate::acp::acp_client::control::{establish_session_v3, DaemonControlClient};
 use crate::acp::acp_client::errors::{acp_internal_error, AcpError, IncompatibleAgentError};
-use crate::acp::acp_client::handshake::{build_initialize_request, should_fork};
+use crate::acp::acp_client::handshake::{build_initialize_request, initialize_params, should_fork};
 use crate::acp::acp_client::lifecycle::LifecycleEnvelope;
 use crate::acp::acp_client::session_identity::ordered_session_request;
 
@@ -85,12 +85,10 @@ pub(super) async fn establish(
     let label = shared.session_label.clone();
     info!(target: "acp.protocol", session = %label, "initializing ACP agent");
     let init: InitializeResponse = match ctx.control.as_ref() {
-        Some(control) => {
-            let params = serde_json::to_value(build_initialize_request())
-                .map_err(|e| acp_internal_error(format!("serialize initialize params: {e}")))?;
-            serde_json::from_value(control.initialize(params).await?)
-                .map_err(|e| acp_internal_error(format!("deserialize initialize result: {e}")))?
-        }
+        Some(control) => serde_json::from_value(control.initialize(initialize_params()).await?)
+            .map_err(|e| acp_internal_error(format!("deserialize initialize result: {e}")))?,
+        // The typed request cannot carry the extension capabilities, so
+        // adapters fall back to transcript text on this path.
         None => {
             connection
                 .send_request(build_initialize_request())

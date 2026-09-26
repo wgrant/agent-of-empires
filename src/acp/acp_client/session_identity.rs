@@ -113,6 +113,7 @@ impl SessionIngressNotification {
         } else {
             None
         };
+        super::extension_updates::tunnel_extension_update(&mut params);
         Ok((serde_json::from_value(params).map_err(invalid)?, wire_bytes))
     }
 }

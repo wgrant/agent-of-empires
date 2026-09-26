@@ -29,7 +29,9 @@ function endsVisualBlock(row: ActivityRow): boolean {
     case "context_reset":
     case "session_cleared":
     case "compacted":
+    case "compaction_summary":
     case "summary":
+    case "agent_notice":
       return true;
     case "tool_start":
     case "notice":

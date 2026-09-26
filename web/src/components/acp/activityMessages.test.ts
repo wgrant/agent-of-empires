@@ -348,6 +348,23 @@ describe("user and callout rows", () => {
       "> 📝 **Summary of conversation so far**\n>\n> - fixed the login bug\n> - next: wire the UI",
     );
   });
+
+  it.each<[string, ActivityRow, string]>([
+    [
+      "a compaction summary",
+      row("cs-1", "compaction_summary", "Kept: the plan\nand the test list"),
+      "> 📝 **What compaction kept**\n>\n> Kept: the plan\n> and the test list",
+    ],
+    [
+      "a warning notice with its description",
+      row("n-1", "agent_notice", "Config\nDeprecated key", { severity: "warning" }),
+      "> ⚠️ **Config**\n>\n> Deprecated key",
+    ],
+    ["an error notice", row("n-2", "agent_notice", "Hook failed", { severity: "error" }), "> ⛔ **Hook failed**"],
+    ["an unknown severity as info", row("n-3", "agent_notice", "Heads up", { severity: "debug" }), "> ℹ️ **Heads up**"],
+  ])("renders %s as a callout", (_name, input, text) => {
+    expect(assistantParts([input])[0]!.text).toBe(text);
+  });
 });
 
 describe("thinking traces", () => {

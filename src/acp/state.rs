@@ -706,6 +706,18 @@ pub enum Event {
     ConversationCompactionStarted,
     /// `/compact` replaced the model's context with a summary.
     ConversationCompacted,
+    /// The summary a compaction kept in the model's context.
+    ConversationCompactionSummary {
+        text: String,
+    },
+    /// An agent advisory (a warning, deprecation, or failed background step).
+    AgentNotice {
+        /// `info`, `warning`, or `error`; other values render as `info`.
+        severity: String,
+        title: String,
+        #[serde(default)]
+        description: Option<String>,
+    },
     AgentSwitched {
         from: String,
         to: String,
@@ -966,6 +978,8 @@ impl AcpState {
             | Event::AgentMessageChunk { .. }
             | Event::AgentMessageSnapshot { .. }
             | Event::ConversationSummary { .. }
+            | Event::ConversationCompactionSummary { .. }
+            | Event::AgentNotice { .. }
             | Event::WakeupScheduled { .. }
             | Event::MonitorArmed { .. } => {}
         }

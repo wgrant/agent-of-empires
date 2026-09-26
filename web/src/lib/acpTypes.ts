@@ -670,7 +670,9 @@ export interface ActivityRow {
     | "notice"
     | "session_cleared"
     | "compacted"
-    | "summary";
+    | "compaction_summary"
+    | "summary"
+    | "agent_notice";
   text: string;
   sendFailure?: string;
   toolCallId?: string;
@@ -686,6 +688,8 @@ export interface ActivityRow {
   output?: ToolOutputBlock[];
   elicitationAnswers?: ElicitationAnswer[];
   asyncSubagent?: boolean;
+  /** An `agent_notice` row's severity: `info`, `warning`, or `error`. */
+  severity?: string;
   at: string; // ISO-8601
 }
 
@@ -708,6 +712,7 @@ export interface TranscriptRow {
   };
   elicitation_answers?: ElicitationAnswer[];
   async_subagent?: boolean;
+  severity?: string | null;
 }
 
 export type TranscriptDelta =
@@ -741,6 +746,7 @@ export function transcriptRowToActivity(row: TranscriptRow, sessionId: string): 
     text: row.text,
     at: row.at,
     ...(row.tool_call_id ? { toolCallId: row.tool_call_id } : {}),
+    ...(row.severity ? { severity: row.severity } : {}),
     ...(tool ? { tool } : {}),
     ...(row.output && row.output.length > 0 ? { output: row.output } : {}),
     ...(attachments ? { attachments } : {}),
