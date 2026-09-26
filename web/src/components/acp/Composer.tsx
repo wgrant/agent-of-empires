@@ -461,14 +461,14 @@ export function Composer(props: Props) {
                 <AuthStatusHint authStatus={props.authStatus} />
               </div>
 
-              <div className="ml-auto flex w-full items-center justify-end gap-2 @lg:w-auto">
+              <div className="ml-auto flex w-full items-center gap-2 pl-1.5 @lg:w-auto @lg:pl-0">
                 <UsageHint
                   usage={props.sessionUsage}
                   quota={props.quota}
                   lastModel={props.lastModel}
                   lastTurnUsage={props.lastTurnUsage}
                 />
-                <div data-testid="composer-actions" className="flex shrink-0 items-center gap-2">
+                <div data-testid="composer-actions" className="ml-auto flex shrink-0 items-center gap-2">
                   <PluginComposerActions sessionId={sessionId} getSnapshot={() => pluginSnapshot(client, taRef)} />
                   {turnActive ? (
                     <>
