@@ -110,6 +110,7 @@ pub(super) fn extension_events(update: &Value) -> Vec<Event> {
                 parent: None,
                 name: field(update, "name").unwrap_or("Subagent").to_string(),
                 task: field(update, "task").unwrap_or_default().to_string(),
+                at: chrono::Utc::now(),
             })
             .into_iter()
             .collect(),
@@ -118,6 +119,7 @@ pub(super) fn extension_events(update: &Value) -> Vec<Event> {
                 (Some(id), Some(state)) => vec![Event::SubagentStateChanged {
                     id: id.to_string(),
                     state: state.to_string(),
+                    at: chrono::Utc::now(),
                 }],
                 _ => Vec::new(),
             }
@@ -233,8 +235,9 @@ mod tests {
                         parent: None,
                         name,
                         task,
+                        ..
                     } => format!("SubagentSpawned:{id}:{name}:{task}"),
-                    Event::SubagentStateChanged { id, state } => {
+                    Event::SubagentStateChanged { id, state, .. } => {
                         format!("SubagentStateChanged:{id}:{state}")
                     }
                     other => format!("{other:?}"),

@@ -376,6 +376,9 @@ export type AcpEvent =
   | { RateLimit: { info: RateLimitInfo } }
   | { RateLimitAutoResumed: { resets_at: string; manual?: boolean } }
   | { UsageUpdated: { usage: SessionUsage } }
+  | { SubagentSpawned: { id: string; parent?: string | null; name: string; task: string; at: string } }
+  | { SubagentStateChanged: { id: string; state: string; at: string } }
+  | { SubagentUpdate: { id: string; event: AcpEvent } }
   | { TurnTokenUsage: { usage: TurnTokenUsage } }
   | { ModeChanged: { mode: SessionMode } }
   | {
@@ -723,6 +726,7 @@ export interface SubagentInfo {
   name: string;
   /** Absent while it runs; then `completed`, `failed`, `cancelled`, or `disconnected`. */
   state?: string | null;
+  ended_at?: string | null;
 }
 
 /** Wire mirror of the Rust `TranscriptRow` (src/acp/transcript.rs). */
@@ -943,6 +947,30 @@ function applyNewTurnResets(next: AcpState): void {
 }
 
 /** Pure reducer. Drops frames whose seq is not above `state.lastSeq` so replays are idempotent. */
+/** A native subagent's tools and latest text, for its Sub agents row. */
+function foldSubagentActivity(agent: BackgroundAgent, event: AcpEvent): BackgroundAgent {
+  if (typeof event === "string") return agent;
+  if ("ToolCallStarted" in event) {
+    const { id, name } = event.ToolCallStarted.tool_call;
+    if (agent.tools.some((t) => t.title === id)) return agent;
+    return {
+      ...agent,
+      toolCount: agent.toolCount + 1,
+      tools: [...agent.tools, { name, title: id, ok: null }],
+      lastTool: name,
+      lastText: null,
+    };
+  }
+  if ("ToolCallCompleted" in event) {
+    const e = event.ToolCallCompleted;
+    return { ...agent, tools: agent.tools.map((t) => (t.title === e.tool_call_id ? { ...t, ok: !e.is_error } : t)) };
+  }
+  if ("AgentMessageChunk" in event) {
+    return { ...agent, lastText: (agent.lastText ?? "") + event.AgentMessageChunk.text };
+  }
+  return agent;
+}
+
 export function applyEvent(state: AcpState, frame: AcpFrame): AcpState {
   if (frame.seq <= state.lastSeq) {
     return state;
@@ -1241,6 +1269,52 @@ export function applyEvent(state: AcpState, frame: AcpFrame): AcpState {
     const i = next.backgroundAgents.findIndex((a) => a.agentId === e.agent_id);
     next.backgroundAgents =
       i >= 0 ? next.backgroundAgents.map((a, idx) => (idx === i ? record : a)) : [...next.backgroundAgents, record];
+    return next;
+  }
+  // A native subagent's session reports itself, so it feeds the same records as a tailed one.
+  if ("SubagentSpawned" in event) {
+    const e = event.SubagentSpawned;
+    const record: BackgroundAgent = {
+      agentId: e.id,
+      toolCallId: "",
+      description: e.name,
+      prompt: e.task,
+      model: "",
+      status: "running",
+      startedAt: e.at,
+      endedAt: null,
+      toolCount: 0,
+      tools: [],
+      lastTool: null,
+      lastText: null,
+      result: null,
+      warning: null,
+    };
+    const i = next.backgroundAgents.findIndex((a) => a.agentId === e.id);
+    next.backgroundAgents =
+      i >= 0 ? next.backgroundAgents.map((a, idx) => (idx === i ? record : a)) : [...next.backgroundAgents, record];
+    return next;
+  }
+  if ("SubagentUpdate" in event) {
+    const { id, event: inner } = event.SubagentUpdate;
+    next.backgroundAgents = next.backgroundAgents.map((a) =>
+      a.agentId === id && !a.endedAt ? foldSubagentActivity(a, inner) : a,
+    );
+    return next;
+  }
+  if ("SubagentStateChanged" in event) {
+    const e = event.SubagentStateChanged;
+    next.backgroundAgents = next.backgroundAgents.map((a) =>
+      a.agentId === e.id
+        ? {
+            ...a,
+            status: e.state === "completed" ? "completed" : e.state === "failed" ? "error" : "detached",
+            endedAt: e.at,
+            result: a.lastText,
+            warning: e.state === "completed" ? null : e.state,
+          }
+        : a,
+    );
     return next;
   }
   if ("BackgroundAgentProgress" in event) {
