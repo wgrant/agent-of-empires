@@ -247,7 +247,7 @@ test("Escape inside the structured view composer does not POST /acp/cancel", asy
   await composer.press("Escape");
   releaseTurn(serve);
   await expect(page.getByText(/ESCAPE_TURN_COMPLETED/)).toBeVisible();
-  await expect(page.getByRole("textbox", { name: /Send a message/i })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Message the agent" })).toBeVisible();
   expect(cancelCount).toBe(0);
 });
 

@@ -225,13 +225,13 @@ describe("toolbar and send", () => {
       { kind: "resume_then_send", reason: "archived" } as const,
       "Send message and resume session",
       "Send and resume session, Enter",
-      "Send a message…  Type @ for files, / for commands",
+      "Message… @ for files, / for commands",
     ],
     [
       { kind: "wake_agent" } as const,
       "Send message and wake agent",
       "Send and wake agent, Enter",
-      "Send a message… (wakes the dormant agent)",
+      "Message to wake the agent…",
     ],
   ])("labels %s submission clearly", (availability, buttonName, title, placeholder) => {
     const { textarea } = mount({ availability });
