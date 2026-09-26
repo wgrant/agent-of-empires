@@ -164,6 +164,37 @@ pub struct SessionUsage {
     /// consumers keep the previous one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub quota: Option<AgentQuota>,
+    /// The model behind the latest reply, when the agent names it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+}
+
+/// Token counts for the agent's latest turn, from its prompt response.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TurnTokenUsage {
+    #[serde(flatten)]
+    pub total: TokenCounts,
+    /// Per-model split, when the agent reports one.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub by_model: Vec<ModelTokenCounts>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ModelTokenCounts {
+    pub model: String,
+    #[serde(flatten)]
+    pub counts: TokenCounts,
+}
+
+/// Counts as the agent reports them; whether `input` includes cache reads varies by provider.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct TokenCounts {
+    pub input: u64,
+    pub output: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_read: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_write: Option<u64>,
 }
 
 /// The account's plan quota (5-hour, weekly, ...) as last reported by the agent.
@@ -710,6 +741,10 @@ pub enum Event {
     ConversationCompactionSummary {
         text: String,
     },
+    /// Token counts from the prompt response that ended a turn.
+    TurnTokenUsage {
+        usage: TurnTokenUsage,
+    },
     /// An agent advisory (a warning, deprecation, or failed background step).
     AgentNotice {
         /// `info`, `warning`, or `error`; other values render as `info`.
@@ -980,6 +1015,7 @@ impl AcpState {
             | Event::ConversationSummary { .. }
             | Event::ConversationCompactionSummary { .. }
             | Event::AgentNotice { .. }
+            | Event::TurnTokenUsage { .. }
             | Event::WakeupScheduled { .. }
             | Event::MonitorArmed { .. } => {}
         }
@@ -1666,6 +1702,7 @@ mod tests {
                             currency: "USD".into(),
                         }),
                         quota: None,
+                        model: None,
                     },
                 },
             ]

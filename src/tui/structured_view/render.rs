@@ -1858,6 +1858,7 @@ mod tests {
             size,
             cost: None,
             quota: None,
+            model: None,
         }
     }
 
@@ -2410,6 +2411,7 @@ mod tests {
             size,
             cost,
             quota: None,
+            model: None,
         };
         assert_eq!(
             format_usage(&with_cost(12_300, 200_000, cost(0.4231, "USD"))),

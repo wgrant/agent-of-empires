@@ -12,6 +12,7 @@ import {
   quotaTone,
   quotaWindowLabel,
 } from "../../lib/quota";
+import { describeTurnUsage, formatTokens } from "../../lib/turnUsage";
 import { badgeLabel, badgeTone, resolveSkillSource, type SkillIndex } from "../../lib/skillProvenance";
 import { TOUR_ANCHORS, tourAnchor } from "../../lib/tourSteps";
 import { ProvenanceBadge } from "../ProvenanceBadge";
@@ -133,12 +134,6 @@ export function ToolbarButton({
   );
 }
 
-function formatTokens(n: number): string {
-  if (n < 1_000) return String(n);
-  if (n < 1_000_000) return `${(n / 1_000).toFixed(n < 10_000 ? 1 : 0)}k`;
-  return `${(n / 1_000_000).toFixed(n < 10_000_000 ? 2 : 1)}M`;
-}
-
 function formatCost(amount: number, currency: string): string {
   try {
     return new Intl.NumberFormat(undefined, {
@@ -151,7 +146,17 @@ function formatCost(amount: number, currency: string): string {
   }
 }
 
-export function UsageHint({ usage, quota = null }: { usage: AcpState["sessionUsage"]; quota?: AcpState["quota"] }) {
+export function UsageHint({
+  usage,
+  quota = null,
+  lastModel = null,
+  lastTurnUsage = null,
+}: {
+  usage: AcpState["sessionUsage"];
+  quota?: AcpState["quota"];
+  lastModel?: AcpState["lastModel"];
+  lastTurnUsage?: AcpState["lastTurnUsage"];
+}) {
   const now = useMinuteClock();
   const windows = compactQuotaWindows(quota, now);
   const context = usage && usage.size > 0 ? usage : null;
@@ -159,16 +164,18 @@ export function UsageHint({ usage, quota = null }: { usage: AcpState["sessionUsa
   const pct = context ? Math.min(100, Math.round((context.used / context.size) * 100)) : null;
   const contextTone = pct === null ? "" : pct >= 90 ? "text-rose-400" : pct >= 75 ? "text-amber-400" : "text-text-dim";
   const cost = usage?.cost ? formatCost(usage.cost.amount, usage.cost.currency) : null;
+  const turnLines = describeTurnUsage(lastModel, lastTurnUsage);
   const explanation = [
     context
       ? `Context window: ${context.used.toLocaleString()} of ${context.size.toLocaleString()} tokens used (${pct}%). ` +
         `The color warms as the window fills.`
       : null,
     ...(quota ? [...quota.windows.map((w) => describeQuotaWindow(w, now)), describeQuotaAge(quota, now)] : []),
+    ...turnLines,
     cost ? `${cost} is cumulative session spend since the last /clear or /compact.` : null,
   ]
     .filter(Boolean)
-    .join(quota ? "\n" : " ");
+    .join(quota || turnLines.length > 0 ? "\n" : " ");
   // Last in the wrapping cluster: on a narrow footer it takes its own row
   // instead of pushing Stop and Send off screen.
   return (

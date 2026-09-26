@@ -533,6 +533,7 @@ mod tests {
                     size: 200_000,
                     cost: None,
                     quota: None,
+                    model: None,
                 },
             },
         ]);

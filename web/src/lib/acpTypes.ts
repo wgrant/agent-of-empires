@@ -88,6 +88,21 @@ export interface SessionUsage {
   cost?: { amount: number; currency: string } | null;
   /** Plan quota, present only on updates that carried a reading. */
   quota?: AgentQuota | null;
+  /** The model behind the latest reply, when the agent names it. */
+  model?: string | null;
+}
+
+/** Wire mirror of the Rust `TokenCounts`; whether `input` includes cache reads varies by agent. */
+export interface TokenCounts {
+  input: number;
+  output: number;
+  cache_read?: number | null;
+  cache_write?: number | null;
+}
+
+/** Token counts for the agent's latest turn, with a per-model split when reported. */
+export interface TurnTokenUsage extends TokenCounts {
+  by_model?: Array<TokenCounts & { model: string }>;
 }
 
 /** Wire mirror of the Rust `AgentQuota`: the account's plan windows as the agent last reported them. */
@@ -361,6 +376,7 @@ export type AcpEvent =
   | { RateLimit: { info: RateLimitInfo } }
   | { RateLimitAutoResumed: { resets_at: string; manual?: boolean } }
   | { UsageUpdated: { usage: SessionUsage } }
+  | { TurnTokenUsage: { usage: TurnTokenUsage } }
   | { ModeChanged: { mode: SessionMode } }
   | {
       ModesAvailable: {
@@ -529,6 +545,9 @@ export interface AcpState {
   sessionUsage: SessionUsage | null;
   /** Latest plan quota reading; account-wide, so context boundaries keep it. */
   quota: AgentQuota | null;
+  /** Latest model and turn token counts, latched like quota. */
+  lastModel: string | null;
+  lastTurnUsage: TurnTokenUsage | null;
   /** Cost at the latest context boundary, subtracted from the agent's lifetime total. */
   usageBaseline: { cost: number } | null;
   /** Usage when the compaction reminder was dismissed, or null while armed. */
@@ -829,6 +848,8 @@ export function emptyAcpState(): AcpState {
     rateLimitParked: false,
     sessionUsage: null,
     quota: null,
+    lastModel: null,
+    lastTurnUsage: null,
     usageBaseline: null,
     compactionReminderDismissed: null,
     activity: [],
@@ -933,10 +954,15 @@ export function applyEvent(state: AcpState, frame: AcpFrame): AcpState {
     }
     return next;
   }
+  if ("TurnTokenUsage" in event) {
+    next.lastTurnUsage = event.TurnTokenUsage.usage;
+    return next;
+  }
   if ("UsageUpdated" in event) {
     // Subtract the boundary baseline from the lifetime cost the agent reports.
     const incoming = event.UsageUpdated.usage;
     if (incoming.quota) next.quota = incoming.quota;
+    if (incoming.model) next.lastModel = incoming.model;
     // Latch the largest window seen: upstream claude-agent-acp #596 flickers between 200k and 1M.
     const size = Math.max(incoming.size, next.sessionUsage?.size ?? 0);
     // Every boundary nulls sessionUsage, so a null previous snapshot re-arms the reminder.

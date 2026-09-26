@@ -284,6 +284,7 @@ mod tests {
                         currency: "USD".to_string(),
                     }),
                     quota: None,
+                    model: None,
                 },
             }
         }

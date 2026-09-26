@@ -408,6 +408,12 @@ pub(super) fn map_update_to_events(
                 used: u.used,
                 size: u.size,
                 quota: super::quota::quota_from_meta(u.meta.as_ref(), chrono::Utc::now()),
+                model: u
+                    .meta
+                    .as_ref()
+                    .and_then(|m| m.get("_claude/model"))
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_string),
                 cost: u.cost.map(|c| UsageCost {
                     amount: c.amount,
                     currency: c.currency,

@@ -614,6 +614,8 @@ function ComposerDock({
           setConfigOption={ctx.setConfigOption}
           sessionUsage={state.sessionUsage}
           quota={state.quota}
+          lastModel={state.lastModel}
+          lastTurnUsage={state.lastTurnUsage}
           availableCommands={state.availableCommands}
           availability={availability}
           turnActive={state.turnActive}
