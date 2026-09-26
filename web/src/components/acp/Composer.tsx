@@ -1,4 +1,3 @@
-/* eslint-disable react-refresh/only-export-components */
 // Structured view composer: assistant-ui's ComposerPrimitive with `@` file and
 // `/` command trigger popovers, attachments, queue recall, and draft persistence.
 
@@ -48,6 +47,7 @@ import {
   insertSlashCommand,
   IOS_ACCESSORY_BAR_PX,
 } from "./composerInput";
+import { composerStatusParts, composerStatusText } from "./composerStatus";
 import { SessionSettingsControl } from "./SessionSettings";
 import { SwitchAgentModal } from "./SwitchAgentModal";
 import {
@@ -213,12 +213,13 @@ export function Composer(props: Props) {
     allowLegacyFallback: profile.capabilities.legacyModeFallback,
   });
   const activeMode = modeChannel?.modes.find((mode) => mode.id === modeChannel.activeId)?.name;
-  const summary = composerStatusSummary({
+  const statusParts = composerStatusParts({
     agent: props.currentAgent ?? profile.key,
     mode: activeMode,
     yoloMode: props.yoloMode ?? false,
     configOptions: props.configOptions,
   });
+  const summary = composerStatusText(statusParts);
   const hasDraft = composerText.trim().length > 0 || attachments.supported.length > 0;
   const expandMobileComposer = () => {
     setMobileExpanded(true);
@@ -448,7 +449,7 @@ export function Composer(props: Props) {
                   configOptions={props.configOptions}
                   pendingConfigOption={props.pendingConfigOption}
                   setConfigOption={props.setConfigOption}
-                  summary={summary}
+                  summary={statusParts}
                 />
                 <AuthStatusHint authStatus={props.authStatus} />
                 <UsageHint usage={props.sessionUsage} />
@@ -489,53 +490,6 @@ export function Composer(props: Props) {
       />
     </div>
   );
-}
-
-function agentDisplayName(agent: string): string {
-  const known: Record<string, string> = {
-    claude: "Claude",
-    "claude-code": "Claude",
-    codex: "Codex",
-    opencode: "OpenCode",
-    gemini: "Gemini",
-  };
-  return (
-    known[agent] ??
-    agent.replace(/(^|[-_ ])([a-z])/g, (_, prefix: string, letter: string) => `${prefix}${letter.toUpperCase()}`)
-  );
-}
-
-function compactModeName(mode: string): string {
-  const parenthesised = mode.match(/^Agent \((.+)\)$/i);
-  if (!parenthesised) return mode;
-  const inner = parenthesised[1]!;
-  return inner.charAt(0).toUpperCase() + inner.slice(1);
-}
-
-export function composerStatusSummary({
-  agent,
-  mode,
-  yoloMode,
-  configOptions,
-}: {
-  agent: string;
-  mode?: string;
-  yoloMode: boolean;
-  configOptions: AcpState["configOptions"];
-}): string {
-  const currentLabel = (category: "model" | "thought_level") => {
-    const option = configOptions.find((candidate) => candidate.category === category);
-    return option?.options.find((candidate) => candidate.value === option.current_value)?.name ?? option?.current_value;
-  };
-  return [
-    agentDisplayName(agent),
-    mode ? compactModeName(mode) : null,
-    yoloMode ? "Yolo" : null,
-    currentLabel("model"),
-    currentLabel("thought_level"),
-  ]
-    .filter((part): part is string => Boolean(part))
-    .join(" · ");
 }
 
 function pluginSnapshot(client: ComposerClient, taRef: React.RefObject<HTMLTextAreaElement | null>) {

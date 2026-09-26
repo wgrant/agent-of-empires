@@ -46,7 +46,7 @@ function mount(configOptions: ConfigOptionDescriptor[], setConfigOption = vi.fn(
         configOptions={configOptions}
         pendingConfigOption={null}
         setConfigOption={setConfigOption}
-        summary="Claude · Default · Opus"
+        summary={{ agent: "Claude", permission: "Default", model: "Opus", effort: null }}
       />
     </AgentProfileProvider>,
   );
@@ -57,10 +57,12 @@ const trigger = () => screen.getByTestId("session-settings-trigger");
 const dialog = () => screen.queryByTestId("session-settings-dialog");
 
 describe("SessionSettingsControl", () => {
-  it("shows the summary and tints the chip for a destructive mode", () => {
+  it("shows the summary and tints only the permission for a destructive mode", () => {
     mount([{ ...MODE, current_value: "bypassPermissions" }, MODEL]);
     expect(trigger().textContent).toContain("Claude · Default · Opus");
-    expect(trigger().className).toContain("text-rose-300");
+    expect(screen.getByTestId("session-summary-permission").className).toContain("text-rose-300");
+    expect(trigger().className).not.toContain("rose");
+    expect(screen.getByTestId("session-summary-model").className).not.toContain("rose");
     expect(dialog()).toBeNull();
   });
 
