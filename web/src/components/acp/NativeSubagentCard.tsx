@@ -5,7 +5,7 @@ import { Sparkles } from "lucide-react";
 import type { NativeSubagent, NativeSubagentItem } from "./activityMessages";
 import { AssistantReasoning } from "./AssistantReasoning";
 import { Markdown } from "./Markdown";
-import { CardChrome, HighlightedBlock, PlaceholderLine, useToolCardExpansion, type Status } from "./ToolCardChrome";
+import { CardChrome, PlaceholderLine, useToolCardExpansion, type Status } from "./ToolCardChrome";
 import { ToolCard } from "./ToolCards";
 
 const STATE_STATUS: Record<string, Status> = {
@@ -80,7 +80,11 @@ export function NativeSubagentCard({ subagent }: { subagent: NativeSubagent }) {
             data-testid="native-subagent-body"
             className="flex flex-col gap-1 border-t border-surface-800 bg-surface-900/30 px-3 py-2"
           >
-            {subagent.task && <HighlightedBlock text={subagent.task} language="markdown" maxLines={6} />}
+            {subagent.task && (
+              <p className="max-h-32 overflow-y-auto whitespace-pre-wrap break-words rounded border border-surface-800 bg-surface-900/60 px-2 py-1 text-xs text-text-secondary">
+                {subagent.task}
+              </p>
+            )}
             {subagent.items.map((item, index) => (
               <ItemView key={itemKey(item, index)} item={item} />
             ))}
