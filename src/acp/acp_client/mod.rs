@@ -33,6 +33,7 @@ mod steer;
 mod terminal_handlers;
 #[cfg(test)]
 mod test_helpers;
+mod token_usage;
 mod tool_context;
 mod tool_output;
 mod transcript_filter;
