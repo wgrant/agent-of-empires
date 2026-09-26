@@ -44,6 +44,11 @@ pub trait BroadcastSink: Send + Sync + 'static {
     ) -> Vec<UnresolvedBackgroundAgentLaunch> {
         Vec::new()
     }
+    /// Native subagents announced and not yet ended, which a reattached
+    /// runner may still be running.
+    fn unresolved_native_subagents(&self, _session_id: &str) -> Vec<String> {
+        Vec::new()
+    }
     /// Persist a prompt attachment keyed to its `UserPromptSent` seq.
     fn record_attachment(&self, _session_id: &str, _seq: u64, _blob: &AttachmentBlob) -> bool {
         true
@@ -96,6 +101,10 @@ impl BroadcastSink for ChannelSink {
     ) -> Vec<UnresolvedBackgroundAgentLaunch> {
         self.event_store
             .unresolved_background_agent_launches(session_id)
+    }
+
+    fn unresolved_native_subagents(&self, session_id: &str) -> Vec<String> {
+        self.event_store.unresolved_native_subagents(session_id)
     }
 
     fn record_attachment(&self, session_id: &str, seq: u64, blob: &AttachmentBlob) -> bool {

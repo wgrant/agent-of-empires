@@ -700,6 +700,7 @@ impl<S: BroadcastSink> Supervisor<S> {
             sandbox_resources,
             agent_key,
             record.source_profile.clone(),
+            self.sink.unresolved_native_subagents(&session_id),
         )
         .await?;
 

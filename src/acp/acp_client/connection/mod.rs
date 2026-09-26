@@ -178,6 +178,9 @@ pub(super) async fn run_connection_task<W, R>(
     if control.is_some() && matches!(&mode, ConnectMode::Resume { .. }) {
         ingress.begin();
     }
+    if let ConnectMode::Resume { subagents, .. } = &mode {
+        ingress.readmit_subagents(subagents.iter().cloned().map(SessionId::from));
+    }
     let shared = Arc::new(Shared::new(
         event_tx.clone(),
         label.clone(),
