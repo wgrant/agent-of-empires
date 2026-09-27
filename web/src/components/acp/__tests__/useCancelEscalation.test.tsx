@@ -38,14 +38,16 @@ describe("useCancelEscalation (#2237)", () => {
 
   it("first press sends a graceful cancel, second press force-ends", async () => {
     const { result, cancelPrompt, forceEndTurn } = setup();
+    expect(result.current.forceNext).toBe(false);
     await act(async () => {
-      await result.current();
+      await result.current.onCancel();
     });
     expect(cancelPrompt).toHaveBeenCalledTimes(1);
     expect(forceEndTurn).not.toHaveBeenCalled();
+    expect(result.current.forceNext).toBe(true);
 
     await act(async () => {
-      await result.current();
+      await result.current.onCancel();
     });
     expect(forceEndTurn).toHaveBeenCalledTimes(1);
     expect(cancelPrompt).toHaveBeenCalledTimes(1);
@@ -54,7 +56,7 @@ describe("useCancelEscalation (#2237)", () => {
   it("escalates to force on the first press when the server already confirmed a cancel", async () => {
     const { result, cancelPrompt, forceEndTurn } = setup({ cancelling: true });
     await act(async () => {
-      await result.current();
+      await result.current.onCancel();
     });
     expect(forceEndTurn).toHaveBeenCalledTimes(1);
     expect(cancelPrompt).not.toHaveBeenCalled();
@@ -63,11 +65,11 @@ describe("useCancelEscalation (#2237)", () => {
   it("resets the local intent when a new turn starts (turnSeq bumps)", async () => {
     const { result, rerender, cancelPrompt, forceEndTurn } = setup({ turnSeq: 1 });
     await act(async () => {
-      await result.current();
+      await result.current.onCancel();
     });
     rerender({ sessionId: "s-1", turnSeq: 2, cancelling: false });
     await act(async () => {
-      await result.current();
+      await result.current.onCancel();
     });
     expect(cancelPrompt).toHaveBeenCalledTimes(2);
     expect(forceEndTurn).not.toHaveBeenCalled();
@@ -76,11 +78,11 @@ describe("useCancelEscalation (#2237)", () => {
   it("resets the local intent on a session switch without unmount", async () => {
     const { result, rerender, cancelPrompt, forceEndTurn } = setup({ sessionId: "s-1", turnSeq: 5 });
     await act(async () => {
-      await result.current();
+      await result.current.onCancel();
     });
     rerender({ sessionId: "s-2", turnSeq: 5, cancelling: false });
     await act(async () => {
-      await result.current();
+      await result.current.onCancel();
     });
     expect(cancelPrompt).toHaveBeenCalledTimes(2);
     expect(forceEndTurn).not.toHaveBeenCalled();

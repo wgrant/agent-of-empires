@@ -393,8 +393,8 @@ export function useAcpSession(
     if (!sessionId) return;
     lastActivityRef.current = Date.now();
     await postReportingErrors(dispatch, acpUrl(sessionId, "force_end_turn"), { method: "POST" }, [
-      "force end turn",
-      "forcing end turn",
+      "force stop",
+      "force stopping",
     ]);
   }, [sessionId, lastActivityRef]);
 

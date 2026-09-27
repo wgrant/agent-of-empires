@@ -208,8 +208,9 @@ export function idleComposer(page: Page): Locator {
   return composer(page).and(page.getByPlaceholder(/^Message/));
 }
 
+/** Stop, or Force stop once a stop is under way. */
 export function stopButton(page: Page): Locator {
-  return page.getByTestId("composer-actions").getByRole("button", { name: "Stop" });
+  return page.getByTestId("composer-actions").getByRole("button", { name: /^(Force stop|Stop)$/ });
 }
 
 export async function waitForStructuredView(page: Page, timeoutMs = 15_000): Promise<void> {

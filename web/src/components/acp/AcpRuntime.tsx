@@ -76,7 +76,8 @@ export interface AcpContext {
   /** Staged for the next send; owned here so assistant-ui's `onNew` can send them. */
   pendingAttachments: PromptAttachmentInput[];
   setPendingAttachments: React.Dispatch<React.SetStateAction<PromptAttachmentInput[]>>;
-  forceEndTurn: () => Promise<void>;
+  /** The next Stop press restarts the agent instead of asking it to stop. */
+  forceStopNext: boolean;
   lastActivityRef: Session["lastActivityRef"];
   dismissError: () => void;
   dismissPrimer: () => void;
@@ -151,7 +152,7 @@ export function AcpRuntime({
   const acp = useAcpSession(sessionId, archivedAt, snoozedUntil);
   const agentProfile = useAgentProfile();
   const { pendingAttachments, setPendingAttachments, pendingAttachmentsRef } = usePendingAttachments(sessionId);
-  const onCancel = useCancelEscalation(
+  const { onCancel, forceNext: forceStopNext } = useCancelEscalation(
     sessionId,
     acp.state.promptSeq,
     acp.state.cancelling,
@@ -283,7 +284,7 @@ export function AcpRuntime({
         sendPrompt: acp.sendPrompt,
         pendingAttachments,
         setPendingAttachments,
-        forceEndTurn: acp.forceEndTurn,
+        forceStopNext,
         lastActivityRef: acp.lastActivityRef,
         dismissError: acp.dismissError,
         dismissPrimer: acp.dismissPrimer,

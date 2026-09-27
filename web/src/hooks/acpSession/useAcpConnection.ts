@@ -114,7 +114,7 @@ export function useAcpConnection(
   const lastServerMsgRef = useRef(0);
   const lastPublishedServerMsgRef = useRef(0);
   const replaySyncCountRef = useRef(0);
-  // Last applied frame or submit, polled by the force-end-turn affordance without re-rendering.
+  // Last applied frame or submit, polled by the stall label without re-rendering.
   const lastActivityRef = useRef(0);
   // Setters behind a ref: the socket handlers below are not an external-store subscription.
   const settersRef = useRef({ setStatus, setReconnecting, setRetryCount, setRetryCountdown, setHasEverOpened });
