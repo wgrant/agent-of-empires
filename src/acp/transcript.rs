@@ -224,6 +224,8 @@ pub struct TranscriptModel {
     turn_has_output: bool,
     /// Whether a mid-turn prompt steers the running turn rather than opening a new one.
     steering: bool,
+    /// When the event being applied was recorded; stamps the rows it creates.
+    now: DateTime<Utc>,
 }
 
 impl TranscriptModel {
@@ -239,12 +241,23 @@ impl TranscriptModel {
         self.last_seq
     }
 
-    /// Apply one event at `seq`, returning the row changes it produced.
+    /// Apply one live event at `seq`, returning the row changes it produced.
     pub fn apply_event(&mut self, seq: u64, event: &Event) -> Vec<TranscriptDelta> {
+        self.apply_event_at(seq, event, Utc::now())
+    }
+
+    /// Apply one event recorded at `at`, such as one replayed from the store.
+    pub fn apply_event_at(
+        &mut self,
+        seq: u64,
+        event: &Event,
+        at: DateTime<Utc>,
+    ) -> Vec<TranscriptDelta> {
         if seq <= self.last_seq {
             return Vec::new();
         }
         self.last_seq = seq;
+        self.now = at;
         self.apply(seq, event)
     }
 
@@ -790,7 +803,8 @@ impl TranscriptModel {
         } else {
             TranscriptRowKind::ToolComplete
         };
-        let mut row = TranscriptRow::new(row_id, format!("tool-{tool_call_id}"), kind, text);
+        let mut row =
+            TranscriptRow::new(row_id, format!("tool-{tool_call_id}"), kind, text, self.now);
         row.tool_call_id = Some(tool_call_id.to_string());
         row
     }
@@ -798,7 +812,7 @@ impl TranscriptModel {
     /// Close every `tool_start` without a terminal row with a `tool_stopped`
     /// carrying any buffered output.
     fn sweep_open_tools(&mut self, seq: u64) -> Vec<TranscriptDelta> {
-        self.close_open_tools(seq, None, TranscriptRowKind::ToolStopped, Utc::now())
+        self.close_open_tools(seq, None, TranscriptRowKind::ToolStopped, self.now)
     }
 
     /// Close tool calls that never reported an end, all of them or one
@@ -833,8 +847,8 @@ impl TranscriptModel {
                     format!("tool-{id}"),
                     kind,
                     buffered,
+                    at,
                 );
-                row.at = at;
                 row.tool_call_id = Some(id);
                 row.subagent_id = subagent_id;
                 self.append(row)
@@ -900,7 +914,7 @@ impl TranscriptModel {
 
     fn grouped_row(&mut self, id: String, kind: TranscriptRowKind, text: String) -> TranscriptRow {
         let group_id = self.fresh_group();
-        TranscriptRow::new(id, group_id, kind, text)
+        TranscriptRow::new(id, group_id, kind, text, self.now)
     }
 
     /// Append a row in its own fresh group.
@@ -944,6 +958,7 @@ impl TranscriptModel {
             group,
             kind,
             text.to_owned(),
+            self.now,
         ));
         self.open_text_run = Some((kind, index));
         vec![delta]
@@ -1032,12 +1047,18 @@ impl TranscriptModel {
 }
 
 impl TranscriptRow {
-    fn new(id: String, group_id: String, kind: TranscriptRowKind, text: String) -> Self {
+    fn new(
+        id: String,
+        group_id: String,
+        kind: TranscriptRowKind,
+        text: String,
+        at: DateTime<Utc>,
+    ) -> Self {
         Self {
             id,
             group_id,
             kind,
-            at: Utc::now(),
+            at,
             text,
             tool_call_id: None,
             tool: None,
@@ -1060,8 +1081,8 @@ fn tool_start_row(tool: ToolCall) -> TranscriptRow {
         format!("tool-{}", tool.id),
         TranscriptRowKind::ToolStart,
         tool.name.clone(),
+        tool.started_at,
     );
-    row.at = tool.started_at;
     row.tool_call_id = Some(tool.id.clone());
     row.tool = Some(tool);
     row
@@ -1373,6 +1394,23 @@ mod tests {
 
     fn tool_of<'a>(m: &'a TranscriptModel, id: &str) -> &'a ToolCall {
         row(m, id).tool.as_ref().expect("tool payload")
+    }
+
+    #[test]
+    fn rows_carry_the_time_their_event_was_recorded() {
+        let mut m = TranscriptModel::new();
+        m.apply_event_at(1, &prompt("go"), at(10));
+        m.apply_event_at(2, &chunk("Hel"), at(20));
+        m.apply_event_at(3, &chunk("lo"), at(30));
+        let times: Vec<_> = m.rows().iter().map(|r| (r.kind, r.at)).collect();
+        // A streamed reply keeps the time it started.
+        assert_eq!(
+            times,
+            [
+                (TranscriptRowKind::UserPrompt, at(10)),
+                (TranscriptRowKind::Message, at(20)),
+            ]
+        );
     }
 
     #[test]

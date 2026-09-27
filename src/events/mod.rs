@@ -316,6 +316,7 @@ pub fn prune_retention(
     }
 }
 
+/// Rows as `(seq, json, created_at_ms)`.
 pub fn scan(
     conn: &Connection,
     schema: &Schema,
@@ -323,7 +324,7 @@ pub fn scan(
     bound: SeqBound,
     order: Order,
     limit: Option<usize>,
-) -> Vec<(u64, String)> {
+) -> Vec<(u64, String, i64)> {
     // Clamp before the cast so a `u64::MAX` cursor does not wrap negative.
     let (op, value) = match bound {
         SeqBound::After(v) => (">", v),
@@ -337,12 +338,12 @@ pub fn scan(
     let events = schema.events_table();
     let sql = match limit {
         Some(_) => format!(
-            "SELECT seq, event_json FROM {events}
+            "SELECT seq, event_json, created_at FROM {events}
              WHERE session_id = ?1 AND seq {op} ?2
              ORDER BY seq {order_sql} LIMIT ?3"
         ),
         None => format!(
-            "SELECT seq, event_json FROM {events}
+            "SELECT seq, event_json, created_at FROM {events}
              WHERE session_id = ?1 AND seq {op} ?2
              ORDER BY seq {order_sql}"
         ),
@@ -357,7 +358,8 @@ pub fn scan(
     let map_row = |row: &rusqlite::Row| {
         let seq: i64 = row.get(0)?;
         let json: String = row.get(1)?;
-        Ok((seq as u64, json))
+        let created_at: i64 = row.get(2)?;
+        Ok((seq as u64, json, created_at))
     };
     let rows = match limit {
         Some(n) => stmt.query_map(params![topic, value_i64, n as i64], map_row),
@@ -819,7 +821,7 @@ mod tests {
         assert_eq!(lowest_seq(&conn, &schema, "missing"), None);
 
         let fwd = scan(&conn, &schema, "a", SeqBound::After(0), Order::Asc, Some(2));
-        assert_eq!(fwd, vec![(1, "\"e1\"".into()), (2, "\"e2\"".into())]);
+        assert_eq!(fwd, vec![(1, "\"e1\"".into(), 1), (2, "\"e2\"".into(), 2)]);
         let back = scan(
             &conn,
             &schema,
@@ -828,7 +830,7 @@ mod tests {
             Order::Desc,
             Some(2),
         );
-        assert_eq!(back, vec![(3, "\"e3\"".into()), (2, "\"e2\"".into())]);
+        assert_eq!(back, vec![(3, "\"e3\"".into(), 3), (2, "\"e2\"".into(), 2)]);
 
         let mut seqs = all_topic_seqs(&conn, &schema);
         seqs.sort();
@@ -874,7 +876,7 @@ mod tests {
         prune_retention(&conn, &schema, "t", 2, &["Pinned"]);
         let kept: Vec<u64> = scan(&conn, &schema, "t", SeqBound::After(0), Order::Asc, None)
             .into_iter()
-            .map(|(s, _)| s)
+            .map(|(s, _, _)| s)
             .collect();
         assert_eq!(kept, vec![1, 4, 5]);
         assert!(
