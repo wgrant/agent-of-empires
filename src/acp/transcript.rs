@@ -50,6 +50,9 @@ pub struct TranscriptRow {
     /// The compaction a `compacted` row reports; `text` holds its kept summary.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub compaction: Option<CompactionInfo>,
+    /// The first row of a turn the agent started unprompted, so it opens a new reply.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub turn_start: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -233,6 +236,8 @@ pub struct TranscriptModel {
     turn_has_output: bool,
     /// Whether a mid-turn prompt steers the running turn rather than opening a new one.
     steering: bool,
+    /// An unprompted turn began and its first main-agent row is still to come.
+    agent_turn_pending: bool,
     /// When the event being applied was recorded; stamps the rows it creates.
     now: DateTime<Utc>,
 }
@@ -684,6 +689,10 @@ impl TranscriptModel {
                 deltas.extend(self.close_open_tools(seq, Some(id), kind, *at));
                 deltas
             }
+            Event::AgentTurnStarted => {
+                self.agent_turn_pending = true;
+                Vec::new()
+            }
             Event::ThinkingStarted => {
                 self.turn_active = true;
                 self.turn_has_output = true;
@@ -954,6 +963,10 @@ impl TranscriptModel {
         if row.subagent_id.is_none() {
             row.subagent_id = self.scope.clone();
         }
+        if row.subagent_id.is_none() && self.agent_turn_pending {
+            self.agent_turn_pending = false;
+            row.turn_start = true;
+        }
         self.row_ids.insert(row.id.clone());
         self.rows.push(row.clone());
         TranscriptDelta::Append(row)
@@ -984,17 +997,16 @@ impl TranscriptModel {
         if let Some((open_kind, index)) = self.open_text_run {
             if open_kind == kind {
                 let row = &mut self.rows[index];
-                if !replacement || row.id == canonical_id {
-                    if replacement {
-                        row.text = text.to_owned();
-                    } else {
-                        row.text.push_str(text);
-                    }
-                    return vec![TranscriptDelta::Patch {
-                        id: row.id.clone(),
-                        row: row.clone(),
-                    }];
+                if replacement && row.id == canonical_id {
+                    row.text = text.to_owned();
+                } else {
+                    // Adjacent snapshots are one block stored split around subagent events.
+                    row.text.push_str(text);
                 }
+                return vec![TranscriptDelta::Patch {
+                    id: row.id.clone(),
+                    row: row.clone(),
+                }];
             }
         }
 
@@ -1088,6 +1100,7 @@ impl TranscriptModel {
 
     fn begin_turn(&mut self) {
         self.compactions.clear();
+        self.agent_turn_pending = false;
         let steered_continuation = self.turn_active && self.steering;
         self.turn_active = true;
         if !steered_continuation {
@@ -1136,6 +1149,7 @@ impl TranscriptRow {
             subagent_id: None,
             subagent: None,
             compaction: None,
+            turn_start: false,
         }
     }
 }
@@ -1376,6 +1390,42 @@ mod tests {
             )
         );
         assert_eq!(model.rows()[2].subagent_id.as_deref(), Some("wf1"));
+    }
+
+    #[test]
+    fn stored_text_rejoins_across_subagent_events_and_unprompted_turns_open_replies() {
+        let snapshot = |start, text: &str| Event::AgentMessageSnapshot {
+            block_start_seq: start,
+            text: text.into(),
+        };
+        let model = fold([
+            prompt("go"),
+            snapshot(2, "once t"),
+            Event::SubagentUpdate {
+                id: "a1".into(),
+                event: Box::new(started(tool("t1", "Bash"))),
+            },
+            snapshot(4, "ester reports"),
+            Event::Stopped {
+                reason: "prompt_complete".into(),
+            },
+            Event::AgentTurnStarted,
+            snapshot(7, "Task complete"),
+        ]);
+        let main: Vec<_> = model
+            .rows()
+            .iter()
+            .filter(|r| r.subagent_id.is_none())
+            .map(|r| (r.text.as_str(), r.turn_start))
+            .collect();
+        assert_eq!(
+            main,
+            [
+                ("go", false),
+                ("once tester reports", false),
+                ("Task complete", true)
+            ]
+        );
     }
 
     #[test]

@@ -836,6 +836,8 @@ export interface ActivityRow {
   subagent?: SubagentInfo;
   /** The compaction a `compacted` row reports; `text` holds its kept summary. */
   compaction?: CompactionInfo;
+  /** The first row of a turn the agent started unprompted. */
+  turnStart?: boolean;
   at: string; // ISO-8601
 }
 
@@ -891,6 +893,7 @@ export interface TranscriptRow {
   subagent_id?: string | null;
   subagent?: SubagentInfo | null;
   compaction?: CompactionInfo | null;
+  turn_start?: boolean;
 }
 
 export type TranscriptDelta =
@@ -950,6 +953,7 @@ export function transcriptRowToActivity(row: TranscriptRow, sessionId: string): 
     ...(row.subagent_id ? { subagentId: row.subagent_id } : {}),
     ...(row.subagent ? { subagent: row.subagent } : {}),
     ...(row.compaction ? { compaction: row.compaction } : {}),
+    ...(row.turn_start ? { turnStart: true } : {}),
   };
 }
 

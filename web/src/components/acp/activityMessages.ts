@@ -184,6 +184,7 @@ export function activityToThreadMessages(
       currentAssistant?.breakText();
       continue;
     }
+    if (row.turnStart) flushAssistant();
     const callout = CALLOUTS[row.kind];
     if (callout) {
       flushAssistant();
