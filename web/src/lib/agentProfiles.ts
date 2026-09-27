@@ -52,7 +52,7 @@ const CLAUDE: AgentProfile = {
   specialTitles: {
     skillNames: ["skill", "claude-skill"],
     scheduleNames: ["ScheduleWakeup", "CronCreate", "CronList", "CronDelete"],
-    harnessNames: ["ToolSearch", "Monitor", "TaskStop"],
+    harnessNames: ["ToolSearch", "Monitor", "TaskStop", "SendMessage", "ListAgents"],
   },
 };
 
@@ -79,7 +79,7 @@ const CODEX: AgentProfile = {
     edit: ["apply_patch"],
     read: ["view_file", "read_file", "read"],
   },
-  specialTitles: { skillNames: [], scheduleNames: [], harnessNames: [] },
+  specialTitles: { skillNames: [], scheduleNames: [], harnessNames: ["wait"] },
 };
 
 const OPENCODE: AgentProfile = {
