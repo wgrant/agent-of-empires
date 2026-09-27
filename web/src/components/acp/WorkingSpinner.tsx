@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 
+import { useNow } from "../../hooks/useNow";
 import {
   SPINNER_FRAMES,
   SPINNER_INTERVAL_MS,
@@ -23,6 +24,7 @@ export function WorkingSpinner({
   cancelling,
   cancelEscalatesAt,
   compacting,
+  compactionStartedAt = null,
   lastActivityRef,
   onForceEndTurn,
 }: {
@@ -31,6 +33,8 @@ export function WorkingSpinner({
   cancelling: boolean;
   cancelEscalatesAt: string | null;
   compacting: boolean;
+  /** When the running compaction began, as recorded, so its timer survives remounts. */
+  compactionStartedAt?: string | null;
   lastActivityRef: React.RefObject<number>;
   onForceEndTurn: () => Promise<void>;
 }) {
@@ -83,6 +87,11 @@ export function WorkingSpinner({
     };
   }, [cancelEscalatesAt]);
 
+  const now = useNow(1000, compacting && compactionStartedAt != null);
+  const compactionStartMs = compactionStartedAt ? Date.parse(compactionStartedAt) : NaN;
+  const compactingSecs = Number.isNaN(compactionStartMs)
+    ? stalledSecs
+    : Math.max(0, Math.floor((now - compactionStartMs) / 1000));
   const showStalled = stalledSecs >= FORCE_END_TURN_THRESHOLD_SECS;
   const toolInFlight = tool != null;
   // A /compact is silent for minutes, so it is labeled from the first tick
@@ -92,7 +101,7 @@ export function WorkingSpinner({
       ? `Stopping… (force in ${escalatesInSecs}s)`
       : "Stopping…"
     : compacting
-      ? `Compaction in progress… ${formatElapsed(stalledSecs)}`
+      ? `Compaction in progress… ${formatElapsed(compactingSecs)}`
       : showStalled
         ? `Waiting on ${toolInFlight ? "tool" : "model"}… ${formatElapsed(stalledSecs)}`
         : chooseVerb(deriveSpinnerState(thinking, tool), seed, tool);

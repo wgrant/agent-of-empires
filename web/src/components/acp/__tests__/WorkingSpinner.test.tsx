@@ -20,6 +20,7 @@ interface SpinnerOpts {
   cancelling?: boolean;
   cancelEscalatesAt?: string | null;
   compacting?: boolean;
+  compactionStartedSecsAgo?: number;
 }
 
 function renderSpinner(opts: SpinnerOpts) {
@@ -32,6 +33,11 @@ function renderSpinner(opts: SpinnerOpts) {
       cancelling={opts.cancelling ?? false}
       cancelEscalatesAt={opts.cancelEscalatesAt ?? null}
       compacting={opts.compacting ?? false}
+      compactionStartedAt={
+        opts.compactionStartedSecsAgo == null
+          ? null
+          : new Date(Date.now() - opts.compactionStartedSecsAgo * 1000).toISOString()
+      }
       lastActivityRef={ref}
       onForceEndTurn={onForceEndTurn}
     />,
@@ -61,6 +67,13 @@ describe("WorkingSpinner", () => {
       null,
     ],
     ["compaction early", { stalledSecs: 3, tool: null, compacting: true }, /compaction in progress… \ds/i, null],
+    // Timed from when it began, not from the latest activity or this mount.
+    [
+      "compaction with a recorded start",
+      { stalledSecs: 3, tool: null, compacting: true, compactionStartedSecsAgo: 125 },
+      /compaction in progress… 2m 0[56]s/i,
+      null,
+    ],
     [
       "cancel during compaction",
       { stalledSecs: 85, tool: null, compacting: true, cancelling: true },
