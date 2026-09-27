@@ -46,6 +46,10 @@ pub(super) fn is_transcript_event(event: &Event) -> bool {
             | Event::ConversationCompactionFailed
             | Event::ConversationCompactionSummary { .. }
             | Event::ConversationCompactionEnded { .. }
+            // Replayed from a finished call: re-arming it would schedule a
+            // wakeup, or show a monitor, that no longer exists.
+            | Event::WakeupScheduled { .. }
+            | Event::MonitorArmed { .. }
             | Event::AgentNotice { .. }
             // The event store recorded these live; a load replays them.
             | Event::SubagentSpawned { .. }
