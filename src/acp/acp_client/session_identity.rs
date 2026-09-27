@@ -11,7 +11,7 @@ use std::sync::Mutex as StateMutex;
 use tokio::sync::{oneshot, Mutex, MutexGuard, Notify};
 
 use super::errors::acp_internal_error;
-use super::subagents::{spawned_child, MAX_SUBAGENTS};
+use super::subagents::{ended_child, spawned_child, MAX_SUBAGENTS};
 use crate::acp::control_protocol::{
     PromptCompletedMarker, SessionReplayed, MAX_CONTROL_QUEUE_BYTES, MAX_CONTROL_QUEUE_FRAMES,
 };
@@ -126,6 +126,8 @@ fn admit_child(children: &mut HashSet<SessionId>, notification: &SessionNotifica
         if children.len() < MAX_SUBAGENTS {
             children.insert(child);
         }
+    } else if let Some(child) = ended_child(&notification.update) {
+        children.remove(&child);
     }
 }
 
@@ -339,7 +341,15 @@ impl SessionIngress {
             return RequestAdmission::Reject;
         }
         if let Some(pending) = state.pending.as_ref() {
-            return if pending.candidate.as_ref() == Some(id) {
+            // Subagents re-admitted with this session, or announced during
+            // it, are decided by the same commit.
+            let awaits = pending.candidate.as_ref() == Some(id)
+                || pending.subagents.contains(id)
+                || pending
+                    .updates
+                    .iter()
+                    .any(|update| spawned_child(&update.update).as_ref() == Some(id));
+            return if awaits {
                 RequestAdmission::AwaitCommit
             } else {
                 RequestAdmission::Reject
@@ -551,5 +561,26 @@ mod tests {
         let sessions: Vec<&str> = replay.iter().map(|n| n.session_id.0.as_ref()).collect();
         assert_eq!(sessions, ["root", "child"]);
         assert!(ingress.is_subagent(&id("child")) && !ingress.is_subagent(&id("grandchild")));
+
+        // During an establishment, a re-admitted or newly announced child's
+        // request waits for the commit like the session's own.
+        ingress.begin();
+        ingress.readmit_subagents([id("kept")]);
+        ingress.route(spawned("root", "fresh"), None).unwrap();
+        for waiting in ["kept", "fresh"] {
+            assert!(ingress.request_admission(&id(waiting)) == RequestAdmission::AwaitCommit);
+        }
+        assert!(ingress.request_admission(&id("stranger")) == RequestAdmission::Reject);
+        ingress.finish(Some(id("root"))).unwrap();
+
+        // An ended child leaves the admitted set, so it never fills up.
+        let mut params = serde_json::json!({
+            "sessionId": "root",
+            "update": {"sessionUpdate": "subagent_state_update", "subagentSessionId": "fresh",
+                       "state": "completed"},
+        });
+        super::super::extension_updates::tunnel_extension_update(&mut params);
+        assert!(admitted(&ingress, serde_json::from_value(params).unwrap()));
+        assert!(!ingress.is_subagent(&id("fresh")) && ingress.is_subagent(&id("kept")));
     }
 }
