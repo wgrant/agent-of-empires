@@ -239,8 +239,8 @@ impl Session {
     ) -> Result<(), agent_client_protocol::Error> {
         let label = self.shared.session_label.clone();
         let ingress = self.shared.ingress.clone();
-        // No identity transition while an agent callback holds the fence.
-        let Ok(transition_guard) = tokio::time::timeout_at(deadline, ingress.fence.lock()).await
+        // No identity transition while an agent callback is outstanding.
+        let Ok(transition_guard) = tokio::time::timeout_at(deadline, ingress.quiesced()).await
         else {
             let _ = respond_to.send(ResetSessionOutcome::Failed {
                 message: "reset deadline expired while agent callbacks were in flight".into(),

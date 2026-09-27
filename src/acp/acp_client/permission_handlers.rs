@@ -228,7 +228,8 @@ pub(super) async fn handle_permission_request(
         .await
         .is_ok();
     // Admission orders the request against session changes; the wait for a
-    // decision must not stall every other agent's updates.
+    // decision must not stall every other agent's updates. The caller's
+    // callback count keeps the identity fixed until the answer.
     drop(admission);
     if !published {
         // Receiver gone: cancel.
@@ -334,6 +335,7 @@ pub(super) async fn handle_elicitation_request(
     request: CreateElicitationRequest,
     event_tx: mpsc::Sender<Event>,
     pending: PendingResponders,
+    admission: impl Send,
 ) -> Result<CreateElicitationResponse, agent_client_protocol::Error> {
     let nonce = Nonce::new();
     let elicitation = match parse_elicitation(nonce.clone(), &request, chrono::Utc::now()) {
@@ -357,13 +359,14 @@ pub(super) async fn handle_elicitation_request(
         },
     );
 
-    if event_tx
+    let published = event_tx
         .send(Event::ElicitationRequested {
             elicitation: elicitation.clone(),
         })
         .await
-        .is_err()
-    {
+        .is_ok();
+    drop(admission);
+    if !published {
         pending.lock().await.remove(&nonce);
         return Ok(CreateElicitationResponse::new(ElicitationAction::Cancel));
     }
