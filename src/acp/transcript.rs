@@ -50,6 +50,9 @@ pub struct TranscriptRow {
     /// The compaction a `compacted` row reports; `text` holds its kept summary.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub compaction: Option<CompactionInfo>,
+    /// The latest lines of a running tool's output, on its `tool_start` row.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_tail: Option<String>,
     /// The first row of a turn the agent started unprompted, so it opens a new reply.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub turn_start: bool,
@@ -202,6 +205,8 @@ pub struct TranscriptModel {
     terminal_tools: HashSet<String>,
     /// Streamed `ToolCallContent`, keyed by tool call id.
     tool_outputs: HashMap<String, String>,
+    /// Command output streamed so far, keyed by tool call id.
+    tool_streams: HashMap<String, String>,
     /// Tool calls surfaced as an elicitation (AskUserQuestion); their cards are suppressed.
     elicitation_tool_ids: HashSet<String>,
     /// The row receiving the current consecutive message or thought stream.
@@ -378,6 +383,7 @@ impl TranscriptModel {
                 }
                 let mut deltas =
                     self.ensure_tool_start(tool_call_id, None, None, *completed_at, None);
+                deltas.extend(self.clear_output_tail(tool_call_id));
                 let mut row = self.completion_row(seq, tool_call_id, *is_error, content);
                 row.at = *completed_at;
                 row.output = output.clone();
@@ -394,6 +400,11 @@ impl TranscriptModel {
                     .insert(tool_call_id.clone(), content.clone());
                 Vec::new()
             }
+            Event::ToolCallOutputDelta {
+                tool_call_id,
+                data,
+                replace,
+            } => self.on_tool_output(tool_call_id, data, *replace),
             Event::ToolCallUpdated {
                 tool_call_id,
                 title,
@@ -742,6 +753,52 @@ impl TranscriptModel {
         vec![patch(row)]
     }
 
+    fn on_tool_output(
+        &mut self,
+        tool_call_id: &str,
+        data: &str,
+        replace: bool,
+    ) -> Vec<TranscriptDelta> {
+        if self.terminal_tools.contains(tool_call_id) {
+            return Vec::new();
+        }
+        let stream = self
+            .tool_streams
+            .entry(tool_call_id.to_string())
+            .or_default();
+        if replace {
+            stream.clear();
+        }
+        stream.push_str(data);
+        if stream.len() > TOOL_OUTPUT_CAP {
+            *stream = cap_output(stream);
+        }
+        let tail = output_tail(stream);
+        let Some(index) = self.find_tool_start(tool_call_id) else {
+            return Vec::new();
+        };
+        let row = &mut self.rows[index];
+        row.output_tail = Some(tail);
+        vec![patch(row)]
+    }
+
+    /// Drop a finished tool's live tail; its completion row carries the output.
+    fn clear_output_tail(&mut self, tool_call_id: &str) -> Option<TranscriptDelta> {
+        let index = self.find_tool_start(tool_call_id)?;
+        let row = &mut self.rows[index];
+        row.output_tail.take()?;
+        Some(patch(row))
+    }
+
+    /// A finished tool's output: streamed command output, else its last content snapshot.
+    fn take_tool_output(&mut self, tool_call_id: &str) -> String {
+        let snapshot = self.tool_outputs.remove(tool_call_id).unwrap_or_default();
+        match self.tool_streams.remove(tool_call_id) {
+            Some(stream) if !stream.is_empty() => stream,
+            _ => snapshot,
+        }
+    }
+
     /// Synthesize a `tool_start` for a call first seen by a later frame, so a card renders.
     fn ensure_tool_start(
         &mut self,
@@ -779,7 +836,7 @@ impl TranscriptModel {
         content: &str,
     ) -> TranscriptRow {
         // Completion content wins, then streamed output, then a status word.
-        let buffered = self.tool_outputs.remove(tool_call_id).unwrap_or_default();
+        let buffered = self.take_tool_output(tool_call_id);
         let text = if !content.is_empty() {
             content.to_string()
         } else if !buffered.is_empty() {
@@ -838,9 +895,10 @@ impl TranscriptModel {
             "done"
         };
         open.into_iter()
-            .map(|(id, subagent_id)| {
+            .flat_map(|(id, subagent_id)| {
                 self.terminal_tools.insert(id.clone());
-                let buffered = self.tool_outputs.remove(&id).unwrap_or_default();
+                let cleared = self.clear_output_tail(&id);
+                let buffered = self.take_tool_output(&id);
                 let mut row = TranscriptRow::new(
                     format!("{prefix}-{id}-{seq}"),
                     format!("tool-{id}"),
@@ -850,7 +908,7 @@ impl TranscriptModel {
                 );
                 row.tool_call_id = Some(id);
                 row.subagent_id = subagent_id;
-                self.append(row)
+                cleared.into_iter().chain([self.append(row)])
             })
             .collect()
     }
@@ -1100,6 +1158,45 @@ fn agent_id(session_id: &str) -> &str {
         .map_or(session_id, |(id, _)| id)
 }
 
+/// Past this, only the most recent output of a command is kept.
+pub(crate) const TOOL_OUTPUT_CAP: usize = 256 * 1024;
+const TAIL_LINES: usize = 12;
+const TAIL_BYTES: usize = 2048;
+
+/// Output within the cap as is; past it, the most recent part and a note of what was dropped.
+pub(crate) fn cap_tool_output(output: &str) -> String {
+    if output.len() > TOOL_OUTPUT_CAP {
+        cap_output(output)
+    } else {
+        output.to_string()
+    }
+}
+
+fn cap_output(output: &str) -> String {
+    let keep = floor_char_boundary(output, output.len() - TOOL_OUTPUT_CAP / 2);
+    format!("[{} earlier bytes omitted]\n{}", keep, &output[keep..])
+}
+
+fn output_tail(output: &str) -> String {
+    let trimmed = output.trim_end_matches('\n');
+    let start = trimmed
+        .rmatch_indices('\n')
+        .nth(TAIL_LINES - 1)
+        .map_or(0, |(i, _)| i + 1)
+        .max(floor_char_boundary(
+            trimmed,
+            trimmed.len().saturating_sub(TAIL_BYTES),
+        ));
+    trimmed[start..].to_string()
+}
+
+fn floor_char_boundary(s: &str, mut index: usize) -> usize {
+    while !s.is_char_boundary(index) {
+        index -= 1;
+    }
+    index
+}
+
 impl TranscriptRow {
     fn new(
         id: String,
@@ -1125,6 +1222,7 @@ impl TranscriptRow {
             subagent_id: None,
             subagent: None,
             compaction: None,
+            output_tail: None,
             turn_start: false,
         }
     }
@@ -1366,6 +1464,59 @@ mod tests {
             )
         );
         assert_eq!(model.rows()[2].subagent_id.as_deref(), Some("wf1"));
+    }
+
+    #[test]
+    fn streamed_command_output_tails_live_then_becomes_the_result() {
+        let delta = |data: &str| Event::ToolCallOutputDelta {
+            tool_call_id: "t1".into(),
+            data: data.into(),
+            replace: false,
+        };
+        let mut m = TranscriptModel::new();
+        for (i, e) in [
+            started(tool("t1", "cargo build")),
+            content("t1", "Build the crate"),
+            delta("Compiling a\n"),
+            delta("Compiling b\n"),
+        ]
+        .iter()
+        .enumerate()
+        {
+            m.apply_event(i as u64 + 1, e);
+        }
+        assert_eq!(
+            row(&m, "start-t1").output_tail.as_deref(),
+            Some("Compiling a\nCompiling b")
+        );
+        let deltas = m.apply_event(5, &completed("t1", false, ""));
+        assert!(
+            deltas.iter().any(|d| matches!(d, TranscriptDelta::Patch { row, .. } if row.id == "start-t1" && row.output_tail.is_none())),
+            "clients hear the tail cleared"
+        );
+        assert_eq!(row(&m, "done-t1").text, "Compiling a\nCompiling b\n");
+
+        // A snapshot replaces what streamed before it.
+        let m = fold([
+            started(tool("t2", "ls")),
+            Event::ToolCallOutputDelta {
+                tool_call_id: "t2".into(),
+                data: "partial".into(),
+                replace: false,
+            },
+            Event::ToolCallOutputDelta {
+                tool_call_id: "t2".into(),
+                data: "whole\n".into(),
+                replace: true,
+            },
+            completed("t2", false, ""),
+        ]);
+        assert_eq!(row(&m, "done-t2").text, "whole\n");
+
+        let long: String = (0..40).map(|i| format!("line {i}\n")).collect();
+        assert_eq!(output_tail(&long).lines().count(), TAIL_LINES);
+        let capped = cap_output(&"x".repeat(TOOL_OUTPUT_CAP + 10));
+        assert!(capped.starts_with("[") && capped.len() < TOOL_OUTPUT_CAP);
     }
 
     #[test]

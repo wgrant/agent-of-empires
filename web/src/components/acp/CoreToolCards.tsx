@@ -43,6 +43,7 @@ export function ExecuteToolCard({ tool, result }: ToolCardProps) {
   const command = primaryArg(tool, args, "command", "cmd", "args") ?? "(no command)";
   const description = pickStr(args, "description");
   const output = result?.text ?? "";
+  const tail = status === "running" ? pickStr(args, "_aoe_output_tail") : null;
   const [open, setOpen] = useToolCardExpansion(status);
 
   return (
@@ -61,6 +62,9 @@ export function ExecuteToolCard({ tool, result }: ToolCardProps) {
       meta={
         output && status !== "running" ? (
           <span className={META}>{unwrapMarkdownFence(output).text.split("\n").length} lines</span>
+        ) : tail ? (
+          // The latest line, so a collapsed card still shows progress.
+          <span className="max-w-[16rem] truncate font-mono text-[11px] text-text-dim">{tail.split("\n").at(-1)}</span>
         ) : undefined
       }
       expanded={open}
@@ -77,7 +81,11 @@ export function ExecuteToolCard({ tool, result }: ToolCardProps) {
           {output && status !== "err" ? (
             <HighlightedBlock text={output} language="bash" maxLines={20} />
           ) : status !== "err" ? (
-            <PlaceholderLine>{status === "running" ? "Running…" : "(no output)"}</PlaceholderLine>
+            tail ? (
+              <HighlightedBlock text={tail} language="bash" maxLines={12} />
+            ) : (
+              <PlaceholderLine>{status === "running" ? "Running…" : "(no output)"}</PlaceholderLine>
+            )
           ) : null}
         </ToolErrorBody>
       }

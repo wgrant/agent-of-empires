@@ -20,6 +20,7 @@ pub(super) fn is_transcript_event(event: &Event) -> bool {
             | Event::ToolCallStarted { .. }
             | Event::ToolCallCompleted { .. }
             | Event::ToolCallContent { .. }
+            | Event::ToolCallOutputDelta { .. }
             | Event::ToolCallUpdated { .. }
             | Event::DiffEmitted { .. }
             | Event::PlanUpdated { .. }
@@ -79,6 +80,7 @@ pub(super) fn transcript_event_kind(event: &Event) -> &'static str {
         Event::ToolCallStarted { .. } => "tool_call_started",
         Event::ToolCallCompleted { .. } => "tool_call_completed",
         Event::ToolCallContent { .. } => "tool_call_content",
+        Event::ToolCallOutputDelta { .. } => "tool_call_output_delta",
         Event::ToolCallUpdated { .. } => "tool_call_updated",
         Event::DiffEmitted { .. } => "diff_emitted",
         Event::PlanUpdated { .. } => "plan_updated",

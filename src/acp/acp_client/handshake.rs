@@ -49,6 +49,8 @@ pub(super) fn initialize_params(extensions: ClientExtensions) -> serde_json::Val
     let capabilities = &mut params["clientCapabilities"];
     capabilities["session"]["notices"] = serde_json::json!({});
     capabilities["session"]["compaction"] = serde_json::json!({});
+    // Both adapters then stream command output as `_meta.terminal_output_delta`.
+    capabilities["_meta"]["terminal_output_delta"] = serde_json::json!(true);
     // JetBrains AIR names each opt-in; SDKs that strip unknown capability
     // fields keep `_meta`, so native subagents are declared both ways.
     let mut air = Vec::new();
@@ -131,7 +133,11 @@ mod tests {
         assert_eq!(caps["session"]["notices"], serde_json::json!({}));
         assert_eq!(caps["session"]["compaction"], serde_json::json!({}));
         assert_eq!(caps["terminal"], true);
-        assert!(caps.get("subagents").is_none() && caps.get("_meta").is_none());
+        assert!(caps.get("subagents").is_none());
+        assert_eq!(
+            caps["_meta"],
+            serde_json::json!({ "terminal_output_delta": true })
+        );
         assert_eq!(params["clientInfo"]["name"], "agent-of-empires");
 
         let caps = |native_subagents, async_tasks| {

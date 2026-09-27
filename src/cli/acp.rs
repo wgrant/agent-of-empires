@@ -1064,6 +1064,7 @@ fn event_kind(event: &crate::acp::Event) -> &'static str {
         Event::ToolCallStarted { .. } => "tool_call_started",
         Event::ToolCallCompleted { .. } => "tool_call_completed",
         Event::ToolCallContent { .. } => "tool_call_content",
+        Event::ToolCallOutputDelta { .. } => "tool_call_output_delta",
         Event::ToolCallUpdated { .. } => "tool_call_updated",
         Event::ApprovalRequested { .. } => "approval_requested",
         Event::ApprovalResolved { .. } => "approval_resolved",

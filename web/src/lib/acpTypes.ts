@@ -801,6 +801,8 @@ export interface ActivityRow {
   compaction?: CompactionInfo;
   /** The first row of a turn the agent started unprompted. */
   turnStart?: boolean;
+  /** The latest lines of a running tool's output, on its `tool_start` row. */
+  outputTail?: string;
   at: string; // ISO-8601
 }
 
@@ -856,6 +858,7 @@ export interface TranscriptRow {
   subagent_id?: string | null;
   subagent?: SubagentInfo | null;
   compaction?: CompactionInfo | null;
+  output_tail?: string | null;
   turn_start?: boolean;
 }
 
@@ -911,6 +914,7 @@ export function transcriptRowToActivity(row: TranscriptRow, sessionId: string): 
     ...(row.subagent_id ? { subagentId: row.subagent_id } : {}),
     ...(row.subagent ? { subagent: row.subagent } : {}),
     ...(row.compaction ? { compaction: row.compaction } : {}),
+    ...(row.output_tail ? { outputTail: row.output_tail } : {}),
     ...(row.turn_start ? { turnStart: true } : {}),
   };
 }
@@ -938,7 +942,8 @@ export function mergeServerRows(existing: ActivityRow[], incoming: ActivityRow[]
       const merged = mergeToolStart(prev.tool, row.tool);
       // Keep the earliest raw_name across a retitling merge for subagent classification.
       if (prev.tool.raw_name) merged.raw_name = prev.tool.raw_name;
-      out[idx] = { ...prev, tool: merged, text: merged.name, at: merged.started_at };
+      // The newest frame owns the live tail, including clearing it.
+      out[idx] = { ...prev, tool: merged, text: merged.name, at: merged.started_at, outputTail: row.outputTail };
     } else {
       out[idx] = row;
     }

@@ -127,9 +127,9 @@ fn event_search_text(event: &Event) -> Option<(&'static str, String)> {
         Event::UserDiffCommentsPrompt {
             assembled_markdown, ..
         } => ("user", assembled_markdown),
-        Event::ToolCallContent { content, .. } | Event::ToolCallCompleted { content, .. } => {
-            ("tool", content)
-        }
+        Event::ToolCallContent { content, .. }
+        | Event::ToolCallCompleted { content, .. }
+        | Event::ToolCallOutputDelta { data: content, .. } => ("tool", content),
         _ => return None,
     };
     (!text.trim().is_empty()).then(|| (kind, text.clone()))
