@@ -704,7 +704,7 @@ impl SessionFileScope {
             loop {
                 let page = self.store.replay_page(&self.session_id, since, Some(1000));
                 let advance = page.last_scanned_seq;
-                events.extend(page.events);
+                events.extend(page.events.into_iter().map(|e| (e.seq, e.event)));
                 match (page.has_more, advance) {
                     (true, Some(seq)) => since = seq,
                     _ => break,

@@ -247,18 +247,18 @@ pub async fn acp_replay(
     );
     let (frames, rows) = if q.view.as_deref() == Some("rows") {
         let mut model = crate::acp::transcript::TranscriptModel::new();
-        if let Some((first_seq, first_event)) = page.events.first() {
-            for (seq, event) in
+        if let Some(first) = page.events.first() {
+            for e in
                 state
                     .acp_event_store
-                    .replay_stream_context_before(&id, *first_seq, first_event)
+                    .replay_stream_context_before(&id, first.seq, &first.event)
             {
-                model.apply_event(seq, &event);
+                model.apply_event_at(e.seq, &e.event, e.recorded_at);
             }
         }
         let mut changed_ids = std::collections::HashSet::new();
-        for (seq, event) in &page.events {
-            for delta in model.apply_event(*seq, event) {
+        for e in &page.events {
+            for delta in model.apply_event_at(e.seq, &e.event, e.recorded_at) {
                 match delta {
                     crate::acp::transcript::TranscriptDelta::Append(row) => {
                         changed_ids.insert(row.id);
@@ -283,11 +283,13 @@ pub async fn acp_replay(
         let frames = page
             .events
             .into_iter()
-            .map(|(seq, event)| crate::server::AcpBroadcastFrame {
-                session_id: id.clone(),
-                seq,
-                event: Arc::new(event),
-                worker_generation: None,
+            .map(|crate::acp::event_store::StoredEvent { seq, event, .. }| {
+                crate::server::AcpBroadcastFrame {
+                    session_id: id.clone(),
+                    seq,
+                    event: Arc::new(event),
+                    worker_generation: None,
+                }
             })
             .collect();
         (frames, None)

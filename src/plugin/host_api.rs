@@ -292,7 +292,7 @@ fn events_subscribe(state: &HostApiState, params: &Value) -> Result<Value, Dispa
         let Some(topic) = topic.as_str() else {
             return Err(DispatchError::invalid_params("\"topics\" must be strings"));
         };
-        for (seq, payload_json) in events::scan(
+        for (seq, payload_json, _) in events::scan(
             &conn,
             &state.schema,
             topic,
