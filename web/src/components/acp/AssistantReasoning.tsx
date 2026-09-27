@@ -5,9 +5,32 @@ import { useContext } from "react";
 import { ThinkingDisplayContext } from "../../lib/thinkingDisplay";
 import { Markdown } from "./Markdown";
 
+const HEADING = /^\*\*(.+)\*\*$/;
+
+/** Codex reasoning summaries arrive as `**Title**` lines, with or without prose under them. */
+function splitSummary(text: string): { headings: string[]; hasBody: boolean } {
+  const lines = text
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+  const headings = lines.flatMap((l) => HEADING.exec(l)?.[1] ?? []);
+  return { headings, hasBody: headings.length < lines.length };
+}
+
 export function AssistantReasoning({ text }: { text: string }) {
   const display = useContext(ThinkingDisplayContext);
   if (!text || display === "hidden") return null;
+  const { headings, hasBody } = splitSummary(text);
+  // Titles alone say all there is; a box around them only adds noise.
+  if (headings.length > 0 && !hasBody) {
+    return (
+      <ul data-testid="reasoning-summary" className="my-1.5 space-y-0.5 text-xs italic text-text-dim">
+        {headings.map((heading, i) => (
+          <li key={i}>{heading}</li>
+        ))}
+      </ul>
+    );
+  }
   // Keyed so switching the display re-applies its default open state.
   return (
     <details
@@ -15,8 +38,8 @@ export function AssistantReasoning({ text }: { text: string }) {
       open={display === "expanded"}
       className="my-2 rounded-lg border border-surface-700 bg-surface-900/40 text-text-secondary"
     >
-      <summary className="cursor-pointer select-none px-3 py-2 text-xs font-medium hover:text-text-primary">
-        Thinking trace
+      <summary className="cursor-pointer select-none truncate px-3 py-2 text-xs font-medium hover:text-text-primary">
+        {headings[0] ?? "Thinking trace"}
       </summary>
       <div className="max-h-80 overflow-y-auto border-t border-surface-700 px-3 py-2 text-xs leading-relaxed">
         <Markdown text={text} smooth={false} />

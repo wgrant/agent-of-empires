@@ -38,6 +38,19 @@ describe("AssistantReasoning", () => {
   });
 });
 
+describe("AssistantReasoning summaries", () => {
+  it("lists title-only summaries without a disclosure", () => {
+    render(<AssistantReasoning text={"\n\n**Polling build-all session**\n\n**Running q35 tests**"} />);
+    expect(screen.getByTestId("reasoning-summary").textContent).toBe("Polling build-all sessionRunning q35 tests");
+    expect(screen.queryByText("Thinking trace")).toBeNull();
+  });
+
+  it("labels a summary with prose by its first title", () => {
+    render(<AssistantReasoning text={"**Checking the build**\n\nThe log shows a linker error."} />);
+    expect(screen.getByText("Checking the build").closest("summary")).toBeTruthy();
+  });
+});
+
 describe("AssistantText", () => {
   it("smooths a running tail and snaps a completed pre-tool part to full text", () => {
     const { rerender } = render(<AssistantText text="Before the tool." status={{ type: "running" }} />);
