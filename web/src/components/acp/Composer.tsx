@@ -83,6 +83,10 @@ interface Props {
   availability: Exclude<ComposerAvailability, { kind: "read_only" }>;
   /** Mid-turn the textarea stays editable and sends go through the queue. */
   turnActive: boolean;
+  /** The next Stop press restarts the agent instead of asking it to stop. */
+  forceStopNext?: boolean;
+  /** When the server restarts an agent that ignored the stop request. */
+  cancelEscalatesAt?: string | null;
   /** Queue path used by the custom send buttons and mid-turn Enter, which the primitive blocks. */
   enqueuePrompt: (text: string, attachments?: PromptAttachmentInput[]) => void | Promise<void>;
   promptCapabilities: PromptCapabilities | null;
@@ -101,6 +105,8 @@ const POPOVER_CLASS =
 
 export function Composer(props: Props) {
   const { sessionId, turnActive, availability, promptCapabilities, queuedPrompts } = props;
+  const forceStop = props.forceStopNext ?? false;
+  const cancelEscalatesAt = props.cancelEscalatesAt ?? null;
   const taRef = useRef<HTMLTextAreaElement | null>(null);
   const rootRef = useRef<HTMLFormElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -303,7 +309,7 @@ export function Composer(props: Props) {
                     lastTurnUsage={props.lastTurnUsage}
                   />
                 </div>
-                {turnActive && <StopButton compact />}
+                {turnActive && <StopButton compact force={forceStop} escalatesAt={cancelEscalatesAt} />}
               </div>
             )}
 
@@ -470,7 +476,7 @@ export function Composer(props: Props) {
                   <PluginComposerActions sessionId={sessionId} getSnapshot={() => pluginSnapshot(client, taRef)} />
                   {turnActive ? (
                     <>
-                      <StopButton />
+                      <StopButton force={forceStop} escalatesAt={cancelEscalatesAt} />
                       <QueueSendButton
                         availability={availability}
                         disabled={submissionBlocked || !canSend || attachments.preparing}

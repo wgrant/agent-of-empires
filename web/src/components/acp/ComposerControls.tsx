@@ -4,6 +4,7 @@ import { ComposerPrimitive, useAui } from "@assistant-ui/react";
 import { LoaderCircle, Paperclip, Square, X } from "lucide-react";
 
 import { useMinuteClock } from "../../hooks/useMinuteClock";
+import { useNow } from "../../hooks/useNow";
 import type { AcpState, PromptAttachmentInput } from "../../lib/acpTypes";
 import {
   compactQuotaWindows,
@@ -265,25 +266,44 @@ export function SendButton({
   );
 }
 
-export function StopButton({ compact = false }: { compact?: boolean }) {
+/** Asks the agent to stop; once asked, the next press restarts it instead. */
+export function StopButton({
+  compact = false,
+  force = false,
+  escalatesAt = null,
+}: {
+  compact?: boolean;
+  force?: boolean;
+  escalatesAt?: string | null;
+}) {
   const aui = useAui();
+  const deadline = escalatesAt ? Date.parse(escalatesAt) : NaN;
+  const now = useNow(1000, force && !Number.isNaN(deadline));
+  const remaining = Number.isNaN(deadline) ? 0 : Math.ceil((deadline - now) / 1000);
+  const label = force ? "Force stop" : "Stop";
+  const title = force
+    ? `The agent has not stopped yet. Press again to restart it now; it resumes from the saved transcript, losing partial tool output.${
+        remaining > 0 ? ` It restarts by itself in ${remaining}s.` : ""
+      }`
+    : "Stop the agent";
   return (
     <button
       type="button"
-      aria-label="Stop"
-      title="Stop the agent"
+      aria-label={label}
+      title={title}
+      data-force={force ? "" : undefined}
       onClick={() => aui.thread.cancelRun()}
       className={[
-        "inline-flex items-center justify-center gap-1.5",
-        "rounded-lg border border-surface-600 bg-surface-800",
+        "inline-flex items-center justify-center gap-1.5 rounded-lg border",
         compact ? "p-1.5" : "px-2.5 py-1.5 text-[12px]",
-        "font-medium text-text-secondary",
-        "hover:border-rose-700/60 hover:bg-rose-950/30 hover:text-rose-300",
-        "active:scale-[0.98] transition-all duration-100",
+        "font-medium active:scale-[0.98] transition-all duration-100",
+        force
+          ? "border-rose-700/70 bg-rose-950/40 text-rose-300 hover:bg-rose-950/60"
+          : "border-surface-600 bg-surface-800 text-text-secondary hover:border-rose-700/60 hover:bg-rose-950/30 hover:text-rose-300",
       ].join(" ")}
     >
       <Square className="h-3.5 w-3.5 fill-current" strokeWidth={0} />
-      {!compact && <span className="hidden @lg:inline">Stop</span>}
+      {!compact && <span className="hidden @lg:inline">{label}</span>}
     </button>
   );
 }

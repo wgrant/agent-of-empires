@@ -8,8 +8,11 @@ import { emptyAcpState, type ActivityRow } from "../../../lib/acpTypes";
 
 const session = vi.hoisted(() => ({
   activity: [] as ActivityRow[],
+  turnActive: false,
   releaseSend: null as (() => void) | null,
 }));
+const cancelPrompt = vi.hoisted(() => vi.fn(async () => {}));
+const forceEndTurn = vi.hoisted(() => vi.fn(async () => {}));
 const sendPrompt = vi.hoisted(() =>
   vi.fn(
     () =>
@@ -21,14 +24,15 @@ const sendPrompt = vi.hoisted(() =>
 
 vi.mock("../../../hooks/useAcpSession", () => ({
   useAcpSession: () => ({
-    state: { ...emptyAcpState(), activity: session.activity },
+    state: { ...emptyAcpState(), activity: session.activity, turnActive: session.turnActive },
     sendPrompt,
-    cancelPrompt: async () => {},
-    forceEndTurn: async () => {},
+    cancelPrompt,
+    forceEndTurn,
   }),
 }));
 
 import { AcpRuntime } from "../AcpRuntime";
+import { StopButton } from "../ComposerControls";
 
 const row = (id: string, kind: ActivityRow["kind"], text: string): ActivityRow => ({
   id,
@@ -92,5 +96,18 @@ describe("AcpRuntime", () => {
 
     await act(async () => session.releaseSend?.());
     window.localStorage.clear();
+  });
+
+  it("turns Stop into Force stop once asked, and the second press forces", async () => {
+    session.activity = [row("u1", "user_prompt", "q")];
+    session.turnActive = true;
+    const view = render(
+      <AcpRuntime sessionId="sess-stop">{(ctx) => <StopButton force={ctx.forceStopNext} />}</AcpRuntime>,
+    );
+    await act(async () => view.getByRole("button", { name: "Stop" }).click());
+    expect(cancelPrompt).toHaveBeenCalledOnce();
+    await act(async () => view.getByRole("button", { name: "Force stop" }).click());
+    expect(forceEndTurn).toHaveBeenCalledOnce();
+    session.turnActive = false;
   });
 });

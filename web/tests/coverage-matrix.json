@@ -2426,7 +2426,7 @@
       ]
     },
     {
-      "id": "acp.force-end-turn-gate",
+      "id": "acp.stall-label",
       "kind": "vitest",
       "risk": "medium",
       "specs": ["src/components/acp/__tests__/WorkingSpinner.test.tsx"],
@@ -2437,7 +2437,11 @@
       "kind": "vitest",
       "risk": "high",
       "specs": ["src/components/acp/__tests__/useCancelEscalation.test.tsx"],
-      "components": ["web/src/components/acp/AcpRuntime.tsx", "web/src/components/acp/useCancelEscalation.ts"]
+      "components": [
+        "web/src/components/acp/AcpRuntime.tsx",
+        "web/src/components/acp/useCancelEscalation.ts",
+        "web/src/components/acp/ComposerControls.tsx"
+      ]
     },
     {
       "id": "acp.spinner-tool-precedence",
@@ -2454,7 +2458,7 @@
       "id": "acp.compaction-in-progress",
       "kind": "live-playwright",
       "risk": "medium",
-      "notes": "#3219: /compact runs 90-170s with zero frames, so it trips the 30s stall watchdog every time. The spinner must name the phase instead of claiming the model is stalled, must not offer the Force-end-turn hatch (it would abort the compaction), and the composer must park a follow-up rather than steer it into a turn that never answers it. The live spec drives a fake agent that reproduces the real marker-hold-marker shape end to end; the vitest specs cover the reducer, gate and label in isolation.",
+      "notes": "#3219: /compact runs 90-170s with zero frames, so it trips the 30s stall watchdog every time. The spinner must name the phase instead of claiming the model is stalled, and the composer must park a follow-up rather than steer it into a turn that never answers it. The live spec drives a fake agent that reproduces the real marker-hold-marker shape end to end; the vitest specs cover the reducer, gate and label in isolation.",
       "specs": [
         "tests/live/acp-transcript.spec.ts",
         "src/components/acp/__tests__/WorkingSpinner.test.tsx",
