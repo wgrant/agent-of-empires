@@ -265,7 +265,7 @@ pub(super) async fn run_connection_task<W, R>(
                       _conn| {
                     let (shared, pending) = (shared.clone(), pending.clone());
                     async move {
-                        let _guard = match shared.ingress.request(&request.session_id).await {
+                        let admission = match shared.ingress.request(&request.session_id).await {
                             Ok(guard) => guard,
                             Err(error) => return reply(responder, Err(error)),
                         };
@@ -290,6 +290,7 @@ pub(super) async fn run_connection_task<W, R>(
                             profile,
                             shared.tool_context_cache.clone(),
                             subagent,
+                            admission,
                         )
                         .await;
                         reply(responder, outcome)
