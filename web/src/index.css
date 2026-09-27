@@ -380,6 +380,27 @@ html[data-ios-standalone]:not([data-editing]) {
   border: 1px solid var(--color-surface-700);
   background: var(--color-surface-950);
 }
+.acp-markdown .acp-code-body {
+  margin: 0.5rem 0;
+  border: 1px solid var(--color-surface-700);
+  border-radius: 0.375rem;
+  background: var(--color-surface-950);
+}
+.acp-markdown .acp-code-body pre {
+  border: none;
+}
+/* The header and the block below it read as one box. */
+.acp-markdown .acp-code-header {
+  margin-top: 0.5rem;
+  border: 1px solid var(--color-surface-700);
+  border-bottom-color: var(--color-surface-800);
+  border-radius: 0.375rem 0.375rem 0 0;
+}
+.acp-markdown .acp-code-header + :is(pre, .acp-code-body) {
+  margin-top: 0;
+  border-top: none;
+  border-radius: 0 0 0.375rem 0.375rem;
+}
 .acp-markdown hr {
   border: none;
   border-top: 1px solid var(--color-surface-800);

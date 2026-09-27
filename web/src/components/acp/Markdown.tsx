@@ -182,12 +182,12 @@ function ShikiSyntaxHighlighter({ language, code }: SyntaxHighlighterProps) {
       <CodeHeader language={language} code={code} wrapped={wrapped} onToggleWrap={toggleWrap} />
       {html ? (
         <div
-          className={`px-3 py-2 text-[0.86em] leading-[1.3333] [&_pre]:!bg-transparent [&_pre]:!m-0 [&_pre]:!p-0 ${wrapped ? "wrap-lines" : "overflow-x-auto"}`}
+          className={`acp-code-body px-3 py-2 text-[0.86em] leading-[1.3333] [&_pre]:!bg-transparent [&_pre]:!m-0 [&_pre]:!p-0 ${wrapped ? "wrap-lines" : "overflow-x-auto"}`}
           dangerouslySetInnerHTML={{ __html: html }}
         />
       ) : (
         <pre
-          className={`px-3 py-2 text-[0.86em] leading-[1.3333] font-mono text-text-primary ${wrapped ? "wrap-lines" : "overflow-x-auto"}`}
+          className={`acp-code-body px-3 py-2 text-[0.86em] leading-[1.3333] font-mono text-text-primary ${wrapped ? "wrap-lines" : "overflow-x-auto"}`}
         >
           {wrapped ? <WrapLines text={code} /> : code}
         </pre>
@@ -208,7 +208,7 @@ function CodeHeader({
   onToggleWrap: () => void;
 }) {
   return (
-    <div className="flex items-center justify-between border-b border-surface-800 bg-surface-950 px-3 py-1 text-[0.79em] font-mono uppercase tracking-wider text-text-dim">
+    <div className="acp-code-header flex items-center justify-between bg-surface-950 px-3 py-1 text-[0.79em] font-mono uppercase tracking-wider text-text-dim">
       <span>{language ?? "text"}</span>
       <span className="flex items-center">
         <WrapToggle wrapped={wrapped} onToggle={onToggleWrap} />
