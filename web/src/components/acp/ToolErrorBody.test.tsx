@@ -70,7 +70,7 @@ describe("ToolErrorBody", () => {
           <div>attempted body</div>
         </ToolErrorBody>,
       );
-      expect(container.textContent).toContain("(no error detail provided)");
+      expect(container.textContent).toContain("No error output");
       cleanup();
     }
   });

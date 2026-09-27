@@ -30,7 +30,7 @@ export function ToolErrorBody({ status, errorText, children }: Props) {
           )}
         </div>
         <pre className="whitespace-pre-wrap break-words font-mono text-[11px] text-rose-100/90">
-          {body || "(no error detail provided)"}
+          {body || "No error output"}
         </pre>
       </div>
       {children && (

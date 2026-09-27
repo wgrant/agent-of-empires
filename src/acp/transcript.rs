@@ -222,6 +222,10 @@ pub struct TranscriptModel {
     tool_outputs: HashMap<String, String>,
     /// Command output streamed so far, keyed by tool call id.
     tool_streams: HashMap<String, String>,
+    /// Each pending approval's tool call, by nonce.
+    approval_tools: HashMap<String, String>,
+    /// Tool calls whose approval the user denied.
+    declined_tools: HashSet<String>,
     /// Tool calls surfaced as an elicitation (AskUserQuestion); their cards are suppressed.
     elicitation_tool_ids: HashSet<String>,
     /// The row receiving the current consecutive message or thought stream.
@@ -433,6 +437,19 @@ impl TranscriptModel {
                 *started_at,
                 diffs.as_deref(),
             ),
+            Event::ApprovalRequested { approval } => {
+                self.approval_tools
+                    .insert(approval.nonce.0.clone(), approval.tool_call.id.clone());
+                Vec::new()
+            }
+            Event::ApprovalResolved { nonce, decision } => {
+                if let Some(tool_call_id) = self.approval_tools.remove(&nonce.0) {
+                    if *decision == crate::acp::approvals::ApprovalDecision::Deny {
+                        self.declined_tools.insert(tool_call_id);
+                    }
+                }
+                Vec::new()
+            }
             Event::ElicitationRequested { elicitation } => {
                 let Some(tool_call_id) = elicitation.tool_call_id.as_ref() else {
                     return Vec::new();
@@ -860,14 +877,20 @@ impl TranscriptModel {
         is_error: bool,
         content: &str,
     ) -> TranscriptRow {
-        // Completion content wins, then streamed output, then a status word.
+        // Completion content wins, then streamed output; a success with
+        // neither gets a status word.
         let buffered = self.take_tool_output(tool_call_id);
-        let text = if !content.is_empty() {
+        // A call the user declined did not fail: it never ran.
+        let declined = self.declined_tools.remove(tool_call_id) && is_error;
+        let text = if declined {
+            "Declined by you".to_string()
+        } else if !content.is_empty() {
             content.to_string()
         } else if !buffered.is_empty() {
             buffered
         } else if is_error {
-            "tool failed".to_string()
+            // The card says there was no detail rather than inventing one.
+            String::new()
         } else {
             "completed".to_string()
         };
@@ -879,7 +902,9 @@ impl TranscriptModel {
             base_id
         };
         self.terminal_tools.insert(tool_call_id.to_string());
-        let kind = if is_error {
+        let kind = if declined {
+            TranscriptRowKind::ToolStopped
+        } else if is_error {
             TranscriptRowKind::ToolError
         } else {
             TranscriptRowKind::ToolComplete
@@ -1514,6 +1539,38 @@ mod tests {
             },
         ]);
         assert_eq!(kinds(&model).last(), Some(&TranscriptRowKind::ToolStopped));
+    }
+
+    #[test]
+    fn a_denied_call_closes_as_declined_not_failed() {
+        let approval = crate::acp::approvals::Approval {
+            nonce: crate::acp::approvals::Nonce("n1".into()),
+            tool_call: tool("t1", "rm -rf build"),
+            destructive: false,
+            options: Vec::new(),
+            choice: false,
+            requested_at: at(100),
+            resolved: None,
+            subagent: None,
+        };
+        let model = fold([
+            started(tool("t1", "rm -rf build")),
+            Event::ApprovalRequested { approval },
+            Event::ApprovalResolved {
+                nonce: crate::acp::approvals::Nonce("n1".into()),
+                decision: crate::acp::approvals::ApprovalDecision::Deny,
+            },
+            completed(
+                "t1",
+                true,
+                "The user doesn't want to proceed with this tool use.",
+            ),
+        ]);
+        let done = row(&model, "done-t1");
+        assert_eq!(
+            (done.kind, done.text.as_str()),
+            (TranscriptRowKind::ToolStopped, "Declined by you")
+        );
     }
 
     #[test]
@@ -2185,7 +2242,7 @@ mod tests {
                 "completed",
                 TranscriptRowKind::ToolComplete,
             ),
-            (None, "", true, "tool failed", TranscriptRowKind::ToolError),
+            (None, "", true, "", TranscriptRowKind::ToolError),
         ];
         for (i, (buffered, text, is_error, want_text, want_kind)) in cases.into_iter().enumerate() {
             let mut events = vec![started(tool("t", "Bash"))];
