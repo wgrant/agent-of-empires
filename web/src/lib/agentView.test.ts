@@ -8,6 +8,7 @@ import {
   lastActivityByAgent,
   listAgents,
   parseAgentMessages,
+  partitionAgents,
   resolveViewedAgent,
   topLevelAgents,
 } from "./agentView";
@@ -44,11 +45,21 @@ const rows: ActivityRow[] = [
 describe("agent views", () => {
   it("lists the main agent's direct subagents with their run state", () => {
     expect(listAgents(rows)).toEqual([
-      { id: "r", name: "reviewer", kind: null, state: "done" },
-      { id: "t", name: "tester", kind: null, state: "running" },
+      { id: "r", name: "reviewer", kind: null, state: "done", recent: true },
+      { id: "t", name: "tester", kind: null, state: "running", recent: true },
       // A teammate between runs.
-      { id: "m", name: "mate", kind: null, state: "idle" },
+      { id: "m", name: "mate", kind: null, state: "idle", recent: true },
     ]);
+  });
+
+  it("keeps tabs for live, this turn's and viewed agents, and folds away the rest", () => {
+    const later = [...rows, row("u2", "user_prompt", "next"), header("x", "extra", "failed")];
+    const agents = listAgents(later);
+    const ids = (list: { id: string }[]) => list.map((a) => a.id);
+    // The reviewer finished in an earlier turn; the tester runs, the mate is idle.
+    expect(ids(partitionAgents(agents, null).shown)).toEqual(["t", "m", "x"]);
+    expect(ids(partitionAgents(agents, null).earlier)).toEqual(["r"]);
+    expect(ids(partitionAgents(agents, "r").shown)).toEqual(["r", "t", "m", "x"]);
   });
 
   it("gives an agent its task, its own rows unscoped, and its subagents' rows as they were", () => {
