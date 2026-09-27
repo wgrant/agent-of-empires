@@ -229,14 +229,25 @@ impl Shared {
             self.first_event_after_attach.store(true, Ordering::Relaxed);
         }
         let prompt_active = self.prompt_in_flight.load(Ordering::Relaxed);
-        let agent_turn_started = !prompt_active
-            && self.between_prompt.observe(
+        if native_subagent.is_none() {
+            self.between_prompt.track_subagent(lifecycle.as_ref());
+        }
+        let agent_turn_started = if prompt_active {
+            false
+        } else if native_subagent.is_some() {
+            if lifecycle.is_some() {
+                self.between_prompt.observe_subagent_activity(now_ms());
+            }
+            false
+        } else {
+            self.between_prompt.observe(
                 lifecycle.as_ref(),
                 wakeup.as_ref(),
                 now_ms(),
                 self.adopted_turn_active.load(Ordering::Relaxed),
                 &self.terminal_claim,
-            );
+            )
+        };
         if agent_turn_started {
             debug!(
                 target: "acp.protocol",

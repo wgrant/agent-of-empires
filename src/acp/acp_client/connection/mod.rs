@@ -191,6 +191,11 @@ pub(super) async fn run_connection_task<W, R>(
         resources.sandbox.as_ref(),
         ingress.clone(),
     ));
+    if let ConnectMode::Resume { subagents, .. } = &mode {
+        shared
+            .between_prompt
+            .readmit_subagents(subagents.iter().cloned());
+    }
     let ready_tx = Arc::new(Mutex::new(Some(ready_tx)));
 
     let builder = Client
