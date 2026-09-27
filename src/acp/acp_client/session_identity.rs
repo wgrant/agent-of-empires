@@ -137,6 +137,25 @@ pub(super) struct SessionIngress {
     pub(super) fence: Mutex<()>,
     changed: Notify,
     failure: Notify,
+    /// Agent callbacks (approvals, elicitations) admitted and not yet answered.
+    callbacks: std::sync::atomic::AtomicUsize,
+    callbacks_idle: Notify,
+}
+
+/// An admitted agent callback; the session identity cannot change until it ends.
+pub(super) struct Callback<'a>(&'a SessionIngress);
+
+impl Drop for Callback<'_> {
+    fn drop(&mut self) {
+        if self
+            .0
+            .callbacks
+            .fetch_sub(1, std::sync::atomic::Ordering::SeqCst)
+            == 1
+        {
+            self.0.callbacks_idle.notify_waiters();
+        }
+    }
 }
 
 #[derive(Default)]
@@ -388,6 +407,30 @@ impl SessionIngress {
         }
     }
 
+    /// Count a callback admitted under `fence`; waiting on its answer then
+    /// needs no fence, so other updates keep flowing.
+    pub(super) fn callback(&self, _fence: &MutexGuard<'_, ()>) -> Callback<'_> {
+        self.callbacks
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Callback(self)
+    }
+
+    /// The fence, taken once no admitted callback is outstanding, for an
+    /// identity transition that must not strand one.
+    pub(super) async fn quiesced(&self) -> MutexGuard<'_, ()> {
+        loop {
+            let idle = self.callbacks_idle.notified();
+            tokio::pin!(idle);
+            idle.as_mut().enable();
+            let guard = self.fence.lock().await;
+            if self.callbacks.load(std::sync::atomic::Ordering::SeqCst) == 0 {
+                return guard;
+            }
+            drop(guard);
+            idle.await;
+        }
+    }
+
     pub(super) async fn failed(&self) -> agent_client_protocol::Error {
         loop {
             let failed = self.failure.notified();
@@ -516,6 +559,24 @@ mod tests {
                 assert!(ingress.route(notif("s"), None).is_err());
             }
         }
+    }
+
+    #[tokio::test]
+    async fn an_outstanding_callback_blocks_identity_changes_not_updates() {
+        let ingress = SessionIngress::new(Some(SessionId::from("s")));
+        let admission = ingress.fence.lock().await;
+        let callback = ingress.callback(&admission);
+        drop(admission);
+        // Updates still pass while the callback awaits its answer.
+        assert!(ingress
+            .notification(notif("s"), None)
+            .await
+            .unwrap()
+            .is_some());
+        let mut quiesced = std::pin::pin!(ingress.quiesced());
+        assert!(futures_util::poll!(quiesced.as_mut()).is_pending());
+        drop(callback);
+        assert!(futures_util::poll!(quiesced.as_mut()).is_ready());
     }
 
     fn spawned(on: &str, child: &str) -> SessionNotification {
