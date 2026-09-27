@@ -83,6 +83,8 @@ interface Props {
   quota?: AcpState["quota"];
   lastModel?: AcpState["lastModel"];
   lastTurnUsage?: AcpState["lastTurnUsage"];
+  /** The agent's guess at the next prompt; Tab takes it into an empty composer. */
+  promptSuggestion?: AcpState["promptSuggestion"];
   availableCommands: AcpState["availableCommands"];
   /** Shared policy for what submitting the current draft means. */
   availability: Exclude<ComposerAvailability, { kind: "read_only" }>;
@@ -165,7 +167,15 @@ export function Composer(props: Props) {
   );
   const dictationGuard = useDictationBurstGuard((text) => client.setText(text));
 
+  const suggestion =
+    !turnActive && !isMobile && availability.kind !== "blocked" ? (props.promptSuggestion ?? null) : null;
+
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Tab" && !e.shiftKey && suggestion && taRef.current?.value === "") {
+      e.preventDefault();
+      client.setText(suggestion);
+      return;
+    }
     // Esc while browsing restores the draft, ahead of the primitive's own Escape handling.
     if (e.key === "Escape" && recall.recallRef.current != null) {
       e.preventDefault();
@@ -360,11 +370,13 @@ export function Composer(props: Props) {
                     ? availability.kind === "steer_now"
                       ? "Steer the current turn…"
                       : "Queue a follow-up…"
-                    : availability.kind === "blocked"
-                      ? "Sending is unavailable; your draft is kept"
-                      : availability.kind === "wake_agent"
-                        ? "Message to wake the agent…"
-                        : "Message… @ for files, / for commands"
+                    : suggestion
+                      ? `${suggestion}  (Tab to use)`
+                      : availability.kind === "blocked"
+                        ? "Sending is unavailable; your draft is kept"
+                        : availability.kind === "wake_agent"
+                          ? "Message to wake the agent…"
+                          : "Message… @ for files, / for commands"
               }
               onInput={(e) => fitTextarea(e.currentTarget)}
               onFocus={() => {

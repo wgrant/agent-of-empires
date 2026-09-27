@@ -514,3 +514,42 @@ describe("patchServerRow (Tier 4 delta Patch)", () => {
     expect(appended.map((r) => r.id)).toEqual(["start-a", "msg-9"]);
   });
 });
+
+describe("applyEvent / prompt suggestions and output tokens", () => {
+  it("offers a suggestion only between turns and counts tokens only within one", () => {
+    let s = emptyAcpState();
+    s = ev(s, 1, { UserPromptSent: { text: "go" } });
+    s = ev(s, 2, { TurnOutputTokens: { tokens: 1200 } });
+    expect(s.turnOutputTokens).toBe(1200);
+    // A suggestion for the previous turn, arriving once this one runs, is stale.
+    s = ev(s, 3, { PromptSuggested: { text: "stale" } });
+    expect(s.promptSuggestion).toBeNull();
+    s = ev(s, 4, { Stopped: { reason: "end_turn" } });
+    expect(s.turnOutputTokens).toBeNull();
+    s = ev(s, 5, { PromptSuggested: { text: "run the tests" } });
+    expect(s.promptSuggestion).toBe("run the tests");
+    s = ev(s, 6, { UserPromptSent: { text: "run the tests" } });
+    expect(s.promptSuggestion).toBeNull();
+  });
+
+  it("maps hook and tool summary fields off the wire", () => {
+    const hook = { name: "PreToolUse:Bash", event: "PreToolUse", status: "error", exit_code: 2 };
+    const row = (over: Partial<TranscriptRow>): TranscriptRow => ({
+      id: "r",
+      group_id: "g",
+      kind: "hook",
+      at: "2026-01-01T00:00:00Z",
+      text: "",
+      ...over,
+    });
+    expect(transcriptRowToActivity(row({ hook }), "s-1").hook).toEqual(hook);
+    const start = transcriptRowToActivity(
+      row({ kind: "tool_start", tool: tc("t1"), tool_summary: "Listed files" }),
+      "s-1",
+    );
+    expect(start.toolSummary).toBe("Listed files");
+    // A later sparse start keeps the summary the richer one carried.
+    const merged = mergeServerRows([start], [{ ...start, toolSummary: undefined }]);
+    expect(merged[0]!.toolSummary).toBe("Listed files");
+  });
+});

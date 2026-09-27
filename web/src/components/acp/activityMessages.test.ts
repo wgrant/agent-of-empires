@@ -7,6 +7,7 @@ import {
   activityToThreadMessages,
   clearFoldGeneration,
   COMPACTION_NAME,
+  HOOK_NAME,
   NATIVE_SUBAGENT_NAME,
   SUBAGENT_TASK_NAME,
   TODO_GROUP_NAME,
@@ -163,6 +164,28 @@ describe("tool-call grouping", () => {
       ["group-t11", ids(11, 20)],
       ["group-t21", ids(21, 25)],
     ]);
+  });
+
+  it("shows hooks worth reading between tool runs, and carries tool summaries into the group", () => {
+    const hook = (id: string, status: string, text: string) =>
+      row(`hook-${id}`, "hook", text, { hook: { name: "PreToolUse:Bash", event: "PreToolUse", status } });
+    const summarised = (id: string) => ({ ...toolStart(id), toolSummary: "Read the configs" });
+    const parts = toolParts([
+      summarised("a1"),
+      hook("quiet", "success", ""),
+      summarised("a2"),
+      summarised("a3"),
+      hook("loud", "error", "blocked"),
+      toolStart("b1"),
+    ]);
+    // The silent success is dropped, so it leaves the run whole.
+    expect(names(parts)).toEqual([TOOL_GROUP_NAME, HOOK_NAME, "read"]);
+    const children = payload(parts[0]!).children as Part[];
+    expect(children.map((c) => JSON.parse(c.argsText!)._aoe_summary)).toEqual(Array(3).fill("Read the configs"));
+    expect(payload(parts[1]!)).toEqual({
+      hook: { name: "PreToolUse:Bash", event: "PreToolUse", status: "error" },
+      output: "blocked",
+    });
   });
 
   it("gives text-split runs distinct ids", () => {

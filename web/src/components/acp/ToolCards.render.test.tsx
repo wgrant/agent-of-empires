@@ -34,6 +34,7 @@ import { BackgroundAgentsContext } from "./backgroundAgentsContext";
 import { AsyncSubagentCard, extractTaskResult, SubagentCard, ToolGroupCard } from "./GroupToolCards";
 import { requestCardFocus } from "../../hooks/useCardFocus";
 import { CompactionCard } from "./CompactionCard";
+import { HookCard } from "./HookCard";
 import { NativeSubagentCard } from "./NativeSubagentCard";
 import { TodoGroupCard } from "./TodoCards";
 import { formatDurationMs, formatDurationSeconds } from "./ToolCardChrome";
@@ -711,6 +712,33 @@ describe("ToolGroupCard", () => {
 
   it("renders nothing for an empty run", () => {
     expect(render(<ToolGroupCard items={[]} />).container.textContent).toBe("");
+  });
+
+  it("leads with the agent's summaries of the run", () => {
+    const items = [
+      item("s1", "read", { path: "a.ts", _aoe_summary: "Read the configs" }),
+      item("s2", "read", { path: "b.ts", _aoe_summary: "Read the configs" }),
+      item("s3", "execute", { command: "ls", _aoe_summary: "Listed the tree" }),
+    ];
+    const text = render(<ToolGroupCard items={items} />).container.textContent;
+    expect(text).toContain("Read the configs; Listed the tree");
+    expect(text).toContain("3 actions");
+    expect(text).not.toContain("Read 2");
+  });
+});
+
+describe("HookCard", () => {
+  const hook = (status: string, exit_code?: number) => ({ name: "Stop", event: "Stop", status, exit_code });
+
+  it("shows a failed hook with its output open, and nothing for a silent success", () => {
+    const failed = render(<HookCard hook={hook("error", 1)} output={"tests failed\n3 failures"} />);
+    expect(failed.container.textContent).toContain("Stop hook failed (exit 1): tests failed");
+    expect(failed.container.textContent).toContain("3 failures");
+    fireEvent.click(failed.getAllByRole("button")[0]!);
+    expect(failed.container.textContent).not.toContain("3 failures");
+    cleanup();
+    expect(render(<HookCard hook={hook("success", 0)} output="" />).container.textContent).toBe("");
+    expect(render(<HookCard hook={hook("running")} output="" />).container.textContent).toContain("Running Stop hook");
   });
 });
 

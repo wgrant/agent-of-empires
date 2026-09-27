@@ -4,7 +4,7 @@
 import { Layers, Sparkles } from "lucide-react";
 
 import { useCardFocus } from "../../hooks/useCardFocus";
-import { pickStr } from "../../lib/acpArgs";
+import { parseJsonObject, pickStr } from "../../lib/acpArgs";
 import type { BackgroundAgentStatus, ToolCall } from "../../lib/acpTypes";
 import { useBackgroundAgentFor, useOpenBackgroundAgentsPane } from "./backgroundAgentsContext";
 import {
@@ -64,6 +64,9 @@ export function ToolGroupCard({ items }: { items: (ToolCardProps & { kind: strin
   const [open, setOpen] = useToolCardExpansion(status, false);
   if (items.length === 0) return null;
   const breakdown = summariseKinds(items, errorCount);
+  const summaries = [
+    ...new Set(items.flatMap((i) => pickStr(parseJsonObject(i.tool.args_preview) ?? {}, "_aoe_summary") ?? [])),
+  ];
 
   return (
     <CardChrome
@@ -73,10 +76,17 @@ export function ToolGroupCard({ items }: { items: (ToolCardProps & { kind: strin
       icon={<Layers className={ICON} />}
       label="actions"
       primary={
-        <>
-          <span>{items.length} actions</span>
-          {breakdown && <span className="ml-2 text-text-dim">· {breakdown}</span>}
-        </>
+        summaries.length > 0 ? (
+          <>
+            <span>{summaries.join("; ")}</span>
+            <span className="ml-2 text-text-dim">· {items.length} actions</span>
+          </>
+        ) : (
+          <>
+            <span>{items.length} actions</span>
+            {breakdown && <span className="ml-2 text-text-dim">· {breakdown}</span>}
+          </>
+        )
       }
       expanded={open}
       onToggle={() => setOpen((v) => !v)}
