@@ -162,6 +162,8 @@ pub enum TranscriptRowKind {
     AgentNotice,
     /// A native subagent the agent delegated to; its own rows name it in `subagent_id`.
     Subagent,
+    /// A message that woke a waiting subagent for another run; `text` holds it.
+    SubagentWoken,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -263,7 +265,7 @@ impl TranscriptModel {
 
     fn apply(&mut self, seq: u64, event: &Event) -> Vec<TranscriptDelta> {
         if let Event::SubagentUpdate { id, event } = event {
-            return self.apply_in_subagent(seq, id, event);
+            return self.apply_in_subagent(seq, agent_id(id), event);
         }
         let incoming_text_kind = match event {
             Event::AgentMessageChunk { .. } | Event::AgentMessageSnapshot { .. } => {
@@ -575,22 +577,23 @@ impl TranscriptModel {
                 vec![self.append(row)]
             }
             Event::SubagentSpawned {
-                id,
+                id: session_id,
                 parent,
                 name,
                 task,
                 at,
             } => {
+                let id = agent_id(session_id);
                 let row_id = format!("subagent-{id}");
                 if self.row_ids.contains(&row_id) {
-                    return Vec::new();
+                    return self.wake_subagent(id, session_id, task, *at);
                 }
                 self.turn_has_output = true;
                 let mut row = self.grouped_row(row_id, TranscriptRowKind::Subagent, task.clone());
                 row.at = *at;
-                row.subagent_id = parent.clone();
+                row.subagent_id = parent.as_deref().map(|p| agent_id(p).to_string());
                 row.subagent = Some(SubagentInfo {
-                    id: id.clone(),
+                    id: id.to_string(),
                     name: name.clone(),
                     kind: None,
                     activity: None,
@@ -656,6 +659,7 @@ impl TranscriptModel {
                 deltas
             }
             Event::SubagentStateChanged { id, state, at } => {
+                let id = agent_id(id);
                 let mut deltas = self.patch_subagent(id, |info| {
                     info.state = Some(state.clone());
                     info.ended_at = Some(*at);
@@ -890,6 +894,34 @@ impl TranscriptModel {
         }
     }
 
+    /// A later generation of a subagent: its card runs again, and the
+    /// message that woke it opens the new run.
+    fn wake_subagent(
+        &mut self,
+        id: &str,
+        session_id: &str,
+        message: &str,
+        at: DateTime<Utc>,
+    ) -> Vec<TranscriptDelta> {
+        let row_id = format!("woken-{session_id}");
+        if session_id == id || self.row_ids.contains(&row_id) {
+            return Vec::new();
+        }
+        self.turn_has_output = true;
+        let mut deltas = self.patch_subagent(id, |info| {
+            info.state = None;
+            info.ended_at = None;
+            info.activity = None;
+            Some(())
+        });
+        self.subagent_text_runs.remove(id);
+        let mut row = self.grouped_row(row_id, TranscriptRowKind::SubagentWoken, message.into());
+        row.at = at;
+        row.subagent_id = Some(id.to_string());
+        deltas.push(self.append(row));
+        deltas
+    }
+
     /// Apply a subagent's event with its own text run, its rows stamped with its id.
     fn apply_in_subagent(&mut self, seq: u64, id: &str, event: &Event) -> Vec<TranscriptDelta> {
         let subagent_run = self.subagent_text_runs.remove(id);
@@ -1044,6 +1076,14 @@ impl TranscriptModel {
                 && r.tool_call_id.as_deref() == Some(tool_call_id)
         })
     }
+}
+
+/// The agent a subagent session belongs to: claude-agent-acp names each
+/// later run of a woken teammate `<id>:generation:<n>`.
+fn agent_id(session_id: &str) -> &str {
+    session_id
+        .split_once(":generation:")
+        .map_or(session_id, |(id, _)| id)
 }
 
 impl TranscriptRow {
@@ -1311,6 +1351,66 @@ mod tests {
             )
         );
         assert_eq!(model.rows()[2].subagent_id.as_deref(), Some("wf1"));
+    }
+
+    #[test]
+    fn a_woken_subagent_generation_continues_its_agent() {
+        let spawned = |id: &str, parent: Option<&str>, task: &str, t| Event::SubagentSpawned {
+            id: id.into(),
+            parent: parent.map(Into::into),
+            name: "tester".into(),
+            task: task.into(),
+            at: at(t),
+        };
+        let ended = |id: &str, t| Event::SubagentStateChanged {
+            id: id.into(),
+            state: "completed".into(),
+            at: at(t),
+        };
+        let in_run = |id: &str, event: Event| Event::SubagentUpdate {
+            id: id.into(),
+            event: Box::new(event),
+        };
+        let gen2 = "t1:generation:2";
+        let mut model = TranscriptModel::new();
+        let events = [
+            prompt("team up"),
+            spawned("t1", None, "Wait for the bugs", 10),
+            ended("t1", 11),
+            spawned(gen2, None, "add() subtracts", 20),
+            in_run(gen2, chunk("writing tests")),
+            spawned("n1", Some(gen2), "Nested", 22),
+        ];
+        for (i, event) in events.iter().enumerate() {
+            model.apply_event(i as u64 + 1, event);
+        }
+        let rows: Vec<(TranscriptRowKind, Option<&str>, &str)> = model
+            .rows()
+            .iter()
+            .map(|r| (r.kind, r.subagent_id.as_deref(), r.text.as_str()))
+            .collect();
+        assert_eq!(
+            rows,
+            [
+                (TranscriptRowKind::UserPrompt, None, "team up"),
+                (TranscriptRowKind::Subagent, None, "Wait for the bugs"),
+                (
+                    TranscriptRowKind::SubagentWoken,
+                    Some("t1"),
+                    "add() subtracts"
+                ),
+                (TranscriptRowKind::Message, Some("t1"), "writing tests"),
+                (TranscriptRowKind::Subagent, Some("t1"), "Nested"),
+            ]
+        );
+        let state = |m: &TranscriptModel| {
+            let info = m.rows()[1].subagent.clone().unwrap();
+            (info.state, info.ended_at)
+        };
+        // Woken, it runs again; its generation's end ends the agent's run.
+        assert_eq!(state(&model), (None, None));
+        model.apply_event(7, &ended(gen2, 30));
+        assert_eq!(state(&model), (Some("completed".into()), Some(at(30))));
     }
 
     #[test]

@@ -1402,6 +1402,8 @@ fn transcript_lines(
             | TranscriptRowKind::ToolStopped => {
                 // Rendered with their `tool_start`, which the server always provides.
             }
+            // Always scoped to its subagent, whose rows the TUI skips above.
+            TranscriptRowKind::SubagentWoken => {}
             TranscriptRowKind::Subagent => {
                 if let Some(info) = &row.subagent {
                     let state = info.state.as_deref().unwrap_or("running");
