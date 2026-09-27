@@ -4200,6 +4200,13 @@
       "components": ["web/src/components/WorkspaceSidebar.tsx"]
     },
     {
+      "id": "sidebar.background-work-badge",
+      "kind": "vitest",
+      "risk": "low",
+      "specs": ["src/components/__tests__/SessionRowTriage.test.tsx"],
+      "components": ["web/src/components/sidebar/RowBadges.tsx"]
+    },
+    {
       "id": "sidebar.smart-rename-chip-render",
       "kind": "vitest",
       "risk": "low",

@@ -91,6 +91,13 @@ export interface SessionResponse {
   next_wakeup_reason?: string;
   monitor_active?: boolean;
   monitor_description?: string;
+  /** Subagents and background tasks still running under a live worker. */
+  background?: {
+    running: number;
+    /** The running items that report progress; a background shell or monitor is silent until it ends. */
+    reporting: number;
+    last_active_at?: string;
+  };
   /** One-line explanation when a lifecycle action took a non-default path,
    *  e.g. a start that fell back to a fresh conversation because the stored
    *  one could not be resumed. Present only on the start/ensure responses

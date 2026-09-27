@@ -104,6 +104,15 @@ pub async fn list_sessions(
                         choice: approval.choice,
                     })
                     .collect();
+                session.background =
+                    state
+                        .acp_event_store
+                        .background_activity(&inst.id)
+                        .map(|activity| crate::daemon::BackgroundSummary {
+                            running: activity.running,
+                            reporting: activity.reporting,
+                            last_active_at: activity.last_active_at.map(|at| at.to_rfc3339()),
+                        });
             }
             session
         })
@@ -606,6 +615,7 @@ mod workspace_ordering_tests {
             notify_on_error: None,
             view: crate::session::View::Terminal,
             pending_approvals: Vec::new(),
+            background: None,
             acp_worker_state: crate::daemon::AcpWorkerState::Absent,
             context_resume: Some(ContextResumeAvailability::Unavailable {
                 reason: ContextResumeUnavailableReason::NoTarget,

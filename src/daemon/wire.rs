@@ -114,6 +114,16 @@ pub struct PendingApproval {
     pub choice: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BackgroundSummary {
+    pub running: usize,
+    /// The running items that report progress; a background shell or
+    /// monitor is silent until it ends.
+    pub reporting: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_active_at: Option<String>,
+}
+
 /// Decoding requires only `id`; every other field defaults so an older daemon cannot break the list.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionResponse {
@@ -200,6 +210,9 @@ pub struct SessionResponse {
     pub acp_worker_state: AcpWorkerState,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub pending_approvals: Vec<PendingApproval>,
+    /// Subagents and background tasks still running under a live worker.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub background: Option<BackgroundSummary>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rate_limit: Option<crate::acp::state::RateLimitInfo>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
