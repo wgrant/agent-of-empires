@@ -860,6 +860,7 @@ function AppContent({
   // DiffFileViewer, so the store is lifted here and threaded to both.
   const diffComments = useDiffComments(activeSessionId);
   const commentsEnabled = !!activeSession;
+  const diffBackLabel = activeSession?.view === "structured" ? "Transcript" : "Terminal";
   // A dormant structured worker wakes on send; archived and trashed sessions cannot start.
   const commentSendEnabled =
     commentsEnabled &&
@@ -2174,6 +2175,7 @@ function AppContent({
                             targetLine={selectedFileLine}
                             revision={revision}
                             onClose={handleCloseFile}
+                            backLabel={diffBackLabel}
                             commentsEnabled={commentsEnabled}
                             commentsStore={diffComments}
                             fallbackToFileViewer
@@ -2195,6 +2197,7 @@ function AppContent({
                       targetLine={selectedFileLine}
                       revision={revision}
                       onClose={handleCloseFile}
+                      backLabel={diffBackLabel}
                       commentsEnabled={commentsEnabled}
                       commentsStore={diffComments}
                     />
