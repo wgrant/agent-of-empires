@@ -82,14 +82,24 @@ interface SubProps {
 interface MenuLayout {
   direction: "up" | "down";
   maxHeight: number;
+  /** Anchor to the trigger's right edge: its left edge leaves no room for the menu. */
+  alignRight: boolean;
 }
 
-const DEFAULT_MENU_LAYOUT: MenuLayout = { direction: "up", maxHeight: MENU_MAX_HEIGHT_CAP };
+/** The menu's `w-64`. */
+const MENU_WIDTH = 256;
+
+const DEFAULT_MENU_LAYOUT: MenuLayout = { direction: "up", maxHeight: MENU_MAX_HEIGHT_CAP, alignRight: false };
 
 /** Open upward when a floor's worth of room exists, else toward the roomier side.
  *  Uses the visual viewport: iOS `innerHeight` ignores the keyboard, and a zoom offset
  *  shifts both visible edges. */
-function computeMenuLayout(rect: DOMRect, viewportHeight: number, viewportTop = 0): MenuLayout {
+function computeMenuLayout(
+  rect: DOMRect,
+  viewportHeight: number,
+  viewportTop = 0,
+  viewportWidth = Infinity,
+): MenuLayout {
   const spaceAbove = rect.top - viewportTop - MENU_VIEWPORT_MARGIN;
   const spaceBelow = viewportTop + viewportHeight - rect.bottom - MENU_VIEWPORT_MARGIN;
   let direction: "up" | "down";
@@ -104,7 +114,11 @@ function computeMenuLayout(rect: DOMRect, viewportHeight: number, viewportTop = 
     direction = "up";
     available = spaceAbove;
   }
-  return { direction, maxHeight: Math.max(0, Math.min(MENU_MAX_HEIGHT_CAP, available)) };
+  return {
+    direction,
+    maxHeight: Math.max(0, Math.min(MENU_MAX_HEIGHT_CAP, available)),
+    alignRight: rect.left + MENU_WIDTH > viewportWidth - MENU_VIEWPORT_MARGIN && rect.right >= MENU_WIDTH,
+  };
 }
 
 function ModelDropdown({ option, pending, onSelect }: SubProps) {
@@ -138,7 +152,9 @@ function ModelDropdown({ option, pending, onSelect }: SubProps) {
     const recompute = () => {
       const rect = ref.current?.getBoundingClientRect();
       if (!rect) return;
-      setMenuLayout(computeMenuLayout(rect, vv?.height ?? window.innerHeight, vv?.offsetTop ?? 0));
+      setMenuLayout(
+        computeMenuLayout(rect, vv?.height ?? window.innerHeight, vv?.offsetTop ?? 0, vv?.width ?? window.innerWidth),
+      );
     };
     recompute();
     window.addEventListener("resize", recompute);
@@ -177,7 +193,8 @@ function ModelDropdown({ option, pending, onSelect }: SubProps) {
         <div
           id={menuId}
           className={[
-            "absolute left-0 z-30 flex w-64 flex-col overflow-hidden rounded-md border border-surface-700 bg-surface-850 shadow-xl",
+            "absolute z-30 flex w-64 flex-col overflow-hidden rounded-md border border-surface-700 bg-surface-850 shadow-xl",
+            menuLayout.alignRight ? "right-0" : "left-0",
             menuLayout.direction === "up" ? "bottom-full mb-1" : "top-full mt-1",
           ].join(" ")}
           style={{ maxHeight: menuLayout.maxHeight }}
