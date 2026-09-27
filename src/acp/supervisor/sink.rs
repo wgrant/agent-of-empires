@@ -49,6 +49,10 @@ pub trait BroadcastSink: Send + Sync + 'static {
     fn unresolved_native_subagents(&self, _session_id: &str) -> Vec<String> {
         Vec::new()
     }
+    /// Async tasks spawned and not yet in a terminal state.
+    fn unfinished_async_task_ids(&self, _session_id: &str) -> Vec<String> {
+        Vec::new()
+    }
     /// Persist a prompt attachment keyed to its `UserPromptSent` seq.
     fn record_attachment(&self, _session_id: &str, _seq: u64, _blob: &AttachmentBlob) -> bool {
         true
@@ -105,6 +109,10 @@ impl BroadcastSink for ChannelSink {
 
     fn unresolved_native_subagents(&self, session_id: &str) -> Vec<String> {
         self.event_store.unresolved_native_subagents(session_id)
+    }
+
+    fn unfinished_async_task_ids(&self, session_id: &str) -> Vec<String> {
+        self.event_store.unfinished_async_task_ids(session_id)
     }
 
     fn record_attachment(&self, session_id: &str, seq: u64, blob: &AttachmentBlob) -> bool {
