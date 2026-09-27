@@ -24,6 +24,7 @@ use crate::acp::acp_client::tool_context::{
 };
 use crate::acp::acp_client::transcript_filter::{is_transcript_event, transcript_event_kind};
 use crate::acp::acp_client::update_events::{map_update_to_events, AgentMessageDedup};
+use crate::acp::acp_client::wake_hold::{self, WakeHold};
 use crate::acp::acp_client::watchdog::classify_watchdog_notification_signals;
 
 pub(super) fn now_ms() -> i64 {
@@ -68,6 +69,7 @@ pub(super) struct Shared {
     pub(super) agent_msg_dedup: std::sync::Mutex<AgentMessageDedup>,
     pub(super) tool_context_cache: ToolContextCache,
     pub(super) workflows: std::sync::Mutex<WorkflowAttribution>,
+    pub(super) wake_hold: std::sync::Mutex<WakeHold>,
     bg_transcript_source: TranscriptSource,
 }
 
@@ -111,6 +113,7 @@ impl Shared {
             agent_msg_dedup: Default::default(),
             tool_context_cache: Arc::new(std::sync::Mutex::new(ToolCallContextCache::default())),
             workflows: Default::default(),
+            wake_hold: Default::default(),
             bg_transcript_source,
         }
     }
@@ -245,7 +248,13 @@ impl Shared {
             self.capture_rate_limit(&notification.update);
         }
         let update_for_tool_context = notification.update.clone();
+        let tool_call = wake_hold::tool_call_id(&notification.update);
         let events = map_update_to_events(notification.update, self.profile);
+        let events = self
+            .wake_hold
+            .lock()
+            .expect("wake hold mutex poisoned")
+            .apply(tool_call.as_deref(), events);
         let events = match &subagent {
             Some(id) => child_events(id, events),
             None => events,

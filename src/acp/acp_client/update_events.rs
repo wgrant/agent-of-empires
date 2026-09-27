@@ -666,6 +666,13 @@ mod tests {
             (Event::ConversationCompactionStarted, true),
             (Event::ConversationCompacted, true),
             (
+                Event::WakeupScheduled {
+                    at: chrono::Utc::now(),
+                    reason: None,
+                },
+                true,
+            ),
+            (
                 Event::AgentMessageChunk {
                     text: "Compacting...".into(),
                 },
