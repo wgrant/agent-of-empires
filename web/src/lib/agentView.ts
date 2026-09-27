@@ -54,21 +54,32 @@ export function listAgents(rows: readonly ActivityRow[]): AgentSummary[] {
 }
 
 /**
- * The running agents the lead's in-flight call is waiting on: those it
- * started, as an Agent call or a forked skill, rather than earlier
- * background work that runs beside it.
+ * The running agents the lead is waiting on: those its in-flight call started,
+ * as an Agent call or a forked skill, or with no call in flight, those a
+ * slash command forked straight from the prompt. Earlier background work that
+ * runs beside the lead does not count.
  */
 export function agentsAwaited(
   rows: readonly ActivityRow[],
   tool: ToolCall | null,
 ): { name: string; startedAt: string }[] {
-  const since = tool ? Date.parse(tool.started_at) : NaN;
+  const running = (row: ActivityRow) =>
+    row.kind === "subagent" && row.subagent && !row.subagentId && !row.subagent.state ? [row] : [];
+  if (!tool) {
+    const lead = rows.filter((row) => !row.subagentId);
+    const prompt = lead.findLastIndex((row) => row.kind !== "subagent");
+    if (lead[prompt]?.kind !== "user_prompt") return [];
+    return lead
+      .slice(prompt + 1)
+      .flatMap(running)
+      .map((row) => ({ name: row.subagent!.name, startedAt: row.at }));
+  }
+  const since = Date.parse(tool.started_at);
   if (Number.isNaN(since)) return [];
-  return rows.flatMap((row) =>
-    row.kind === "subagent" && row.subagent && !row.subagentId && !row.subagent.state && Date.parse(row.at) >= since
-      ? [{ name: row.subagent.name, startedAt: row.at }]
-      : [],
-  );
+  return rows
+    .flatMap(running)
+    .filter((row) => Date.parse(row.at) >= since)
+    .map((row) => ({ name: row.subagent!.name, startedAt: row.at }));
 }
 
 /**
