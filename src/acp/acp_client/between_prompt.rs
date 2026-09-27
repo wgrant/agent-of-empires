@@ -152,6 +152,9 @@ pub(super) struct BetweenPromptTracker {
     /// Async background agents with a live tailer, which removes its id on
     /// completion. Tracked precisely, so they never latch the floor.
     pub(super) bg_agents: Arc<Mutex<HashSet<String>>>,
+    /// Native subagents announced and not yet ended, whether or not a prompt
+    /// was in flight when they started.
+    subagents: Mutex<HashSet<String>>,
 }
 
 impl BetweenPromptTracker {
@@ -212,6 +215,40 @@ impl BetweenPromptTracker {
         announce
     }
 
+    /// Follow the main session's subagent starts and ends, in and between prompts.
+    pub(super) fn track_subagent(&self, lifecycle: Option<&LifecycleSignal>) {
+        let mut subagents = self.subagents();
+        match lifecycle {
+            Some(LifecycleSignal::SubagentStarted { id }) => {
+                subagents.insert(id.clone());
+            }
+            Some(LifecycleSignal::SubagentEnded { id }) => {
+                subagents.remove(id);
+            }
+            _ => {}
+        }
+    }
+
+    /// Subagents a previous daemon saw running, carried across a reattach.
+    pub(super) fn readmit_subagents(&self, ids: impl IntoIterator<Item = String>) {
+        self.subagents().extend(ids);
+    }
+
+    /// A subagent's own activity keeps an agent-initiated turn alive but never
+    /// starts one: the lead is not working because its child is.
+    pub(super) fn observe_subagent_activity(&self, now_ms: i64) {
+        let mut state = self.state();
+        if state.active {
+            state.last_lifecycle_at = now_ms;
+        }
+    }
+
+    fn subagents(&self) -> std::sync::MutexGuard<'_, HashSet<String>> {
+        self.subagents
+            .lock()
+            .expect("between-prompt subagents mutex poisoned")
+    }
+
     pub(super) fn work_state(&self) -> BetweenPromptWorkState {
         BetweenPromptWorkState {
             tool_calls: !self.state().tools.is_empty(),
@@ -219,7 +256,8 @@ impl BetweenPromptTracker {
                 .bg_agents
                 .lock()
                 .expect("between-prompt bg-agents mutex poisoned")
-                .is_empty(),
+                .is_empty()
+                || !self.subagents().is_empty(),
         }
     }
 
@@ -538,5 +576,35 @@ mod tests {
             assert_eq!(between_prompt_stop_reason(true, true), "prompt_complete");
             assert_eq!(between_prompt_stop_reason(true, false), "reattach_idle");
         }
+    }
+
+    #[test]
+    fn live_subagents_hold_the_turn_open_but_never_start_one() {
+        let tracker = BetweenPromptTracker::default();
+        let claim = TerminalClaim::new();
+        // Started during a prompt, so only the always-on tracking sees it.
+        tracker.track_subagent(Some(&LifecycleSignal::SubagentStarted { id: "kid".into() }));
+        assert!(
+            tracker.work_state().is_busy(),
+            "a live child refuses a reset"
+        );
+
+        // Its activity with the lead idle starts no lead turn.
+        tracker.observe_subagent_activity(1_000);
+        assert_eq!(tracker.take_idle_fire(1_000_000), None);
+
+        // The lead's accounted turn stays open while the child runs.
+        let usage = LifecycleSignal::TerminalUsage;
+        tracker.observe(Some(&usage), None, 2_000, true, &claim);
+        assert_eq!(tracker.take_idle_fire(2_000 + ms(FAST)), None);
+        tracker.observe_subagent_activity(50_000);
+        tracker.track_subagent(Some(&LifecycleSignal::SubagentEnded { id: "kid".into() }));
+        assert!(!tracker.work_state().is_busy());
+        assert_eq!(tracker.take_idle_fire(50_000 + ms(FAST) - 1), None);
+        assert_eq!(tracker.take_idle_fire(50_000 + ms(FAST)), Some(true));
+
+        // A child carried across a reattach counts the same.
+        tracker.readmit_subagents(["kept".to_string()]);
+        assert!(tracker.work_state().is_busy());
     }
 }
