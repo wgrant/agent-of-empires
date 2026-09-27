@@ -218,6 +218,29 @@ pub async fn acp_context_primer(
     .into_response()
 }
 
+/// Main-agent tool calls a page continues without starting.
+fn unstarted_tool_calls(events: &[crate::acp::event_store::StoredEvent]) -> Vec<String> {
+    use crate::acp::state::Event;
+    let mut started = std::collections::HashSet::new();
+    let mut unstarted = Vec::new();
+    for e in events {
+        let id = match &e.event {
+            Event::ToolCallStarted { tool_call } => {
+                started.insert(tool_call.id.as_str());
+                continue;
+            }
+            Event::ToolCallUpdated { tool_call_id, .. }
+            | Event::ToolCallContent { tool_call_id, .. }
+            | Event::ToolCallCompleted { tool_call_id, .. } => tool_call_id,
+            _ => continue,
+        };
+        if !started.contains(id.as_str()) && !unstarted.contains(id) {
+            unstarted.push(id.clone());
+        }
+    }
+    unstarted
+}
+
 /// Paged transcript replay from the durable event store. `before` pages
 /// backward; `view=rows` returns the page folded into transcript rows with
 /// identical paging metadata.
@@ -247,16 +270,25 @@ pub async fn acp_replay(
     );
     let (frames, rows) = if q.view.as_deref() == Some("rows") {
         let mut model = crate::acp::transcript::TranscriptModel::new();
+        let mut changed_ids = std::collections::HashSet::new();
         if let Some(first) = page.events.first() {
-            for e in
-                state
-                    .acp_event_store
-                    .replay_stream_context_before(&id, first.seq, &first.event)
-            {
+            let store = &state.acp_event_store;
+            // A page opening mid-call folds the call's real start, not a placeholder.
+            let starts =
+                store.tool_starts_before(&id, first.seq, &unstarted_tool_calls(&page.events));
+            changed_ids.extend(starts.iter().filter_map(|e| match &e.event {
+                crate::acp::state::Event::ToolCallStarted { tool_call } => {
+                    Some(format!("start-{}", tool_call.id))
+                }
+                _ => None,
+            }));
+            let mut context = starts;
+            context.extend(store.replay_stream_context_before(&id, first.seq, &first.event));
+            context.sort_by_key(|e| e.seq);
+            for e in context {
                 model.apply_event_at(e.seq, &e.event, e.recorded_at);
             }
         }
-        let mut changed_ids = std::collections::HashSet::new();
         for e in &page.events {
             for delta in model.apply_event_at(e.seq, &e.event, e.recorded_at) {
                 match delta {
@@ -510,5 +542,59 @@ mod tests {
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].id, "msg-2");
         assert_eq!(rows[0].text, "hi there");
+    }
+    #[tokio::test]
+    async fn acp_replay_rows_page_opening_mid_call_carries_its_start() {
+        let inst = crate::session::Instance::new("t", "/tmp");
+        let id = inst.id.clone();
+        let state = crate::server::test_support::build_test_app_state(vec![inst]);
+        let events = [
+            Event::ToolCallStarted {
+                tool_call: crate::acp::state::ToolCall {
+                    id: "t1".into(),
+                    name: "cargo test".into(),
+                    kind: "execute".into(),
+                    args_preview: "{}".into(),
+                    started_at: chrono::Utc::now(),
+                    parent_tool_call_id: None,
+                    memory_recall: None,
+                    diffs: Vec::new(),
+                },
+            },
+            Event::ToolCallCompleted {
+                tool_call_id: "t1".into(),
+                is_error: false,
+                content: "ok".into(),
+                output: Vec::new(),
+                completed_at: chrono::Utc::now(),
+                async_subagent: false,
+            },
+        ];
+        for (i, ev) in events.iter().enumerate() {
+            state.acp_event_store.record(&id, i as u64 + 1, ev).unwrap();
+        }
+        let q = ReplayQuery {
+            since: 0,
+            limit: Some(1),
+            before: Some(3),
+            view: Some("rows".into()),
+        };
+        let resp = acp_replay(State(state), Path(id), axum::extract::Query(q))
+            .await
+            .into_response();
+        let bytes = axum::body::to_bytes(resp.into_body(), 1 << 20)
+            .await
+            .unwrap();
+        let rows = serde_json::from_slice::<ReplayResponse>(&bytes)
+            .unwrap()
+            .rows
+            .expect("rows present");
+        let start = rows.iter().find(|r| r.id == "start-t1").expect("start row");
+        let tool = start.tool.as_ref().unwrap();
+        assert_eq!(
+            (tool.name.as_str(), tool.kind.as_str()),
+            ("cargo test", "execute")
+        );
+        assert!(rows.iter().any(|r| r.id == "done-t1"));
     }
 }
