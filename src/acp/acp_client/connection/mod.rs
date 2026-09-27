@@ -269,6 +269,7 @@ pub(super) async fn run_connection_task<W, R>(
                             Ok(guard) => guard,
                             Err(error) => return reply(responder, Err(error)),
                         };
+                        let _callback = shared.ingress.callback(&admission);
                         // A workflow agent's request, like its tool calls, names no workflow.
                         let subagent = if shared.ingress.is_subagent(&request.session_id) {
                             Some(request.session_id.0.to_string())
@@ -311,7 +312,7 @@ pub(super) async fn run_connection_task<W, R>(
                     async move {
                         // Only a session-scoped elicitation carries an identity
                         // to fence on.
-                        let _guard = if let ElicitationScope::Session(scope) = request.scope() {
+                        let admission = if let ElicitationScope::Session(scope) = request.scope() {
                             match ingress.request(&scope.session_id).await {
                                 Ok(guard) => Some(guard),
                                 Err(error) => return reply(responder, Err(error)),
@@ -319,7 +320,9 @@ pub(super) async fn run_connection_task<W, R>(
                         } else {
                             None
                         };
-                        let outcome = handle_elicitation_request(request, event_tx, pending).await;
+                        let _callback = admission.as_ref().map(|guard| ingress.callback(guard));
+                        let outcome =
+                            handle_elicitation_request(request, event_tx, pending, admission).await;
                         reply(responder, outcome)
                     }
                 }
