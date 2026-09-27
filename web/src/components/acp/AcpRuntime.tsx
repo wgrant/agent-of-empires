@@ -16,7 +16,7 @@ import { isVisiblyBusy } from "../../lib/acpTypes";
 import type { AcpState, ApprovalDecision, ElicitationResolution, PromptAttachmentInput } from "../../lib/acpTypes";
 import { useAgentProfile } from "../../lib/agentProfileContext";
 import { canOfferEarlier, earlierAction } from "../../lib/historyScroll";
-import { agentActivity, listAgents } from "../../lib/agentView";
+import { agentActivity, resolveViewedAgent } from "../../lib/agentView";
 import { activityToThreadMessages, clearFoldGeneration } from "./activityMessages";
 import { useCancelEscalation } from "./useCancelEscalation";
 
@@ -205,13 +205,13 @@ export function AcpRuntime({
   // useMemo, every parent re-render (e.g. WS heartbeat, hover state)
   // re-builds the transcript and assistant-ui treats every
   // An agent's view reads every loaded row: its runs can predate the window.
-  const agentRows = useMemo(
-    () => (viewedAgentId ? agentActivity(acp.state.activity, viewedAgentId) : []),
-    [viewedAgentId, acp.state.activity],
-  );
   const viewedAgent = useMemo(
-    () => listAgents(acp.state.activity).find((a) => a.id === viewedAgentId),
+    () => resolveViewedAgent(acp.state.activity, viewedAgentId),
     [acp.state.activity, viewedAgentId],
+  );
+  const agentRows = useMemo(
+    () => (viewedAgent ? agentActivity(acp.state.activity, viewedAgent.id) : []),
+    [viewedAgent, acp.state.activity],
   );
   const viewingAgent = viewedAgent !== undefined;
   const agentRunning = viewedAgent?.state === "running";
@@ -262,7 +262,7 @@ export function AcpRuntime({
   };
 
   return (
-    <RuntimeHost key={`${foldGeneration}:${historyGeneration}:${viewingAgent ? viewedAgentId : ""}`} adapter={adapter}>
+    <RuntimeHost key={`${foldGeneration}:${historyGeneration}:${viewedAgent?.id ?? ""}`} adapter={adapter}>
       {children({
         state: acp.state,
         status: acp.status,

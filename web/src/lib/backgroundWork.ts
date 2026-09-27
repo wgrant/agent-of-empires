@@ -41,7 +41,11 @@ const AGENT_STATES: Record<BackgroundAgent["status"], BackgroundState> = {
   detached: "stopped",
 };
 
-function agentItem(agent: BackgroundAgent, activity: ReadonlyMap<string, string>): BackgroundItem {
+function agentItem(
+  agent: BackgroundAgent,
+  activity: ReadonlyMap<string, string>,
+  topLevel: ReadonlyMap<string, string>,
+): BackgroundItem {
   const finished = AGENT_STATES[agent.status];
   const state = finished === "done" && agent.persistent ? "idle" : finished;
   // A native subagent reports no launching tool call; its card is keyed by its session.
@@ -59,7 +63,12 @@ function agentItem(agent: BackgroundAgent, activity: ReadonlyMap<string, string>
     endedAt: agent.endedAt,
     lastActiveAt: (native ? activity.get(agent.agentId) : agent.lastActiveAt) ?? agent.startedAt,
     stopTaskId: null,
-    cardId: native ? `native-subagent-${agent.agentId}` : agent.toolCallId ? `subagent-${agent.toolCallId}` : null,
+    // A nested subagent's card mounts only inside its ancestor's.
+    cardId: native
+      ? `native-subagent-${topLevel.get(agent.agentId) ?? agent.agentId}`
+      : agent.toolCallId
+        ? `subagent-${agent.toolCallId}`
+        : null,
     viewAgentId: native ? agent.agentId : null,
     agent,
   };
@@ -99,13 +108,15 @@ function taskItem(task: AsyncTask): BackgroundItem {
 }
 
 /** Running items newest first, then finished ones by when they ended. `activity`
- *  holds each native subagent's latest transcript row time. */
+ *  holds each native subagent's latest transcript row time, `topLevel` each
+ *  nested one's top-level ancestor. */
 export function backgroundItems(
   agents: readonly BackgroundAgent[],
   tasks: readonly AsyncTask[],
   activity: ReadonlyMap<string, string> = new Map(),
+  topLevel: ReadonlyMap<string, string> = new Map(),
 ): BackgroundItem[] {
-  const items = [...agents.map((agent) => agentItem(agent, activity)), ...tasks.map(taskItem)];
+  const items = [...agents.map((agent) => agentItem(agent, activity, topLevel)), ...tasks.map(taskItem)];
   const running = items.filter((i) => i.state === "running").sort((a, b) => b.startedAt.localeCompare(a.startedAt));
   const finished = items
     .filter((i) => i.state !== "running")
