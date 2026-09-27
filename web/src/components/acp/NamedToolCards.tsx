@@ -2,7 +2,7 @@
 // Cards for tools recognised by name or payload rather than ACP kind: MCP,
 // memory, skills, and Claude's scheduling and harness tools.
 
-import { useMemo } from "react";
+import { useContext, useMemo } from "react";
 import DOMPurify from "dompurify";
 import { marked } from "marked";
 import {
@@ -12,13 +12,17 @@ import {
   CalendarPlus,
   CalendarX,
   Clock,
+  Hourglass,
   Plug,
   Search,
+  Send,
   Sparkles,
   Square,
+  Users,
   Workflow,
 } from "lucide-react";
 
+import { requestAgentView } from "../../hooks/useAgentView";
 import { useSkillIndex } from "../../hooks/useSkillIndex";
 import { parseJsonObject, pickStr } from "../../lib/acpArgs";
 import type { ToolCall } from "../../lib/acpTypes";
@@ -27,10 +31,13 @@ import { humanizeServer, humanizeVerb } from "../../lib/mcpClassify";
 import { cleanRecalledMemory, parseMemoryFrontmatter, type MemoryHit } from "../../lib/memoryClassify";
 import { badgeLabel, badgeTone, resolveSkillSource } from "../../lib/skillProvenance";
 import { ProvenanceBadge } from "../ProvenanceBadge";
+import { BackgroundAgentsContext } from "./backgroundAgentsContext";
 import { GenericToolCard } from "./CoreToolCards";
+import { Markdown } from "./Markdown";
 import {
   CardChrome,
   HighlightedBlock,
+  type Status,
   RawBlock,
   formatDurationSeconds,
   isAcpBookkeepingKey,
@@ -325,6 +332,59 @@ interface SpecialHeader {
   label: string;
   primary: React.ReactNode;
   meta?: React.ReactNode;
+  /** Overrides the status the result's error flag implies. */
+  status?: Status;
+  /** Replaces the raw input block. */
+  body?: React.ReactNode;
+}
+
+/** A SendMessage result: `{success, message}` JSON. */
+function messageOutcome(output: string | undefined): { ok: boolean | null; message: string | null } {
+  const parsed = output ? parseJsonObject(output) : null;
+  if (!parsed) return { ok: null, message: null };
+  return { ok: typeof parsed.success === "boolean" ? parsed.success : null, message: pickStr(parsed, "message") };
+}
+
+function SendMessageBody({
+  to,
+  message,
+  failure,
+}: {
+  to: string | null;
+  message: string | null;
+  failure: string | null;
+}) {
+  const { agents } = useContext(BackgroundAgentsContext);
+  // A native subagent reports no launching tool call; its record is keyed by its session.
+  const recipient = to ? agents.find((a) => a.toolCallId === "" && a.description === to) : undefined;
+  return (
+    <div className="flex flex-col gap-1.5 px-3 py-2">
+      {failure && <p className="text-xs text-status-error">{failure}</p>}
+      {message && (
+        <div className="max-h-64 overflow-y-auto text-sm text-text-primary">
+          <Markdown text={message} smooth={false} />
+        </div>
+      )}
+      {recipient && (
+        <button
+          type="button"
+          onClick={() => requestAgentView(recipient.agentId)}
+          className="self-start text-[11px] text-text-dim hover:text-text-secondary"
+        >
+          Open {to}'s view
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** ListAgents lists subagents as `name [ref]  ·  type  ·  state  ·  started …`. */
+function agentCounts(output: string | undefined): string | null {
+  const section = output?.match(/Subagents \((\d+)\):\n((?:\s+.+\n?)*)/);
+  if (!section) return null;
+  const running = (section[2]!.match(/·\s+running\s+·/g) ?? []).length;
+  const total = Number(section[1]);
+  return `${total} ${total === 1 ? "subagent" : "subagents"}${running ? ` · ${running} running` : ""}`;
 }
 
 const numberArg = (raw: unknown) => (typeof raw === "number" ? raw : typeof raw === "string" ? Number(raw) : NaN);
@@ -380,10 +440,48 @@ const SPECIAL_TOOLS = {
     label: "cron schedule deleted",
     primary: mono(pickStr(args, "id", "name"), "deleted"),
   }),
-  ToolSearch: (_tool: ToolCall, args: Args): SpecialHeader => ({
-    icon: <Search className={ICON} />,
-    label: "tool search",
-    primary: mono(pickStr(args, "query"), "search tools"),
+  ToolSearch: (_tool: ToolCall, args: Args): SpecialHeader => {
+    const query = pickStr(args, "query");
+    // `select:A,B` loads named tools rather than searching.
+    const load = query?.startsWith("select:") ? query.slice("select:".length) : null;
+    return {
+      icon: <Search className={ICON} />,
+      label: load ? "load tool" : "tool search",
+      primary: mono(load ?? query, "search tools"),
+    };
+  },
+  SendMessage: (_tool: ToolCall, args: Args, output?: string): SpecialHeader => {
+    const to = pickStr(args, "to");
+    const message = pickStr(args, "message");
+    const outcome = messageOutcome(output);
+    return {
+      icon: <Send className={ICON} />,
+      label: "message",
+      primary: withReason(
+        <span>to {mono(to, "an agent")}</span>,
+        pickStr(args, "summary") ?? message?.split("\n")[0] ?? null,
+      ),
+      meta: outcome.ok && outcome.message?.startsWith("Resuming agent") && (
+        <span className={TABULAR_META}>woke {to}</span>
+      ),
+      status: outcome.ok === false ? "err" : undefined,
+      body: <SendMessageBody to={to} message={message} failure={outcome.ok === false ? outcome.message : null} />,
+    };
+  },
+  ListAgents: (_tool: ToolCall, _args: Args, output?: string): SpecialHeader => {
+    const counts = agentCounts(output);
+    return {
+      icon: <Users className={ICON} />,
+      label: "agents",
+      primary: "list agents",
+      meta: counts && <span className={TABULAR_META}>{counts}</span>,
+    };
+  },
+  // Codex multi-agent: block until the agents it started report back.
+  wait: (): SpecialHeader => ({
+    icon: <Hourglass className={ICON} />,
+    label: "wait",
+    primary: "waiting for agents",
   }),
   Monitor: (_tool: ToolCall, args: Args): SpecialHeader => {
     const description = pickStr(args, "description");
@@ -411,7 +509,14 @@ const SPECIAL_TOOLS = {
 export type SpecialToolName = keyof typeof SPECIAL_TOOLS;
 
 export const SCHEDULE_TOOLS: readonly SpecialToolName[] = ["ScheduleWakeup", "CronCreate", "CronList", "CronDelete"];
-export const HARNESS_TOOLS: readonly SpecialToolName[] = ["ToolSearch", "Monitor", "TaskStop"];
+export const HARNESS_TOOLS: readonly SpecialToolName[] = [
+  "ToolSearch",
+  "Monitor",
+  "TaskStop",
+  "SendMessage",
+  "ListAgents",
+  "wait",
+];
 
 /** The `family` tool this call is, when its title is also in the profile's `allowed` list. */
 export function classifySpecialTool(
@@ -425,18 +530,18 @@ export function classifySpecialTool(
 }
 
 export function SpecialToolCard({ tool, result, name }: ToolCardProps & { name: SpecialToolName }) {
-  const status = statusFor(result);
-  const [open, setOpen] = useToolCardExpansion(status);
   const args = useToolArgs(tool);
   const output = result?.text ?? "";
+  const { status: statusOverride, body: customBody, ...header } = SPECIAL_TOOLS[name](tool, args, output);
+  const status = statusOverride ?? statusFor(result);
+  const [open, setOpen] = useToolCardExpansion(status);
   // A wakeup's `prompt` is a loop sentinel or a repeat of the user's input.
   const omit = name === "ScheduleWakeup" ? "prompt" : undefined;
   const inputJson = useInputJson(tool, args, omit);
   const hasRawInput = args
     ? Object.keys(args).some((k) => !isAcpBookkeepingKey(k) && k !== omit)
     : Boolean(tool.args_preview);
-  const header = SPECIAL_TOOLS[name](tool, args);
-  const hasBody = hasRawInput || Boolean(output) || status === "err";
+  const hasBody = Boolean(customBody) || hasRawInput || Boolean(output) || status === "err";
 
   return (
     <CardChrome
@@ -447,10 +552,12 @@ export function SpecialToolCard({ tool, result, name }: ToolCardProps & { name: 
       startedAt={tool.started_at}
       endedAt={result?.at}
       body={
-        <ToolErrorBody status={status} errorText={result?.text}>
-          {hasRawInput && <RawBlock label="input" text={inputJson} />}
-          {output && status !== "err" && <RawBlock label="output" text={output} />}
-        </ToolErrorBody>
+        customBody ?? (
+          <ToolErrorBody status={status} errorText={result?.text}>
+            {hasRawInput && <RawBlock label="input" text={inputJson} />}
+            {output && status !== "err" && <RawBlock label="output" text={output} />}
+          </ToolErrorBody>
+        )
       }
     />
   );
