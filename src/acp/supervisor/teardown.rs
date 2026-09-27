@@ -613,7 +613,7 @@ mod tests {
         ));
         assert!(matches!(
             &mine[3].2,
-            Event::AsyncTaskStateChanged { id, state, .. } if id == "task-1" && state == "stopped"
+            Event::AsyncTaskStateChanged { id, state, .. } if id == "task-1" && state == "interrupted"
         ));
         assert!(matches!(&mine[4].2, Event::Stopped { reason } if reason == "user_stopped"));
         assert!(
