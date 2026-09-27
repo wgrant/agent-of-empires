@@ -296,6 +296,13 @@ impl<S: BroadcastSink> Drain<S> {
                 &self.session_id,
                 "the worker that was tracking this sub-agent stopped; tracking stopped",
             );
+            // Its native subagents and tasks died with it; left running, a
+            // workflow would keep the session "Running" until the next spawn.
+            super::publish::stop_orphaned_background_work_on(
+                &*self.sink,
+                &self.next_seqs,
+                &self.session_id,
+            );
         }
     }
 
@@ -859,6 +866,19 @@ mod tests {
                 started_at: chrono::Utc::now(),
             },
         );
+        sink.publish(
+            id,
+            2,
+            &Event::AsyncTaskSpawned {
+                id: "wf-1".into(),
+                name: "review".into(),
+                task_type: "workflow".into(),
+                description: None,
+                tool_call_id: None,
+                can_stop: true,
+                at: chrono::Utc::now(),
+            },
+        );
         let sup = Supervisor::new(sink);
         sup.hydrate_seqs(store.all_session_seqs());
         let (client, _client_tx) =
@@ -888,6 +908,10 @@ mod tests {
         assert_eq!(
             state.background_agents[0].status,
             BackgroundAgentStatus::Detached
+        );
+        assert!(
+            state.running_workflows.is_empty(),
+            "the dropped worker's workflow must end with it"
         );
         assert!(
             !state.has_active_background_agent(),
