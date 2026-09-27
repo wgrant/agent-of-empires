@@ -53,7 +53,7 @@ describe("agent views", () => {
     ]);
   });
 
-  it("waits on the running agents the lead's in-flight call started", () => {
+  it("waits on the running agents the lead's in-flight call or prompt started", () => {
     const at = (t: string) => ({ at: `2026-09-27T00:00:${t}Z` });
     const timeline = [
       { ...header("bg", "background", null), ...at("01") },
@@ -64,6 +64,10 @@ describe("agent views", () => {
     const tool = { id: "skill", name: "Skill", kind: "other", args_preview: "{}", started_at: "2026-09-27T00:00:04Z" };
     expect(agentsAwaited(timeline, tool)).toEqual([{ name: "/code-review", startedAt: "2026-09-27T00:00:05Z" }]);
     expect(agentsAwaited(timeline, null)).toEqual([]);
+    // A slash command forks its skill with no call in flight.
+    const forked = [row("u", "user_prompt", "/code-review"), ...timeline.slice(1)];
+    expect(agentsAwaited(forked, null)).toEqual([{ name: "/code-review", startedAt: "2026-09-27T00:00:05Z" }]);
+    expect(agentsAwaited([...forked, row("m", "message", "lead text")], null)).toEqual([]);
   });
 
   it("keeps tabs for live, this turn's and viewed agents, and folds away the rest", () => {
