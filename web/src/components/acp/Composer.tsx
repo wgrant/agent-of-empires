@@ -307,12 +307,13 @@ export function Composer(props: Props) {
                     Q{queuedPrompts.length}
                   </span>
                 )}
-                <div className="shrink-0">
+                <div className="flex shrink-0 items-center">
                   <UsageHint
                     usage={props.sessionUsage}
                     quota={props.quota}
                     lastModel={props.lastModel}
                     lastTurnUsage={props.lastTurnUsage}
+                    compact
                   />
                 </div>
                 {turnActive && <StopButton compact force={forceStop} escalatesAt={cancelEscalatesAt} />}
