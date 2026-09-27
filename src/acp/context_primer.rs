@@ -116,11 +116,21 @@ fn fold_turns(events: &[(u64, Event)], before_seq: Option<u64>) -> Folded {
     let mut current: Option<Turn> = None;
     let mut included_event_count = 0;
     let mut ended_non_success = false;
+    // Streamed text continues one reply until any other main-agent event ends it.
+    let mut reply_open = false;
 
     for (seq, event) in events {
         if before_seq.is_some_and(|before| *seq >= before) {
             break;
         }
+        let continues_reply = matches!(
+            event,
+            Event::AgentMessageChunk { .. }
+                | Event::AgentMessageSnapshot { .. }
+                | Event::SubagentUpdate { .. }
+        );
+        let reply_was_open = reply_open;
+        reply_open &= continues_reply;
         match event {
             // The diff-comments markdown is the text the agent actually saw.
             Event::UserPromptSent { text, .. }
@@ -134,10 +144,14 @@ fn fold_turns(events: &[(u64, Event)], before_seq: Option<u64>) -> Folded {
                 }));
                 ended_non_success = false;
             }
-            Event::AgentMessageChunk { text } | Event::AgentMessageSnapshot { text, .. } => current
-                .get_or_insert_with(Turn::default)
-                .assistant_text
-                .push_str(text),
+            Event::AgentMessageChunk { text } | Event::AgentMessageSnapshot { text, .. } => {
+                let reply = &mut current.get_or_insert_with(Turn::default).assistant_text;
+                if !reply_was_open && !reply.is_empty() {
+                    reply.push_str("\n\n");
+                }
+                reply.push_str(text);
+                reply_open = true;
+            }
             Event::AgentThoughtChunk { .. } | Event::AgentThoughtSnapshot { .. } => {}
             Event::ToolCallStarted { tool_call } => {
                 push_tool_start(current.get_or_insert_with(Turn::default), tool_call)
@@ -516,6 +530,27 @@ mod tests {
                     .collect(),
             },
         }
+    }
+
+    #[test]
+    fn separates_replies_but_not_text_split_by_subagent_events() {
+        let p = primer(vec![
+            user("go"),
+            assistant("once t"),
+            Event::SubagentUpdate {
+                id: "a1".into(),
+                event: Box::new(Event::ThinkingStarted),
+            },
+            assistant("ester reports."),
+            Event::ThinkingStarted,
+            assistant("Done."),
+            done(),
+        ]);
+        assert!(
+            p.text.contains("Assistant:\nonce tester reports.\n\nDone."),
+            "{}",
+            p.text
+        );
     }
 
     #[test]

@@ -386,6 +386,16 @@ describe("user and callout rows", () => {
     expect(without!.metadata).toBeUndefined();
   });
 
+  it("keeps adjacent replies in one turn as separate paragraphs", () => {
+    const [, reply] = activityToThreadMessages(
+      [user(), message("Connectivity test complete."), row("m2", "message", "tester2 is still available.")],
+      false,
+    );
+    expect(reply!.content).toEqual([
+      { type: "text", text: "Connectivity test complete.\n\ntester2 is still available." },
+    ]);
+  });
+
   it("opens a new reply for a turn the agent started unprompted", () => {
     const messages = activityToThreadMessages(
       [user(), message("Found a bug."), row("m2", "message", "Task complete.", { turnStart: true })],

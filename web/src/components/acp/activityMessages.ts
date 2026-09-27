@@ -180,10 +180,7 @@ export function activityToThreadMessages(
   }
 
   for (const row of effectiveRows) {
-    if (row.subagentId) {
-      currentAssistant?.breakText();
-      continue;
-    }
+    if (row.subagentId) continue;
     if (row.turnStart) flushAssistant();
     const callout = CALLOUTS[row.kind];
     if (callout) {
@@ -289,24 +286,18 @@ class AssistantBuilder {
   private id: string;
   private createdAt?: Date;
   private parts: DraftPart[] = [];
-  private textBreak = false;
 
   constructor(id: string, createdAtIso: string) {
     this.id = `assistant-${id}`;
     this.createdAt = parseDate(createdAtIso);
   }
 
+  /** The server folds each streamed reply into one row, so adjacent rows are separate replies. */
   appendText(text: string) {
     if (!text) return;
     const last = this.parts[this.parts.length - 1];
-    if (last && last.type === "text") last.text += this.textBreak ? `\n\n${text}` : text;
+    if (last && last.type === "text") last.text += `\n\n${text}`;
     else this.parts.push({ type: "text", text });
-    this.textBreak = false;
-  }
-
-  /** Rows rendered elsewhere came between two replies, which must not run together. */
-  breakText() {
-    this.textBreak = true;
   }
 
   appendReasoning(text: string) {
