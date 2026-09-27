@@ -9,7 +9,9 @@ use tracing::{debug, info, warn};
 use super::agents::{
     apply_agent_command_override, log_wrapper_substitution, wrapper_substitution_for,
 };
-use super::publish::collect_resumable_background_agent_launches;
+use super::publish::{
+    collect_resumable_background_agent_launches, stop_orphaned_background_work_on,
+};
 use super::teardown::tear_down_runner;
 use super::{
     lock_recover, BroadcastSink, PendingContextReset, ResumeKind, ResumeReservation,
@@ -437,17 +439,16 @@ impl<S: BroadcastSink> Supervisor<S> {
         }
         // Retire the previous worker's requests before this worker's events
         // publish; once the drain starts, this worker's own are in the log and
-        // the sweep can no longer tell them apart. Background sub-agents split
-        // by kind: a replaced worker took its tailers with it, so nothing will
-        // ever report their outcome, while an attached worker is provably
-        // alive and whatever still has a transcript resumes instead (#4001).
-        // Only the queries and their publishes belong before the drain; the
-        // resume send is a real await, so it runs after `workers` is dropped.
+        // the sweep can no longer tell them apart. A replaced worker took its
+        // tailers and background work with it, while an attached worker is
+        // alive and its tailed sub-agents resume (#4001). The resume send is
+        // a real await, so it runs after `workers` is dropped.
         self.cancel_orphaned_requests(session_id);
         let resumable = if matches!(kind, WorkerKind::Attached) {
             collect_resumable_background_agent_launches(&*self.sink, &self.next_seqs, session_id)
         } else {
             self.detach_orphaned_background_agents(session_id);
+            stop_orphaned_background_work_on(&*self.sink, &self.next_seqs, session_id);
             Vec::new()
         };
         if context_reset.is_some() {

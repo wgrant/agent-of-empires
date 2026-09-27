@@ -139,6 +139,11 @@ impl<S: BroadcastSink> Supervisor<S> {
                             },
                         );
                     }
+                    super::publish::stop_orphaned_background_work_on(
+                        &*self.sink,
+                        &self.next_seqs,
+                        session_id,
+                    );
                     self.publish_next(
                         session_id,
                         &Event::Stopped {
@@ -573,6 +578,8 @@ mod tests {
         let (_home, tmp) = isolate_home();
         let sink = VecSink::new();
         *sink.stale_background_agent_ids.lock().unwrap() = vec!["bg-1".into(), "bg-2".into()];
+        *sink.stale_native_subagents.lock().unwrap() = vec!["sa-1".into()];
+        *sink.stale_async_task_ids.lock().unwrap() = vec!["task-1".into()];
         let sup = Supervisor::new(sink.clone());
         sup.test_install_runner(
             "s-detach",
@@ -588,7 +595,7 @@ mod tests {
             .iter()
             .filter(|(id, _, _)| id == "s-detach")
             .collect();
-        assert_eq!(mine.len(), 3, "two detach completions plus the Stopped");
+        assert_eq!(mine.len(), 5, "two detaches, two stops, then the Stopped");
         for (idx, expected) in [(0, "bg-1"), (1, "bg-2")] {
             match &mine[idx].2 {
                 Event::BackgroundAgentCompleted {
@@ -600,10 +607,18 @@ mod tests {
                 other => panic!("expected a Detached completion, got {other:?}"),
             }
         }
-        assert!(matches!(&mine[2].2, Event::Stopped { reason } if reason == "user_stopped"));
+        assert!(matches!(
+            &mine[2].2,
+            Event::SubagentStateChanged { id, state, .. } if id == "sa-1" && state == "disconnected"
+        ));
+        assert!(matches!(
+            &mine[3].2,
+            Event::AsyncTaskStateChanged { id, state, .. } if id == "task-1" && state == "stopped"
+        ));
+        assert!(matches!(&mine[4].2, Event::Stopped { reason } if reason == "user_stopped"));
         assert!(
-            mine[0].1 < mine[1].1 && mine[1].1 < mine[2].1,
-            "detach completions must be seq-ordered ahead of Stopped"
+            mine.windows(2).all(|w| w[0].1 < w[1].1),
+            "ends must be seq-ordered ahead of Stopped"
         );
     }
 

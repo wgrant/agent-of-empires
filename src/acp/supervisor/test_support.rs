@@ -185,6 +185,8 @@ pub(super) struct VecSink {
     pub(super) stale_nonces: std::sync::Mutex<Vec<Nonce>>,
     pub(super) stale_elicitation_nonces: std::sync::Mutex<Vec<Nonce>>,
     pub(super) stale_background_agent_ids: std::sync::Mutex<Vec<String>>,
+    pub(super) stale_native_subagents: std::sync::Mutex<Vec<String>>,
+    pub(super) stale_async_task_ids: std::sync::Mutex<Vec<String>>,
 }
 
 impl VecSink {
@@ -208,6 +210,12 @@ impl BroadcastSink for VecSink {
     }
     fn unresolved_background_agent_ids(&self, _session_id: &str) -> Vec<String> {
         self.stale_background_agent_ids.lock().unwrap().clone()
+    }
+    fn unresolved_native_subagents(&self, _session_id: &str) -> Vec<String> {
+        self.stale_native_subagents.lock().unwrap().clone()
+    }
+    fn unfinished_async_task_ids(&self, _session_id: &str) -> Vec<String> {
+        self.stale_async_task_ids.lock().unwrap().clone()
     }
 }
 

@@ -244,6 +244,45 @@ pub(super) fn detach_orphaned_background_agents_on<S: BroadcastSink>(
     }
 }
 
+/// End the native subagents and async tasks a replaced worker left running:
+/// they died with its agent, and nothing else will report their end.
+pub(super) fn stop_orphaned_background_work_on<S: BroadcastSink>(
+    sink: &S,
+    next_seqs: &SeqMap,
+    session_id: &str,
+) {
+    let agents = sink.unresolved_native_subagents(session_id);
+    let tasks = sink.unfinished_async_task_ids(session_id);
+    if agents.is_empty() && tasks.is_empty() {
+        return;
+    }
+    info!(
+        target: "acp.supervisor",
+        session = %session_id,
+        agents = agents.len(),
+        tasks = tasks.len(),
+        "stopping background work orphaned by a replaced worker"
+    );
+    let at = chrono::Utc::now();
+    let ended = agents
+        .into_iter()
+        .map(|id| Event::SubagentStateChanged {
+            id,
+            state: "disconnected".into(),
+            at,
+        })
+        .chain(tasks.into_iter().map(|id| Event::AsyncTaskStateChanged {
+            id,
+            state: "stopped".into(),
+            summary: Some("the agent running this task was replaced".into()),
+            tool_call_id: None,
+            at,
+        }));
+    for event in ended {
+        sink.publish(session_id, next_seq(next_seqs, session_id), &event);
+    }
+}
+
 fn publish_background_agent_detached<S: BroadcastSink>(
     sink: &S,
     next_seqs: &SeqMap,
