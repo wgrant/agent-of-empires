@@ -98,7 +98,7 @@ export function AgentSwitcher({
       role="tablist"
       aria-label="Agents"
       data-testid="agent-switcher"
-      className="flex items-center gap-1 overflow-x-auto border-b border-surface-800 px-3 py-1 [scrollbar-width:none]"
+      className="flex items-center gap-1 overflow-x-auto border-b border-surface-800 py-1 pl-3 pr-12 [scrollbar-width:none] md:pr-3"
     >
       {chip(null, "Lead", "The main agent (Esc)")}
       {agents.map((agent) =>
