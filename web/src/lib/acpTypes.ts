@@ -843,6 +843,8 @@ export interface CompactionInfo {
   pre_tokens?: number | null;
   post_tokens?: number | null;
   duration_ms?: number | null;
+  /** When it stopped running, whatever the outcome. */
+  ended_at?: string | null;
 }
 
 /** Wire mirror of the Rust `SubagentInfo`. */

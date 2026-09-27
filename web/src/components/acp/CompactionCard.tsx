@@ -42,6 +42,10 @@ export function CompactionCard({ compaction }: { compaction: Compaction }) {
         </>
       }
       meta={facts.length > 0 && <span className="text-[11px] text-text-dim">{facts.join(" · ")}</span>}
+      // Without the agent's own measurement, time it from the recorded events.
+      {...(compaction.duration_ms == null
+        ? { startedAt: compaction.startedAt, endedAt: compaction.ended_at ?? undefined }
+        : {})}
       expanded={expandable && open}
       onToggle={expandable ? () => setOpen((v) => !v) : undefined}
       body={

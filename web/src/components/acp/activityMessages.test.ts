@@ -422,6 +422,7 @@ describe("user and callout rows", () => {
       pre_tokens: 900_000,
       post_tokens: 9_000,
       summary: "Kept: the plan",
+      startedAt: AT,
     });
   });
 
