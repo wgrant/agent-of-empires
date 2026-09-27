@@ -1025,6 +1025,16 @@
       "components": ["web/src/components/session-wizard/steps/AgentPickerEssentials.tsx"]
     },
     {
+      "id": "wizard.project-prefill-row",
+      "kind": "playwright",
+      "risk": "low",
+      "specs": ["tests/wizard.spec.ts"],
+      "components": [
+        "web/src/components/session-wizard/SessionWizard.tsx",
+        "web/src/components/session-wizard/steps/ProjectStep.tsx"
+      ]
+    },
+    {
       "id": "wizard.recent-projects",
       "kind": "live-playwright",
       "risk": "medium",
@@ -2791,6 +2801,17 @@
       ]
     },
     {
+      "id": "acp.claude-hooks",
+      "kind": "vitest",
+      "risk": "low",
+      "specs": [
+        "src/components/acp/ToolCards.render.test.tsx",
+        "src/components/acp/activityMessages.test.ts",
+        "src/lib/agentHooks.test.ts"
+      ],
+      "components": ["web/src/components/acp/HookCard.tsx", "web/src/lib/agentHooks.ts"]
+    },
+    {
       "id": "acp.native-subagents",
       "kind": "live-playwright",
       "risk": "medium",
@@ -3238,8 +3259,12 @@
       "id": "acp.context-primer-banner",
       "kind": "vitest",
       "risk": "medium",
-      "specs": ["src/components/acp/ContextPrimerBanner.test.tsx"],
-      "components": ["web/src/components/acp/ContextPrimerBanner.tsx"]
+      "specs": [
+        "src/components/acp/ContextPrimerBanner.test.tsx",
+        "src/lib/contextPrimer.test.ts",
+        "src/components/acp/ThreadMessages.test.tsx"
+      ],
+      "components": ["web/src/components/acp/ContextPrimerBanner.tsx", "web/src/components/acp/ContextPrimerCard.tsx"]
     },
     {
       "id": "acp.tool-error-body",
