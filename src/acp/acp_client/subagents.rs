@@ -108,6 +108,15 @@ pub(super) struct WorkflowAttribution {
 const MAX_ATTRIBUTED_TOOLS: usize = 4096;
 
 impl WorkflowAttribution {
+    /// Workflows a previous daemon saw running, carried across a reattach.
+    pub(super) fn resume(&mut self, ids: impl IntoIterator<Item = String>) {
+        for id in ids {
+            if !self.running.contains(&id) {
+                self.running.push(id);
+            }
+        }
+    }
+
     /// Track the main session's workflow tasks.
     pub(super) fn observe(&mut self, event: &Event) {
         match event {
@@ -258,5 +267,10 @@ mod workflow_attribution_tests {
             "forgotten with its workflow"
         );
         assert_eq!(w.owner("t3", true, false).as_deref(), Some("wf2"));
+
+        // A workflow carried across a reattach claims calls as before.
+        let mut w = WorkflowAttribution::default();
+        w.resume(["wf3".to_string()]);
+        assert_eq!(w.owner("t4", true, false).as_deref(), Some("wf3"));
     }
 }

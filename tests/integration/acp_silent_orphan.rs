@@ -131,6 +131,7 @@ async fn attach(socket_path: std::path::PathBuf, preseed: &str) -> AcpClient {
         "claude".into(),
         None,
         Vec::new(),
+        Vec::new(),
     )
     .await
     .expect("attach to the parked runner")

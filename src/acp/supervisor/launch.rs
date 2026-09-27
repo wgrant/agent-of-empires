@@ -702,6 +702,7 @@ impl<S: BroadcastSink> Supervisor<S> {
             agent_key,
             record.source_profile.clone(),
             self.sink.unresolved_native_subagents(&session_id),
+            self.sink.unfinished_workflow_ids(&session_id),
         )
         .await?;
 

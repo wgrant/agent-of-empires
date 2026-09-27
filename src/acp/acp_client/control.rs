@@ -1308,6 +1308,7 @@ mod tests {
                     "codex".into(),
                     None,
                     Vec::new(),
+                    Vec::new(),
                 )
                 .await
                 .unwrap();
@@ -1481,6 +1482,7 @@ mod tests {
                 "codex".into(),
                 None,
                 Vec::new(),
+                Vec::new(),
             )
             .await
             .unwrap();
@@ -1608,6 +1610,7 @@ mod tests {
                 None,
                 "codex".into(),
                 None,
+                Vec::new(),
                 Vec::new(),
             )
             .await

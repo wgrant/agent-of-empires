@@ -68,6 +68,7 @@ async fn attach_in_flight_synthesizes_reattach_idle_stopped() {
         "claude".into(),
         None,
         Vec::new(),
+        Vec::new(),
     )
     .await
     .expect("attach in_flight=true");
@@ -111,6 +112,7 @@ async fn attach_idle_session_does_not_synthesize_stopped() {
         None,
         "claude".into(),
         None,
+        Vec::new(),
         Vec::new(),
     )
     .await
@@ -175,6 +177,7 @@ async fn attach_in_flight_disarms_after_first_inbound_notification() {
         None,
         "claude".into(),
         None,
+        Vec::new(),
         Vec::new(),
     )
     .await
@@ -328,6 +331,7 @@ async fn replay_completion_after_disconnect(session: &str, in_flight_turn: bool)
         "claude".into(),
         None,
         Vec::new(),
+        Vec::new(),
     )
     .await
     .expect("resume after detached completion");
@@ -350,6 +354,7 @@ async fn replay_completion_after_disconnect(session: &str, in_flight_turn: bool)
         None,
         "claude".into(),
         None,
+        Vec::new(),
         Vec::new(),
     )
     .await
