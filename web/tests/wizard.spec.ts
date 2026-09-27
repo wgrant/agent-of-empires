@@ -103,6 +103,8 @@ test.describe("essentials", () => {
     await expect(wizard(page).getByRole("button", { name: /Launch session/ })).toBeEnabled();
     // Like the TUI, a known project skips straight to the title.
     await expect(wizard(page).getByPlaceholder("Auto-generated if empty")).toBeFocused();
+    await wizard(page).getByTestId("wizard-project-row").click();
+    await expect(wizard(page).getByRole("button", { name: "Browse" })).toBeVisible();
   });
 
   test("wizard overlay outranks the z-50 tooltip layer on mobile", async ({ page }) => {
