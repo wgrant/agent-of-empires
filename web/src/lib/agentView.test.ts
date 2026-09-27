@@ -8,6 +8,8 @@ import {
   lastActivityByAgent,
   listAgents,
   parseAgentMessages,
+  resolveViewedAgent,
+  topLevelAgents,
 } from "./agentView";
 
 const AT = "2026-09-27T00:00:00Z";
@@ -87,5 +89,12 @@ describe("agent views", () => {
     expect(approvalAsker(asking("t:generation:2"), rows)).toEqual({ id: "t", name: "tester" });
     expect(approvalAsker(asking("n"), rows)).toEqual({ id: "t", name: "nested" });
     expect(approvalAsker(asking(null), rows)).toBeNull();
+  });
+
+  it("opens a nested subagent in its top-level ancestor's view", () => {
+    expect([null, "t", "t:generation:2", "n", "missing"].map((id) => resolveViewedAgent(rows, id)?.id ?? null)).toEqual(
+      [null, "t", "t", "t", null],
+    );
+    expect(topLevelAgents(rows)).toEqual(new Map([["n", "t"]]));
   });
 });

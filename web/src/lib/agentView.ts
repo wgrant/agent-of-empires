@@ -85,21 +85,45 @@ export function lastActivityByAgent(rows: readonly ActivityRow[]): Map<string, s
   return latest;
 }
 
-/** The subagent asking for an approval, and the top-level agent whose view shows it. */
-export function approvalAsker(approval: Approval, rows: readonly ActivityRow[]): { id: string; name: string } | null {
-  if (!approval.subagent) return null;
-  const headers = new Map(
-    rows.flatMap((r) => (r.kind === "subagent" && r.subagent ? [[r.subagent.id, r] as const] : [])),
-  );
-  const asker = headers.get(agentIdOf(approval.subagent));
-  if (!asker?.subagent) return null;
-  let top = asker;
+function spawnRows(rows: readonly ActivityRow[]): Map<string, ActivityRow> {
+  return new Map(rows.flatMap((r) => (r.kind === "subagent" && r.subagent ? [[r.subagent.id, r] as const] : [])));
+}
+
+/** The top-level agent whose view shows `spawn`'s agent. */
+function topLevelSpawn(spawns: ReadonlyMap<string, ActivityRow>, spawn: ActivityRow): ActivityRow {
+  let top = spawn;
   for (let depth = 0; top.subagentId && depth < 32; depth += 1) {
-    const parent = headers.get(top.subagentId);
+    const parent = spawns.get(top.subagentId);
     if (!parent) break;
     top = parent;
   }
-  return { id: top.subagent!.id, name: asker.subagent.name };
+  return top;
+}
+
+/** The agent whose view shows `agentId`: a nested subagent opens its top-level ancestor's. */
+export function resolveViewedAgent(rows: readonly ActivityRow[], agentId: string | null): AgentSummary | undefined {
+  if (!agentId) return undefined;
+  const spawns = spawnRows(rows);
+  const spawn = spawns.get(agentIdOf(agentId));
+  const id = spawn ? topLevelSpawn(spawns, spawn).subagent!.id : agentId;
+  return listAgents(rows).find((a) => a.id === id);
+}
+
+/** Each nested subagent's top-level ancestor, whose card holds it in the main flow. */
+export function topLevelAgents(rows: readonly ActivityRow[]): Map<string, string> {
+  const spawns = spawnRows(rows);
+  return new Map(
+    [...spawns].flatMap(([id, spawn]) => (spawn.subagentId ? [[id, topLevelSpawn(spawns, spawn).subagent!.id]] : [])),
+  );
+}
+
+/** The subagent asking for an approval, and the top-level agent whose view shows it. */
+export function approvalAsker(approval: Approval, rows: readonly ActivityRow[]): { id: string; name: string } | null {
+  if (!approval.subagent) return null;
+  const spawns = spawnRows(rows);
+  const asker = spawns.get(agentIdOf(approval.subagent));
+  if (!asker?.subagent) return null;
+  return { id: topLevelSpawn(spawns, asker).subagent!.id, name: asker.subagent.name };
 }
 
 export interface AgentMessage {

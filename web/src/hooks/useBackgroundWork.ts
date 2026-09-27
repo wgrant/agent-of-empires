@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 
-import { lastActivityByAgent } from "../lib/agentView";
+import { lastActivityByAgent, topLevelAgents } from "../lib/agentView";
 import { backgroundItems, type BackgroundItem } from "../lib/backgroundWork";
 import { useAsyncTasks, useBackgroundAgents, useSessionActivity } from "./useAcpSession";
 
@@ -11,5 +11,6 @@ export function useBackgroundWork(sessionId: string | null): BackgroundItem[] {
   const tasks = useAsyncTasks(sessionId);
   const activity = useSessionActivity(sessionId);
   const lastActivity = useMemo(() => lastActivityByAgent(activity), [activity]);
-  return useMemo(() => backgroundItems(agents, tasks, lastActivity), [agents, tasks, lastActivity]);
+  const topLevel = useMemo(() => topLevelAgents(activity), [activity]);
+  return useMemo(() => backgroundItems(agents, tasks, lastActivity, topLevel), [agents, tasks, lastActivity, topLevel]);
 }
