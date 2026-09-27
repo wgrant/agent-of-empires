@@ -228,7 +228,37 @@ describe("ToolCard headers", () => {
       ["cron schedule deleted", "job-7"],
       [],
     ],
-    ["tool search", fixtures.toolSearch, undefined, { toolKey: "claude" }, ["tool search", "select:Read,Edit"], []],
+    ["tool load", fixtures.toolSearch, undefined, { toolKey: "claude" }, ["load tool", "Read,Edit"], ["select:"]],
+    [
+      "message that woke a teammate",
+      makeToolCall({
+        name: "SendMessage",
+        args_preview: args({ to: "tester", summary: "Bugs found", message: "add() subtracts" }),
+      }),
+      makeCompletion({ text: '{"success":true,"message":"Resuming agent tester"}' }),
+      { toolKey: "claude" },
+      ["message", "to tester", "Bugs found", "woke tester", "done"],
+      [],
+    ],
+    [
+      "undeliverable message",
+      makeToolCall({ name: "SendMessage", args_preview: args({ to: "lead", message: "Tests\nmore" }) }),
+      makeCompletion({ text: '{"success":false,"message":"No agent named \'lead\' is reachable."}' }),
+      { toolKey: "claude" },
+      ["to lead", "Tests", "failed"],
+      ["woke"],
+    ],
+    [
+      "agent list",
+      makeToolCall({ name: "ListAgents" }),
+      makeCompletion({
+        text: "This session is x.\n\nSubagents (2):\n  tester [c1]  ·  general-purpose  ·  running  ·  started 4s ago\n  reviewer [c2]  ·  general-purpose  ·  completed  ·  started 3s ago\n\nPeer sessions (1):\n  other [p1]  ·  interactive  ·  idle  ·  started 1m ago\n",
+      }),
+      { toolKey: "claude" },
+      ["agents", "list agents", "2 subagents · 1 running"],
+      [],
+    ],
+    ["codex wait", makeToolCall({ name: "wait" }), makeCompletion(), { toolKey: "codex" }, ["waiting for agents"], []],
     [
       "monitor",
       fixtures.monitor,
@@ -990,5 +1020,41 @@ describe("CompactionCard", () => {
     expect(container.textContent).toContain(text);
     expect(queryByTestId("compaction-body") !== null).toBe(open);
     expect(queryByRole("button") !== null).toBe(open);
+  });
+});
+
+describe("SendMessage card", () => {
+  it("shows the message and opens its recipient's agent view", () => {
+    const tester: BackgroundAgent = {
+      agentId: "t1",
+      toolCallId: "",
+      description: "tester",
+      prompt: "",
+      model: "",
+      status: "running",
+      startedAt: "2026-09-27T00:00:00Z",
+      endedAt: null,
+      toolCount: 0,
+      tools: [],
+      lastTool: null,
+      lastText: null,
+      result: null,
+      warning: null,
+    };
+    const tool = makeToolCall({
+      name: "SendMessage",
+      args_preview: args({ to: "tester", summary: "Bugs", message: "add() subtracts" }),
+    });
+    const { container, getByRole } = render(
+      <BackgroundAgentsContext.Provider value={{ agents: [tester] }}>
+        {wrap(<ToolCard tool={tool} result={makeCompletion({ text: '{"success":true}' })} />, { toolKey: "claude" })}
+      </BackgroundAgentsContext.Provider>,
+    );
+    fireEvent.click(container.querySelector("button")!);
+    expect(container.textContent).toContain("add() subtracts");
+    const viewed = vi.fn();
+    window.addEventListener("aoe:view-agent", (e) => viewed((e as CustomEvent).detail), { once: true });
+    fireEvent.click(getByRole("button", { name: "Open tester's view" }));
+    expect(viewed).toHaveBeenCalledWith("t1");
   });
 });
