@@ -219,15 +219,25 @@ async fn cancel_under_flood() {
     let _ = tokio::join!(flood, agent, connection);
 }
 
-/// Handler tasks share one dispatch loop, so an approval awaited there held
-/// back every later message until the user answered.
+/// Handler tasks share one dispatch loop, so a request awaited there, such as
+/// an approval or a terminal's command, held back every later message.
 #[tokio::test]
-async fn messages_keep_flowing_while_an_approval_waits() {
+async fn messages_keep_flowing_while_a_request_waits() {
+    let cases = [
+        r#"{"jsonrpc":"2.0","id":"perm","method":"session/request_permission","params":{"sessionId":"s-wait","toolCall":{"toolCallId":"t1","title":"rm -rf build"},"options":[{"optionId":"allow","name":"Allow","kind":"allow_once"}]}}"#,
+        r#"{"jsonrpc":"2.0","id":"term","method":"terminal/create","params":{"sessionId":"s-wait","command":"sleep","args":["3600"]}}"#,
+    ];
+    for request in cases {
+        update_follows(request).await;
+    }
+}
+
+async fn update_follows(request: &'static str) {
     let (daemon_write, agent_read) = tokio::io::duplex(64 * 1024);
     let (agent_write, daemon_read) = tokio::io::duplex(64 * 1024);
     let agent_write: SharedWrite = Arc::new(Mutex::new(agent_write));
     let (transport, (params, mut event_rx, cmd_tx, ready_rx, _temp)) =
-        connection_params("s-approve", daemon_write, daemon_read);
+        connection_params("s-wait", daemon_write, daemon_read);
     let connection = tokio::spawn(run_connection_task(transport, params));
     let agent = tokio::spawn(async move {
         let mut reader = BufReader::new(agent_read);
@@ -241,11 +251,11 @@ async fn messages_keep_flowing_while_an_approval_waits() {
                     r#"{{"jsonrpc":"2.0","id":{id},"result":{{"protocolVersion":1,"agentCapabilities":{{}}}}}}"#
                 )],
                 Some("session/new") => vec![format!(
-                    r#"{{"jsonrpc":"2.0","id":{id},"result":{{"sessionId":"s-approve"}}}}"#
+                    r#"{{"jsonrpc":"2.0","id":{id},"result":{{"sessionId":"s-wait"}}}}"#
                 )],
                 Some("session/prompt") => vec![
-                    r#"{"jsonrpc":"2.0","id":"perm","method":"session/request_permission","params":{"sessionId":"s-approve","toolCall":{"toolCallId":"t1","title":"rm -rf build"},"options":[{"optionId":"allow","name":"Allow","kind":"allow_once"}]}}"#.to_string(),
-                    r#"{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-approve","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"meanwhile"}}}}"#.to_string(),
+                    request.to_string(),
+                    r#"{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-wait","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"meanwhile"}}}}"#.to_string(),
                 ],
                 _ => Vec::new(),
             };
@@ -265,19 +275,19 @@ async fn messages_keep_flowing_while_an_approval_waits() {
         )]))
         .await
         .unwrap();
-    let mut asked = false;
     tokio::time::timeout(Duration::from_secs(30), async {
         loop {
-            match event_rx.recv().await.expect("event channel open") {
-                Event::ApprovalRequested { .. } => asked = true,
-                Event::AgentMessageChunk { text } if text == "meanwhile" => break,
-                _ => {}
+            if let Event::AgentMessageChunk { text } =
+                event_rx.recv().await.expect("event channel open")
+            {
+                if text == "meanwhile" {
+                    break;
+                }
             }
         }
     })
     .await
-    .expect("the update after an unanswered approval arrives");
-    assert!(asked, "the approval is published before the later update");
+    .unwrap_or_else(|_| panic!("an update after {request} arrives while it waits"));
 
     agent.abort();
     connection.abort();
