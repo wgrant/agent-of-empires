@@ -161,6 +161,12 @@ impl EventStore {
             self.max_events_per_session,
             NON_SUBSTANTIVE_EVENT_DISCRIMINANTS,
         );
+        // Turn ends compact, so reclaim what compaction and pruning freed.
+        if inserted != 0 && matches!(event, Event::Stopped { .. }) {
+            if let Err(error) = events::reclaim_free_pages(&conn) {
+                warn!(target: "acp.event_store", %error, "failed to reclaim free pages");
+            }
+        }
         Ok(())
     }
 
