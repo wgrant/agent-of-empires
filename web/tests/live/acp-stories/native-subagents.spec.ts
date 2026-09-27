@@ -124,7 +124,7 @@ test("the composer counts background work until it finishes", async ({ page, spa
 
   const chip = page.getByTestId("composer-background-work").filter({ visible: true });
   await expect(chip).toHaveText("1 in background", { timeout: 15_000 });
-  await expect(chip).toHaveAttribute("title", "Explorer");
+  await expect(chip).toHaveAttribute("title", /^Explorer · active \d+s ago$/);
   await chip.click();
   await expect(page.getByTestId("background-item").filter({ hasText: "Explorer" })).toBeVisible();
 

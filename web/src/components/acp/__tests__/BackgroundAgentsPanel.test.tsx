@@ -2,15 +2,18 @@
 import { cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { AsyncTask, BackgroundAgent } from "../../../lib/acpTypes";
+import type { ActivityRow, AsyncTask, BackgroundAgent } from "../../../lib/acpTypes";
 
 // The panel reads the live list from the useAcpSession store; mock it so
 // the test drives the rendering purely from a fixed agent list.
 const agentsMock = vi.fn<() => BackgroundAgent[]>(() => []);
 const tasksMock = vi.fn<() => AsyncTask[]>(() => []);
+const NO_ROWS: ActivityRow[] = [];
+const activityMock = vi.fn<() => ActivityRow[]>(() => NO_ROWS);
 vi.mock("../../../hooks/useAcpSession", () => ({
   useBackgroundAgents: () => agentsMock(),
   useAsyncTasks: () => tasksMock(),
+  useSessionActivity: () => activityMock(),
 }));
 
 import { BackgroundAgentsPanel } from "../BackgroundAgentsPanel";
@@ -174,5 +177,19 @@ describe("BackgroundAgentsPanel", () => {
     expect(dialog.textContent).toContain("ls -la");
     fireEvent.click(getByRole("button", { name: /close/i }));
     expect(queryByRole("dialog")).toBeNull();
+  });
+
+  it("says when running work last did anything, and flags a long silence", () => {
+    const ago = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
+    const rows: ActivityRow[] = [{ id: "m1", kind: "message", text: "reading", at: ago(7), subagentId: "kid" }];
+    activityMock.mockReturnValue(rows);
+    const { getAllByTestId } = renderPanel(
+      [agent({ agentId: "kid", toolCallId: "", startedAt: ago(10) })],
+      [task({ lastActiveAt: ago(1), startedAt: ago(10) })],
+    );
+    const labels = getAllByTestId("background-item-last-active");
+    const byText = Object.fromEntries(labels.map((l) => [l.textContent, l.className.includes("text-status-warning")]));
+    expect(byText).toEqual({ "active 1m ago": false, "active 7m ago": true });
+    activityMock.mockReturnValue(NO_ROWS);
   });
 });
