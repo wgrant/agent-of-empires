@@ -179,7 +179,7 @@ function ShikiSyntaxHighlighter({ language, code }: SyntaxHighlighterProps) {
   if (html) {
     return (
       <div
-        className="overflow-x-auto px-3 py-2 text-[0.86em] leading-[1.3333] [&_pre]:!bg-transparent [&_pre]:!m-0 [&_pre]:!p-0"
+        className="acp-code-body overflow-x-auto px-3 py-2 text-[0.86em] leading-[1.3333] [&_pre]:!bg-transparent [&_pre]:!m-0 [&_pre]:!p-0"
         dangerouslySetInnerHTML={{ __html: html }}
       />
     );
@@ -191,7 +191,7 @@ function ShikiSyntaxHighlighter({ language, code }: SyntaxHighlighterProps) {
 
 function CodeHeader({ language, code }: CodeHeaderProps) {
   return (
-    <div className="flex items-center justify-between border-b border-surface-800 bg-surface-950 px-3 py-1 text-[0.79em] font-mono uppercase tracking-wider text-text-dim">
+    <div className="acp-code-header flex items-center justify-between bg-surface-950 px-3 py-1 text-[0.79em] font-mono uppercase tracking-wider text-text-dim">
       <span>{language ?? "text"}</span>
       <button
         type="button"
