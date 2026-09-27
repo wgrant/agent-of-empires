@@ -96,6 +96,56 @@ impl EventStore {
         context
     }
 
+    /// The `ToolCallStarted` events before `before` for the given tool calls,
+    /// so a page that opens mid-call can fold the call's real start.
+    pub fn tool_starts_before(
+        &self,
+        session_id: &str,
+        before: u64,
+        tool_call_ids: &[String],
+    ) -> Vec<StoredEvent> {
+        if tool_call_ids.is_empty() {
+            return Vec::new();
+        }
+        let table = self.schema.events_table();
+        let placeholders = vec!["?"; tool_call_ids.len()].join(", ");
+        let sql = format!(
+            "SELECT seq, event_json, created_at FROM {table}
+             WHERE session_id = ? AND seq < ? AND discriminant = 'ToolCallStarted'
+               AND json_extract(event_json, '$.ToolCallStarted.tool_call.id') IN ({placeholders})
+             ORDER BY seq ASC"
+        );
+        let conn = self.conn();
+        let rows = conn.prepare(&sql).and_then(|mut stmt| {
+            let params = [
+                rusqlite::types::Value::from(session_id.to_string()),
+                rusqlite::types::Value::from(before as i64),
+            ]
+            .into_iter()
+            .chain(
+                tool_call_ids
+                    .iter()
+                    .cloned()
+                    .map(rusqlite::types::Value::from),
+            );
+            stmt.query_map(rusqlite::params_from_iter(params), |row| {
+                Ok((
+                    row.get::<_, i64>(0)? as u64,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, i64>(2)?,
+                ))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()
+        });
+        match rows {
+            Ok(rows) => decode_rows(session_id, rows, None).0,
+            Err(error) => {
+                warn!(target: "acp.event_store", session = %session_id, %error, "tool_starts_before failed");
+                Vec::new()
+            }
+        }
+    }
+
     /// Up to `limit` events with `seq > since`, oldest first.
     pub fn replay_page(&self, session_id: &str, since: u64, limit: Option<usize>) -> ReplayPage {
         let page = self.page(session_id, SeqBound::After(since), Order::Asc, limit);
