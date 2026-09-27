@@ -64,6 +64,7 @@ export function agentActivity(rows: readonly ActivityRow[], agentId: string): Ac
     if (row.kind === "subagent" && row.subagent) subtree.add(row.subagent.id);
     return [row.subagentId === agentId ? { ...row, subagentId: undefined } : row];
   });
+  if (!header.text.trim()) return own;
   const task: ActivityRow = { id: `task-${agentId}`, kind: "subagent_woken", text: header.text, at: header.at };
   return [task, ...own];
 }

@@ -927,6 +927,9 @@ impl TranscriptModel {
             Some(())
         });
         self.subagent_text_runs.remove(id);
+        if message.is_empty() {
+            return deltas;
+        }
         let mut row = self.grouped_row(row_id, TranscriptRowKind::SubagentWoken, message.into());
         row.at = at;
         row.subagent_id = Some(id.to_string());

@@ -51,6 +51,9 @@ describe("agent views", () => {
       ["message", "nested work", "n"],
     ]);
     expect(agentActivity(rows, "missing")).toEqual([]);
+    // An agent with no known task opens straight on its own rows.
+    const untasked = rows.map((r) => (r.id === "subagent-r" ? { ...r, text: "" } : r));
+    expect(agentActivity(untasked, "r").map((r) => r.text)).toEqual(["bugs found"]);
   });
 
   it("parses who a teammate message is from, and maps a later run to its agent", () => {
