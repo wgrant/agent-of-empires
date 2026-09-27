@@ -1,15 +1,23 @@
 //! Reading the log back: full replays and cursor pages in either direction.
 
+use chrono::{DateTime, Utc};
 use tracing::{trace, warn};
 
 use super::EventStore;
 use crate::acp::state::Event;
 use crate::events::{self, Order, SeqBound};
 
+/// An event read back with its seq and when it was recorded.
+pub struct StoredEvent {
+    pub seq: u64,
+    pub event: Event,
+    pub recorded_at: DateTime<Utc>,
+}
+
 /// One page of replayed events plus the cursor metadata for the next page.
 pub struct ReplayPage {
     /// Deserialised events for this page, oldest first.
-    pub events: Vec<(u64, Event)>,
+    pub events: Vec<StoredEvent>,
     /// Cursor for the next page: the last seq this page consumed, decodable or not.
     pub last_scanned_seq: Option<u64>,
     /// True when at least one row exists beyond this page's window.
@@ -31,11 +39,16 @@ impl EventStore {
             Order::Asc,
             None,
         );
-        decode_rows(session_id, rows, None).0
+        pairs(decode_rows(session_id, rows, None).0)
     }
 
     /// All events with `seq > since`, oldest first.
     pub fn replay_from(&self, session_id: &str, since: u64) -> Vec<(u64, Event)> {
+        pairs(self.replay_recorded_from(session_id, since))
+    }
+
+    /// [`Self::replay_from`] with each event's recording time.
+    pub fn replay_recorded_from(&self, session_id: &str, since: u64) -> Vec<StoredEvent> {
         self.replay_page(session_id, since, None).events
     }
 
@@ -46,7 +59,7 @@ impl EventStore {
         session_id: &str,
         before: u64,
         first_event: &Event,
-    ) -> Vec<(u64, Event)> {
+    ) -> Vec<StoredEvent> {
         let Some(wanted) = stream_kind(first_event) else {
             return Vec::new();
         };
@@ -59,7 +72,7 @@ impl EventStore {
             None,
         );
         let mut context = Vec::new();
-        for (seq, json) in rows {
+        for (seq, json, created_at) in rows {
             let Ok(event) = serde_json::from_str::<Event>(&json) else {
                 break;
             };
@@ -70,7 +83,11 @@ impl EventStore {
                 event,
                 Event::AgentMessageSnapshot { .. } | Event::AgentThoughtSnapshot { .. }
             );
-            context.push((seq, event));
+            context.push(StoredEvent {
+                seq,
+                event,
+                recorded_at: recorded_at(created_at),
+            });
             if snapshot {
                 break;
             }
@@ -109,18 +126,14 @@ impl EventStore {
             if let Some(i) = page
                 .events
                 .iter()
-                .position(|(_, ev)| is_user_turn_boundary(ev))
+                .position(|e| is_user_turn_boundary(&e.event))
                 .filter(|&i| i > 0)
             {
                 page.events.drain(0..i);
             }
         }
         // The next-older page starts below the lowest seq kept, so a trimmed turn reloads whole.
-        page.last_scanned_seq = page
-            .events
-            .first()
-            .map(|(seq, _)| *seq)
-            .or(page.last_scanned_seq);
+        page.last_scanned_seq = page.events.first().map(|e| e.seq).or(page.last_scanned_seq);
         trace!(
             target: "acp.event_store",
             session = %session_id,
@@ -179,16 +192,20 @@ fn stream_kind(event: &Event) -> Option<StreamKind> {
 /// last seq consumed, and whether a probe row beyond `limit` was present.
 fn decode_rows(
     session_id: &str,
-    rows: Vec<(u64, String)>,
+    rows: Vec<(u64, String, i64)>,
     limit: Option<usize>,
-) -> (Vec<(u64, Event)>, Option<u64>, bool) {
+) -> (Vec<StoredEvent>, Option<u64>, bool) {
     let has_more = limit.is_some_and(|n| rows.len() > n);
     let mut out = Vec::new();
     let mut last_scanned_seq = None;
-    for (seq, json) in rows.into_iter().take(limit.unwrap_or(usize::MAX)) {
+    for (seq, json, created_at) in rows.into_iter().take(limit.unwrap_or(usize::MAX)) {
         last_scanned_seq = Some(seq);
         match serde_json::from_str::<Event>(&json) {
-            Ok(event) => out.push((seq, event)),
+            Ok(event) => out.push(StoredEvent {
+                seq,
+                event,
+                recorded_at: recorded_at(created_at),
+            }),
             Err(e) => warn!(
                 target: "acp.event_store",
                 "deserialise event {session_id}@{seq}: {e}"
@@ -196,6 +213,14 @@ fn decode_rows(
         }
     }
     (out, last_scanned_seq, has_more)
+}
+
+fn recorded_at(created_at_ms: i64) -> DateTime<Utc> {
+    DateTime::from_timestamp_millis(created_at_ms).unwrap_or_default()
+}
+
+fn pairs(events: Vec<StoredEvent>) -> Vec<(u64, Event)> {
+    events.into_iter().map(|e| (e.seq, e.event)).collect()
 }
 
 fn is_user_turn_boundary(ev: &Event) -> bool {
@@ -208,6 +233,27 @@ fn is_user_turn_boundary(ev: &Event) -> bool {
 #[cfg(test)]
 mod tests {
     use super::super::test_support::*;
+
+    fn page_seqs(events: &[StoredEvent]) -> Vec<u64> {
+        events.iter().map(|e| e.seq).collect()
+    }
+
+    #[test]
+    fn replay_reports_when_each_event_was_recorded() {
+        let (_tmp, store) = open_store(1000);
+        store
+            .record_at("s-1", 1, &Event::ThinkingStarted, 1_700_000_000_000)
+            .unwrap();
+        store
+            .record_at("s-1", 2, &Event::ThinkingEnded, 1_700_000_060_000)
+            .unwrap();
+        let times: Vec<_> = store
+            .replay_recorded_from("s-1", 0)
+            .iter()
+            .map(|e| (e.seq, e.recorded_at.timestamp_millis()))
+            .collect();
+        assert_eq!(times, [(1, 1_700_000_000_000), (2, 1_700_000_060_000)]);
+    }
     use super::*;
 
     #[test]
@@ -222,7 +268,7 @@ mod tests {
         loop {
             let page = store.replay_page("s-1", cursor, Some(3));
             assert!(page.events.len() <= 3, "page exceeded limit");
-            paged.extend(seqs(&page.events));
+            paged.extend(page_seqs(&page.events));
             match page.last_scanned_seq {
                 Some(next) if page.has_more => cursor = next,
                 _ => break,
@@ -257,11 +303,11 @@ mod tests {
         store.record("bad", 3, &Event::ThinkingEnded).unwrap();
 
         let page1 = store.replay_page("bad", 0, Some(2));
-        assert_eq!(seqs(&page1.events), [1]);
+        assert_eq!(page_seqs(&page1.events), [1]);
         assert_eq!(page1.last_scanned_seq, Some(2));
         assert!(page1.has_more);
         let page2 = store.replay_page("bad", 2, Some(2));
-        assert_eq!(seqs(&page2.events), [3]);
+        assert_eq!(page_seqs(&page2.events), [3]);
         assert!(!page2.has_more);
     }
 
@@ -270,14 +316,14 @@ mod tests {
         let (_tmp, store) = open_store(1000);
         record_from(&store, "s-1", 1, (1..=10).map(|_| Event::ThinkingStarted));
         let tail = store.replay_page_before("s-1", u64::MAX, Some(3));
-        assert_eq!(seqs(&tail.events), [8, 9, 10]);
+        assert_eq!(page_seqs(&tail.events), [8, 9, 10]);
         assert!(tail.has_more);
         assert_eq!((tail.last_scanned_seq, tail.highest_seq), (Some(8), 10));
         let older = store.replay_page_before("s-1", 8, Some(3));
-        assert_eq!(seqs(&older.events), [5, 6, 7]);
+        assert_eq!(page_seqs(&older.events), [5, 6, 7]);
         assert_eq!(older.last_scanned_seq, Some(5));
         let start = store.replay_page_before("s-1", 3, Some(10));
-        assert_eq!(seqs(&start.events), [1, 2]);
+        assert_eq!(page_seqs(&start.events), [1, 2]);
         assert!(!start.has_more, "reached session start");
         assert!(store
             .replay_page_before("s-1", 1, Some(10))
@@ -308,14 +354,14 @@ mod tests {
         // A tail of 4 would start at seq 4, mid-turn A.
         let tail = store.replay_page_before("s-2", u64::MAX, Some(4));
         assert_eq!(
-            seqs(&tail.events),
+            page_seqs(&tail.events),
             [5, 6, 7],
             "leading partial turn trimmed"
         );
         assert!(tail.has_more);
         assert_eq!(tail.last_scanned_seq, Some(5), "cursor is boundary B");
         let older = store.replay_page_before("s-2", 5, Some(10));
-        assert_eq!(seqs(&older.events), [1, 2, 3, 4]);
+        assert_eq!(page_seqs(&older.events), [1, 2, 3, 4]);
         assert!(!older.has_more);
     }
 }

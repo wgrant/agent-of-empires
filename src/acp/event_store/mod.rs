@@ -20,7 +20,7 @@ use crate::events;
 
 pub use attachments::AttachmentBlob;
 pub use rate_limit::RateLimitPark;
-pub use replay::ReplayPage;
+pub use replay::{ReplayPage, StoredEvent};
 pub use search::ContentHit;
 pub use turns::{TerminalRepairProbe, UnresolvedBackgroundAgentLaunch};
 

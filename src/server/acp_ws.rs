@@ -18,6 +18,7 @@ use tracing::{debug, warn};
 const CLOSE_CODE_GOING_AWAY: u16 = 1001;
 
 use super::{AcpBroadcastFrame, AppState};
+use crate::acp::event_store::StoredEvent;
 use crate::acp::state::{AcpSessionId, AcpState, AgentName, Event};
 use crate::acp::transcript::TranscriptModel;
 
@@ -305,7 +306,9 @@ async fn drain_replay_into_socket(
     let session_id_owned = session_id.to_string();
     // Read from seq 0, not from `since`.
     let entries =
-        match tokio::task::spawn_blocking(move || store.replay_from(&session_id_owned, 0)).await {
+        match tokio::task::spawn_blocking(move || store.replay_recorded_from(&session_id_owned, 0))
+            .await
+        {
             Ok(rows) => rows,
             Err(e) => {
                 // Blocking task panicked or was cancelled.
@@ -388,17 +391,22 @@ struct ConnectReplay {
 }
 
 fn fold_connect_history(
-    entries: Vec<(u64, Event)>,
+    entries: Vec<StoredEvent>,
     since: u64,
     folds: &mut ConnectionFolds<'_>,
 ) -> ConnectReplay {
     let mut to_forward = Vec::new();
     let mut changed_ids = std::collections::HashSet::new();
     let mut removed_ids = std::collections::HashSet::new();
-    for (seq, event) in entries {
+    for StoredEvent {
+        seq,
+        event,
+        recorded_at,
+    } in entries
+    {
         let _ = folds.reduced.apply_event(event.clone());
         folds.last_applied_seq = seq;
-        let deltas = folds.transcript.apply_event(seq, &event);
+        let deltas = folds.transcript.apply_event_at(seq, &event, recorded_at);
         if seq > since {
             for delta in deltas {
                 match delta {
@@ -735,6 +743,17 @@ where
 mod tests {
     use super::*;
 
+    fn stored(history: Vec<(u64, Event)>) -> Vec<StoredEvent> {
+        history
+            .into_iter()
+            .map(|(seq, event)| StoredEvent {
+                seq,
+                event,
+                recorded_at: chrono::DateTime::UNIX_EPOCH,
+            })
+            .collect()
+    }
+
     /// The connect snapshot is a whole-state frame the clients adopt verbatim, and every
     /// client dials with a non-zero `since` after its first connect (the web seeds
     /// `lastSeq` from the tail before opening the socket; the TUI reconnects from
@@ -801,7 +820,7 @@ mod tests {
             cold: &mut cold,
             last_applied_seq: 0,
         };
-        let replay = fold_connect_history(history.clone(), 4, &mut folds);
+        let replay = fold_connect_history(stored(history.clone()), 4, &mut folds);
 
         assert!(replay.to_forward.is_empty(), "nothing new to forward");
         assert!(replay.transcript_rows.is_empty());
@@ -836,7 +855,7 @@ mod tests {
             cold: &mut cold_cache,
             last_applied_seq: 0,
         };
-        let replay = fold_connect_history(history, 0, &mut cold_folds);
+        let replay = fold_connect_history(stored(history), 0, &mut cold_folds);
         assert_eq!(replay.to_forward.len(), 4);
         assert_eq!(replay.transcript_rows.len(), 1);
         assert!(!cold_folds.transcript.rows().is_empty());
@@ -867,7 +886,7 @@ mod tests {
             cold: &mut split_cache,
             last_applied_seq: 0,
         };
-        let replay = fold_connect_history(split_history, 4, &mut split_folds);
+        let replay = fold_connect_history(stored(split_history), 4, &mut split_folds);
         assert_eq!(replay.to_forward.len(), 1);
         assert_eq!(replay.transcript_rows.len(), 1);
         assert_eq!(replay.transcript_rows[0].id, "msg-4");
