@@ -2,6 +2,8 @@
 // session waiting on it does not look idle. Warns when all of it has gone
 // quiet, and opens the Background pane.
 
+import { Layers } from "lucide-react";
+
 import { useBackgroundWork } from "../../hooks/useBackgroundWork";
 import { useNow } from "../../hooks/useNow";
 import { backgroundAge, lastBackgroundActivity, QUIET_AFTER_MS } from "../../lib/backgroundWork";
@@ -34,10 +36,15 @@ export function BackgroundWorkChip({ sessionId, compact = false }: { sessionId: 
         quiet ? "text-status-warning hover:text-status-warning" : "text-text-secondary hover:text-text-primary",
       ].join(" ")}
     >
-      <span
-        className={`h-1.5 w-1.5 shrink-0 rounded-full ${quiet ? "bg-status-warning" : "animate-pulse bg-brand-400"}`}
-        aria-hidden
-      />
+      {compact ? (
+        // The Background pane's own icon, so a bare count is not read as queued messages.
+        <Layers className={`h-3 w-3 shrink-0 ${quiet ? "" : "text-brand-400"}`} aria-hidden />
+      ) : (
+        <span
+          className={`h-1.5 w-1.5 shrink-0 rounded-full ${quiet ? "bg-status-warning" : "animate-pulse bg-brand-400"}`}
+          aria-hidden
+        />
+      )}
       <span className="tabular-nums">{compact ? (quiet ? `${running.length}!` : running.length) : label}</span>
     </button>
   );
