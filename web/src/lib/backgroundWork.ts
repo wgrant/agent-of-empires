@@ -23,6 +23,8 @@ export interface BackgroundItem {
   stopTaskId: string | null;
   /** The transcript card holding its detail, when it has one. */
   cardId: string | null;
+  /** The agent whose own transcript the view can show. */
+  viewAgentId: string | null;
   agent?: BackgroundAgent;
   task?: AsyncTask;
 }
@@ -52,6 +54,7 @@ function agentItem(agent: BackgroundAgent): BackgroundItem {
     endedAt: agent.endedAt,
     stopTaskId: null,
     cardId: native ? `native-subagent-${agent.agentId}` : agent.toolCallId ? `subagent-${agent.toolCallId}` : null,
+    viewAgentId: native ? agent.agentId : null,
     agent,
   };
 }
@@ -82,6 +85,7 @@ function taskItem(task: AsyncTask): BackgroundItem {
     stopTaskId: running && task.canStop ? task.id : null,
     // A workflow's run heads its own transcript card.
     cardId: kind === "workflow" ? `native-subagent-${task.id}` : null,
+    viewAgentId: kind === "workflow" ? task.id : null,
     task,
   };
 }

@@ -16,6 +16,7 @@ import { isVisiblyBusy } from "../../lib/acpTypes";
 import type { AcpState, ApprovalDecision, ElicitationResolution, PromptAttachmentInput } from "../../lib/acpTypes";
 import { useAgentProfile } from "../../lib/agentProfileContext";
 import { canOfferEarlier, earlierAction } from "../../lib/historyScroll";
+import { agentActivity, listAgents } from "../../lib/agentView";
 import { activityToThreadMessages, clearFoldGeneration } from "./activityMessages";
 import { useCancelEscalation } from "./useCancelEscalation";
 
@@ -48,6 +49,8 @@ interface Props {
   snoozedUntil?: string | null;
   /** Render rows before the latest `/clear` instead of folding them. */
   showClearedTurns?: boolean;
+  /** Show this subagent's own transcript instead of the main agent's. */
+  viewedAgentId?: string | null;
   children: (ctx: AcpContext) => ReactNode;
 }
 
@@ -142,6 +145,7 @@ export function AcpRuntime({
   archivedAt = null,
   snoozedUntil = null,
   showClearedTurns = false,
+  viewedAgentId = null,
   children,
 }: Props) {
   const acp = useAcpSession(sessionId, archivedAt, snoozedUntil);
@@ -200,16 +204,28 @@ export function AcpRuntime({
   // per turn, and produces brand-new message objects. Without
   // useMemo, every parent re-render (e.g. WS heartbeat, hover state)
   // re-builds the transcript and assistant-ui treats every
+  // An agent's view reads every loaded row: its runs can predate the window.
+  const agentRows = useMemo(
+    () => (viewedAgentId ? agentActivity(acp.state.activity, viewedAgentId) : []),
+    [viewedAgentId, acp.state.activity],
+  );
+  const viewingAgent = agentRows.length > 0;
+  const agentRunning = useMemo(
+    () => listAgents(acp.state.activity).some((a) => a.id === viewedAgentId && a.state === "running"),
+    [acp.state.activity, viewedAgentId],
+  );
   const messages = useMemo(
     () =>
-      activityToThreadMessages(
-        displayActivity,
-        visiblyBusy,
-        showClearedTurns,
-        agentProfile.capabilities.todos,
-        agentProfile,
-      ),
-    [displayActivity, visiblyBusy, showClearedTurns, agentProfile],
+      viewingAgent
+        ? activityToThreadMessages(agentRows, agentRunning, true, agentProfile.capabilities.todos, agentProfile)
+        : activityToThreadMessages(
+            displayActivity,
+            visiblyBusy,
+            showClearedTurns,
+            agentProfile.capabilities.todos,
+            agentProfile,
+          ),
+    [viewingAgent, agentRows, agentRunning, displayActivity, visiblyBusy, showClearedTurns, agentProfile],
   );
   const foldGeneration = useMemo(
     () => clearFoldGeneration(displayActivity, showClearedTurns),
@@ -245,7 +261,7 @@ export function AcpRuntime({
   };
 
   return (
-    <RuntimeHost key={`${foldGeneration}:${historyGeneration}`} adapter={adapter}>
+    <RuntimeHost key={`${foldGeneration}:${historyGeneration}:${viewingAgent ? viewedAgentId : ""}`} adapter={adapter}>
       {children({
         state: acp.state,
         status: acp.status,

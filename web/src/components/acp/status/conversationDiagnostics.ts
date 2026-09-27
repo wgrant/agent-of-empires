@@ -91,6 +91,8 @@ export type ComposerAvailability =
   | { kind: "read_only"; reason: "trashed"; action: "restore" }
   | { kind: "resume_then_send"; reason: "archived" | "snoozed" | "stopped" }
   | { kind: "blocked"; reason: "failed" | "rate_limited"; action?: "retry_start" | "switch_agent" }
+  /** Showing a subagent's transcript, which cannot be messaged directly. */
+  | { kind: "blocked"; reason: "viewing_agent"; agent: string }
   | { kind: "send_now" }
   | { kind: "steer_now" }
   | { kind: "queue_after_turn" }

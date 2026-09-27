@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 
 import { useAsyncTasks, useBackgroundAgents } from "../../hooks/useAcpSession";
+import { requestAgentView } from "../../hooks/useAgentView";
 import { requestCardFocus } from "../../hooks/useCardFocus";
 import type { BackgroundAgent, BackgroundAgentStatus, BackgroundAgentTool } from "../../lib/acpTypes";
 import { backgroundItems, type BackgroundItem, type BackgroundKind } from "../../lib/backgroundWork";
@@ -149,6 +150,20 @@ function ItemRow({
           />
         </button>
         {item.stopTaskId && sessionId && <StopTaskButton sessionId={sessionId} taskId={item.stopTaskId} />}
+        {item.viewAgentId && (
+          <button
+            type="button"
+            onClick={() => {
+              onShowInTranscript?.();
+              requestAgentView(item.viewAgentId);
+            }}
+            title="View agent"
+            aria-label="View agent"
+            className="shrink-0 px-2 py-2 text-text-dim hover:text-text-secondary"
+          >
+            <Eye className="h-3.5 w-3.5" />
+          </button>
+        )}
         {item.cardId && (
           <button
             type="button"
