@@ -2,15 +2,19 @@ import { test, expect } from "./helpers/mockedTest";
 import { mockTerminalApis } from "./helpers/terminal-mocks";
 
 test.describe("Top bar", () => {
-  test("renders sidebar toggle, brand, palette pill, overflow, and the offline badge", async ({ page }) => {
+  test("renders sidebar toggle, brand, palette pill, overflow, and the offline connection control", async ({
+    page,
+  }) => {
     await page.setViewportSize({ width: 1280, height: 720 });
     await page.goto("/");
     await expect(page.getByRole("button", { name: "Toggle sidebar" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Go to dashboard" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Open command palette" }).first()).toBeVisible();
     await expect(page.getByRole("button", { name: "More options" })).toBeVisible();
-    // No backend behind vite preview, so the connectivity badge shows.
-    await expect(page.getByText("offline")).toBeVisible();
+    // No backend behind vite preview, so the connection control reports an error.
+    const connection = page.getByRole("button", { name: "Show connection status" });
+    await expect(connection).toBeVisible();
+    await expect(connection).toHaveClass(/text-status-error/);
   });
 
   test("overflow About and Help open their modals; Escape and the X close About", async ({ page }) => {
