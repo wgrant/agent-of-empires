@@ -153,6 +153,7 @@ pub(super) async fn handle_permission_request(
     profile: &'static agent_profiles::AgentProfile,
     tool_context_cache: ToolContextCache,
     subagent: Option<String>,
+    admission: impl Send,
 ) -> Result<RequestPermissionResponse, agent_client_protocol::Error> {
     let subagent = subagent.as_deref();
     let enter_ns = enter_timestamp_ns();
@@ -222,11 +223,14 @@ pub(super) async fn handle_permission_request(
         },
     );
 
-    if event_tx
+    let published = event_tx
         .send(Event::ApprovalRequested { approval })
         .await
-        .is_err()
-    {
+        .is_ok();
+    // Admission orders the request against session changes; the wait for a
+    // decision must not stall every other agent's updates.
+    drop(admission);
+    if !published {
         // Receiver gone: cancel.
         pending.lock().await.remove(&nonce);
         trace!(
@@ -514,6 +518,7 @@ mod tests {
             Arc::new(std::sync::Mutex::new(
                 crate::acp::acp_client::tool_context::ToolCallContextCache::default(),
             ));
+        let fence = Arc::new(tokio::sync::Mutex::new(()));
         let handle = tokio::spawn(handle_permission_request(
             request,
             event_tx,
@@ -521,6 +526,7 @@ mod tests {
             &crate::acp::agent_profiles::GEMINI,
             cache,
             Some("kid".into()),
+            fence.clone().lock_owned().await,
         ));
         let nonce = loop {
             if let Event::ApprovalRequested { approval } = event_rx.recv().await.expect("events") {
@@ -529,6 +535,10 @@ mod tests {
                 break approval.nonce;
             }
         };
+        // Admission is released once the request is published, before the decision.
+        let _admitted = tokio::time::timeout(std::time::Duration::from_secs(5), fence.lock())
+            .await
+            .expect("admission released while the approval is pending");
         // Generic answer: Allow with no option id, as the home dialog sends.
         let PendingResponder { resolver } = pending.lock().await.remove(&nonce).expect("parked");
         let PendingResolver::Approval(tx) = resolver else {
