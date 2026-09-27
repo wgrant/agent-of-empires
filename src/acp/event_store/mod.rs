@@ -36,6 +36,21 @@ const NON_SUBSTANTIVE_EVENT_DISCRIMINANTS: &[&str] = &[
     "PromptCapabilities",
 ];
 
+/// An event that replaces its earlier ones, keyed by a JSON path when only
+/// those naming the same thing are replaced.
+fn superseded_key(event: &Event) -> Option<(&'static str, Option<(&'static str, &str)>)> {
+    match event {
+        Event::ToolCallContent { tool_call_id, .. } => Some((
+            "ToolCallContent",
+            Some(("$.ToolCallContent.tool_call_id", tool_call_id)),
+        )),
+        Event::HookUpdated { id, .. } => Some(("HookUpdated", Some(("$.HookUpdated.id", id)))),
+        Event::PromptSuggested { .. } => Some(("PromptSuggested", None)),
+        Event::TurnOutputTokens { .. } => Some(("TurnOutputTokens", None)),
+        _ => None,
+    }
+}
+
 /// SQLite-backed structured view event log.
 pub struct EventStore {
     conn: Mutex<Connection>,
@@ -97,32 +112,40 @@ impl EventStore {
         let inserted = events::insert_event(&tx, &self.schema, session_id, seq, &json, now_ms)?;
         if inserted != 0 {
             rate_limit::update_rate_limit_budget(&tx, &self.schema, session_id, seq, event);
-            if let Event::ToolCallContent { tool_call_id, .. } = event {
+            if let Some((kind, key)) = superseded_key(event) {
                 let table = self.schema.events_table();
-                match tx.execute(
-                    &format!(
-                        "DELETE FROM {table}
-                         WHERE session_id = ?1
-                           AND discriminant = 'ToolCallContent'
-                           AND seq < ?2
-                           AND json_extract(event_json, '$.ToolCallContent.tool_call_id') = ?3"
+                let removed = match key {
+                    Some((path, value)) => tx.execute(
+                        &format!(
+                            "DELETE FROM {table}
+                             WHERE session_id = ?1 AND discriminant = ?2 AND seq < ?3
+                               AND json_extract(event_json, ?4) = ?5"
+                        ),
+                        params![session_id, kind, seq as i64, path, value],
                     ),
-                    params![session_id, seq as i64, tool_call_id],
-                ) {
+                    None => tx.execute(
+                        &format!(
+                            "DELETE FROM {table}
+                             WHERE session_id = ?1 AND discriminant = ?2 AND seq < ?3"
+                        ),
+                        params![session_id, kind, seq as i64],
+                    ),
+                };
+                match removed {
                     Ok(removed) if removed > 0 => trace!(
                         target: "acp.event_store",
                         session = %session_id,
-                        tool_call_id,
+                        kind,
                         removed,
-                        "compacted superseded tool content snapshots"
+                        "compacted superseded events"
                     ),
                     Ok(_) => {}
                     Err(error) => warn!(
                         target: "acp.event_store",
                         session = %session_id,
-                        tool_call_id,
+                        kind,
                         %error,
-                        "failed to compact superseded tool content snapshots"
+                        "failed to compact superseded events"
                     ),
                 }
             }
