@@ -81,6 +81,8 @@ test("a woken teammate stays one agent whose own view holds every run", async ({
   await expect(page.getByRole("button", { name: /subagent.*tester/ })).toHaveCount(1);
 
   const switcher = page.getByTestId("agent-switcher");
+  // Woken once, it waits for messages between runs.
+  await expect(switcher.getByRole("tab", { name: /tester.*idle/ })).toBeVisible();
   await switcher.getByRole("tab", { name: /tester/ }).click();
   await expect(page.getByText("LEAD_REPLY")).toHaveCount(0);
   const messages = page.getByTestId("agent-message");

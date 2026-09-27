@@ -3,7 +3,8 @@
 
 import type { ActivityRow } from "./acpTypes";
 
-export type AgentRunState = "running" | "done" | "failed" | "stopped";
+/** `idle`: a teammate between runs, waiting for a message. */
+export type AgentRunState = "running" | "idle" | "done" | "failed" | "stopped";
 
 export interface AgentSummary {
   id: string;
@@ -20,6 +21,12 @@ const TERMINAL: Record<string, AgentRunState> = {
   disconnected: "stopped",
 };
 
+function runState(state: string | null, persistent: boolean): AgentRunState {
+  if (!state) return "running";
+  const terminal = TERMINAL[state] ?? "stopped";
+  return terminal === "done" && persistent ? "idle" : terminal;
+}
+
 /** claude-agent-acp names each later run of a woken teammate `<id>:generation:<n>`. */
 export function agentIdOf(sessionId: string): string {
   const i = sessionId.indexOf(":generation:");
@@ -35,7 +42,7 @@ export function listAgents(rows: readonly ActivityRow[]): AgentSummary[] {
             id: row.subagent.id,
             name: row.subagent.name,
             kind: row.subagent.kind ?? null,
-            state: row.subagent.state ? (TERMINAL[row.subagent.state] ?? "stopped") : "running",
+            state: runState(row.subagent.state ?? null, row.subagent.persistent ?? false),
           },
         ]
       : [],

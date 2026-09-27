@@ -46,6 +46,7 @@ pub(super) fn child_events(id: &str, events: Vec<Event>) -> Vec<Event> {
                 name,
                 task,
                 at,
+                persistent,
                 ..
             } => Some(Event::SubagentSpawned {
                 id: child,
@@ -53,6 +54,7 @@ pub(super) fn child_events(id: &str, events: Vec<Event>) -> Vec<Event> {
                 name,
                 task,
                 at,
+                persistent,
             }),
             // A child's background tasks are the session's, like the main agent's.
             Event::SubagentStateChanged { .. }
@@ -152,6 +154,7 @@ mod tests {
             name: "n".into(),
             task: "t".into(),
             at: chrono::Utc::now(),
+            persistent: false,
         };
         let events = child_events(
             "child",

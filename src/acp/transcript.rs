@@ -85,6 +85,10 @@ pub struct SubagentInfo {
     pub state: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ended_at: Option<DateTime<Utc>>,
+    /// A teammate that waits for messages between runs: a finished run leaves
+    /// it idle.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub persistent: bool,
 }
 
 impl CompactionInfo {
@@ -582,6 +586,7 @@ impl TranscriptModel {
                 name,
                 task,
                 at,
+                persistent,
             } => {
                 let id = agent_id(session_id);
                 let row_id = format!("subagent-{id}");
@@ -599,6 +604,7 @@ impl TranscriptModel {
                     activity: None,
                     state: None,
                     ended_at: None,
+                    persistent: *persistent,
                 });
                 vec![self.append(row)]
             }
@@ -626,6 +632,7 @@ impl TranscriptModel {
                     activity: None,
                     state: None,
                     ended_at: None,
+                    persistent: false,
                 });
                 vec![self.append(row)]
             }
@@ -912,6 +919,8 @@ impl TranscriptModel {
             info.state = None;
             info.ended_at = None;
             info.activity = None;
+            // Woken for another run, it outlives each one.
+            info.persistent = true;
             Some(())
         });
         self.subagent_text_runs.remove(id);
@@ -1361,6 +1370,7 @@ mod tests {
             name: "tester".into(),
             task: task.into(),
             at: at(t),
+            persistent: false,
         };
         let ended = |id: &str, t| Event::SubagentStateChanged {
             id: id.into(),
@@ -1405,12 +1415,16 @@ mod tests {
         );
         let state = |m: &TranscriptModel| {
             let info = m.rows()[1].subagent.clone().unwrap();
-            (info.state, info.ended_at)
+            (info.state, info.ended_at, info.persistent)
         };
-        // Woken, it runs again; its generation's end ends the agent's run.
-        assert_eq!(state(&model), (None, None));
+        // Woken, it runs again and outlives each run; its generation's end
+        // ends the agent's run.
+        assert_eq!(state(&model), (None, None, true));
         model.apply_event(7, &ended(gen2, 30));
-        assert_eq!(state(&model), (Some("completed".into()), Some(at(30))));
+        assert_eq!(
+            state(&model),
+            (Some("completed".into()), Some(at(30)), true)
+        );
     }
 
     #[test]
@@ -1427,6 +1441,7 @@ mod tests {
                 name: "Explorer".into(),
                 task: "Find it".into(),
                 at: at(10),
+                persistent: false,
             },
             chunk("main "),
             child(chunk("child ")),
