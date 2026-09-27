@@ -859,6 +859,8 @@ function AppContent({
   // DiffFileViewer, so the store is lifted here and threaded to both.
   const diffComments = useDiffComments(activeSessionId);
   const commentsEnabled = activeSession?.view === "structured";
+  // The diff viewer returns to whatever the session shows in the main pane.
+  const diffBackLabel = activeSession?.view === "structured" ? "Transcript" : "Terminal";
   // Sending does not require a live worker: the diff-comments handler runs the
   // same auto-wake as a plain composer prompt, so a snoozed or idle-dormant
   // session respawns its worker on send. Archived and trashed sessions never
@@ -2160,6 +2162,7 @@ function AppContent({
                             targetLine={selectedFileLine}
                             revision={revision}
                             onClose={handleCloseFile}
+                            backLabel={diffBackLabel}
                             commentsEnabled={commentsEnabled}
                             commentsStore={diffComments}
                             fallbackToFileViewer
@@ -2181,6 +2184,7 @@ function AppContent({
                       targetLine={selectedFileLine}
                       revision={revision}
                       onClose={handleCloseFile}
+                      backLabel={diffBackLabel}
                       commentsEnabled={commentsEnabled}
                       commentsStore={diffComments}
                     />
