@@ -50,9 +50,9 @@ If the agent ignores `session/cancel` mid-tool, aoe restarts the worker and resu
 
 Stopping mid-tool settles that card into a muted **stopped** state: the timer freezes and the badge leaves "running". That is deliberate, since "stopped" is neither done nor failed and the tool's real outcome was never reported.
 
-### "Force end turn" button under the spinner
+### Spinner reads "Waiting on model"
 
-If the agent finished but the spinner keeps rattling, a **Force end turn** button appears beneath it; clicking it clears the spinner and cancels the agent. It only appears for a silent model with no tool running, and the view auto-recovers on its own if you do nothing. It stays hidden while a tool is in flight, while a question or approval card awaits you, and during a `/compact` (where the spinner reads "Compaction in progress" instead), because compaction runs for a minute or more with no output and force-ending it would discard the summarization.
+After 30 seconds without output the spinner counts how long the agent has been quiet. A long think or a slow request is normal; if the agent finished but never ended the turn, the daemon recovers on its own. To end the turn yourself, use **Stop**, then **Force stop** if it does not stop. During a `/compact` the spinner reads "Compaction in progress" instead, since compaction runs for a minute or more with no output.
 
 ### "Restarting worker" after a turn looked done
 

@@ -89,7 +89,7 @@ Click a queued row to edit it inline, or, with the composer empty and the caret 
 
 ## Stopping a turn
 
-While a turn runs, the composer shows **Stop**, which sends a graceful cancel; the spinner switches to **Stopping...** with a countdown to the escalation deadline. Some tools (a monitor or `until` loop, a long blocking command) do not honor a graceful cancel, and a **Force stop** button then appears beside the spinner. Clicking **Stop** a second time always escalates too, without waiting for the server to confirm the first cancel, so the button is always a working escape.
+While a turn runs, the composer shows **Stop**, which sends a graceful cancel; the spinner switches to **Stopping...** with a countdown to the escalation deadline, and the button turns into **Force stop**. Some tools (a monitor or `until` loop, a long blocking command) do not honor a graceful cancel. If the agent is still running at the deadline, aoe force stops it; press **Force stop** to do so at once. The second press escalates even when the server never confirmed the first cancel, so the button is always a working escape.
 
 Force stop restarts the worker and kills the whole command tree. The agent resumes from its saved transcript on the next prompt, but partial output from the tool in flight is lost, so reach for it only when a turn is genuinely wedged.
 

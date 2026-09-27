@@ -468,7 +468,6 @@ function AcpChrome({
                     compacting={conversationNextStep.compacting}
                     compactionStartedAt={runningCompactionStart(state.activity)}
                     lastActivityRef={ctx.lastActivityRef}
-                    onForceEndTurn={ctx.forceEndTurn}
                   />
                 </div>
               )}
@@ -660,6 +659,8 @@ function ComposerDock({
           availableCommands={state.availableCommands}
           availability={availability}
           turnActive={state.turnActive}
+          forceStopNext={ctx.forceStopNext}
+          cancelEscalatesAt={state.cancelEscalatesAt}
           enqueuePrompt={ctx.sendPrompt}
           promptCapabilities={state.promptCapabilities}
           pendingAttachments={ctx.pendingAttachments}
