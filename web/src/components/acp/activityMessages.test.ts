@@ -386,6 +386,18 @@ describe("user and callout rows", () => {
     expect(without!.metadata).toBeUndefined();
   });
 
+  it("opens a new reply for a turn the agent started unprompted", () => {
+    const messages = activityToThreadMessages(
+      [user(), message("Found a bug."), row("m2", "message", "Task complete.", { turnStart: true })],
+      false,
+    );
+    expect(messages.map((m) => [m.role, m.content])).toEqual([
+      ["user", [{ type: "text", text: "go" }]],
+      ["assistant", [{ type: "text", text: "Found a bug." }]],
+      ["assistant", [{ type: "text", text: "Task complete." }]],
+    ]);
+  });
+
   it("renders a summary as a quoted callout", () => {
     const parts = assistantParts([row("sum-1", "summary", "- fixed the login bug\n- next: wire the UI")]);
     expect(parts[0]!.text).toBe(
