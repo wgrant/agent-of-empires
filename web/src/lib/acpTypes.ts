@@ -701,6 +701,8 @@ export interface BackgroundAgent {
   warning: string | null;
   /** A native teammate that waits for messages between runs. */
   persistent?: boolean;
+  /** When a tailed agent last reported progress. */
+  lastActiveAt?: string;
 }
 
 export interface AsyncTaskUsage {
@@ -725,6 +727,8 @@ export interface AsyncTask {
   usage: AsyncTaskUsage | null;
   summary: string | null;
   startedAt: string;
+  /** When it last reported progress. */
+  lastActiveAt?: string;
   endedAt: string | null;
 }
 
@@ -1458,6 +1462,7 @@ export function applyEvent(state: AcpState, frame: AcpFrame): AcpState {
             activity: e.description ?? t.activity,
             usage: e.usage ?? t.usage,
             toolCallId: t.toolCallId ?? e.tool_call_id ?? null,
+            lastActiveAt: e.at,
           }
         : t,
     );
@@ -1496,6 +1501,7 @@ export function applyEvent(state: AcpState, frame: AcpFrame): AcpState {
         endedAt: null,
         lastTool: e.last_tool ?? a.lastTool,
         lastText: e.last_text ?? a.lastText,
+        lastActiveAt: e.at,
       };
     });
     return next;

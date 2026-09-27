@@ -16,11 +16,12 @@ import {
   X,
 } from "lucide-react";
 
-import { useAsyncTasks, useBackgroundAgents } from "../../hooks/useAcpSession";
+import { useBackgroundWork } from "../../hooks/useBackgroundWork";
+import { useNow } from "../../hooks/useNow";
 import { requestAgentView } from "../../hooks/useAgentView";
 import { requestCardFocus } from "../../hooks/useCardFocus";
 import type { BackgroundAgent, BackgroundAgentStatus, BackgroundAgentTool } from "../../lib/acpTypes";
-import { backgroundItems, type BackgroundItem, type BackgroundKind } from "../../lib/backgroundWork";
+import { backgroundAge, QUIET_AFTER_MS, type BackgroundItem, type BackgroundKind } from "../../lib/backgroundWork";
 import { formatTokens } from "../../lib/turnUsage";
 
 export function BackgroundAgentsPanel({
@@ -31,10 +32,9 @@ export function BackgroundAgentsPanel({
   /** Reveal the transcript first, where it shares the screen with this pane (mobile). */
   onShowInTranscript?: () => void;
 }) {
-  const agents = useBackgroundAgents(sessionId);
-  const tasks = useAsyncTasks(sessionId);
-  const items = backgroundItems(agents, tasks);
+  const items = useBackgroundWork(sessionId);
   const running = items.filter((i) => i.state === "running");
+  const now = useNow(15_000, running.length > 0);
   const finished = items.filter((i) => i.state !== "running");
   // History folds away while something is live; with nothing running it is the content.
   const [showFinished, setShowFinished] = useState<boolean | null>(null);
@@ -57,7 +57,13 @@ export function BackgroundAgentsPanel({
             {interruptible && sessionId && <StopButton sessionId={sessionId} />}
           </GroupHeader>
           {running.map((item) => (
-            <ItemRow key={item.key} item={item} sessionId={sessionId} onShowInTranscript={onShowInTranscript} />
+            <ItemRow
+              key={item.key}
+              item={item}
+              sessionId={sessionId}
+              onShowInTranscript={onShowInTranscript}
+              now={now}
+            />
           ))}
         </>
       )}
@@ -118,10 +124,13 @@ function ItemRow({
   item,
   sessionId,
   onShowInTranscript,
+  now,
 }: {
   item: BackgroundItem;
   sessionId: string | null;
   onShowInTranscript?: () => void;
+  /** Set for running items, to show how long since each last did anything. */
+  now?: number;
 }) {
   const [open, setOpen] = useState(false);
   const [modal, setModal] = useState(false);
@@ -129,6 +138,8 @@ function ItemRow({
   const running = item.state === "running";
   const usage = counts(item);
   const label = item.stateLabel || (running ? item.kind : item.state);
+  const lastActive = running && now !== undefined && item.lastActiveAt ? backgroundAge(item, now) : null;
+  const quiet = lastActive !== null && now! - Date.parse(item.lastActiveAt!) >= QUIET_AFTER_MS;
   return (
     <div data-testid="background-item" className="border-b border-surface-800">
       <div className="flex items-center hover:bg-surface-800">
@@ -190,10 +201,18 @@ function ItemRow({
           </button>
         )}
       </div>
-      {!open && (item.activity || usage) && (
+      {!open && (item.activity || usage || lastActive) && (
         <div className="flex gap-2 px-3 pb-1.5 pl-[2.375rem] text-[11px] text-text-dim">
           {item.activity && <span className="min-w-0 flex-1 truncate">{item.activity}</span>}
           {usage && <span className="ml-auto shrink-0 tabular-nums">{usage}</span>}
+          {lastActive && (
+            <span
+              data-testid="background-item-last-active"
+              className={`ml-auto shrink-0 tabular-nums ${quiet ? "text-status-warning" : ""}`}
+            >
+              {lastActive}
+            </span>
+          )}
         </div>
       )}
       {open && (

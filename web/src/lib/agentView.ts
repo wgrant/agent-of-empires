@@ -69,6 +69,22 @@ export function agentActivity(rows: readonly ActivityRow[], agentId: string): Ac
   return [task, ...own];
 }
 
+/** When each subagent last recorded anything, counting the agents it spawned. */
+export function lastActivityByAgent(rows: readonly ActivityRow[]): Map<string, string> {
+  const parents = new Map<string, string | undefined>();
+  const latest = new Map<string, string>();
+  for (const row of rows) {
+    if (row.kind === "subagent" && row.subagent) parents.set(row.subagent.id, row.subagentId);
+    const seen = new Set<string>();
+    for (let id = row.subagentId; id && !seen.has(id); id = parents.get(id)) {
+      seen.add(id);
+      const previous = latest.get(id);
+      if (!previous || Date.parse(row.at) > Date.parse(previous)) latest.set(id, row.at);
+    }
+  }
+  return latest;
+}
+
 export interface AgentMessage {
   /** The sending agent, when the message names one. */
   from: string | null;

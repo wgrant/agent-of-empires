@@ -5,6 +5,7 @@ import {
   emptyAcpState,
   normaliseTurnState,
   type AcpState,
+  type ActivityRow,
   type AsyncTask,
   type BackgroundAgent,
 } from "../../lib/acpTypes";
@@ -281,6 +282,21 @@ export function useAsyncTasks(sessionId: string | null): AsyncTask[] {
   );
   const getSnapshot = useCallback(
     () => (sessionId ? stateCache.get(sessionId)?.asyncTasks : undefined) ?? EMPTY_ASYNC_TASKS,
+    [sessionId],
+  );
+  return useSyncExternalStore(subscribe, getSnapshot);
+}
+
+const EMPTY_ACTIVITY: ActivityRow[] = [];
+
+/** A session's transcript rows, read from the cache like `useBackgroundAgents`. */
+export function useSessionActivity(sessionId: string | null): ActivityRow[] {
+  const subscribe = useCallback(
+    (cb: () => void) => (sessionId ? subscribeAcpState(sessionId, cb) : () => {}),
+    [sessionId],
+  );
+  const getSnapshot = useCallback(
+    () => (sessionId ? stateCache.get(sessionId)?.activity : undefined) ?? EMPTY_ACTIVITY,
     [sessionId],
   );
   return useSyncExternalStore(subscribe, getSnapshot);

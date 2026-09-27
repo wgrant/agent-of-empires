@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { ActivityRow } from "./acpTypes";
-import { agentActivity, agentIdOf, listAgents, parseAgentMessages } from "./agentView";
+import { agentActivity, agentIdOf, lastActivityByAgent, listAgents, parseAgentMessages } from "./agentView";
 
 const AT = "2026-09-27T00:00:00Z";
 const row = (id: string, kind: ActivityRow["kind"], text: string, extra: Partial<ActivityRow> = {}): ActivityRow => ({
@@ -63,5 +63,15 @@ describe("agent views", () => {
     expect(parseAgentMessages("Read calc.py")).toEqual([{ from: null, body: "Read calc.py" }]);
     expect(agentIdOf("t:generation:3")).toBe("t");
     expect(agentIdOf("t")).toBe("t");
+  });
+
+  it("dates each agent's last activity by its own rows and its subagents'", () => {
+    const timed = rows.map((r, i) => ({ ...r, at: new Date(Date.UTC(2026, 8, 27, 0, i)).toISOString() }));
+    const last = lastActivityByAgent(timed);
+    // "t"'s latest is its nested agent's row; "r" last spoke in its own message.
+    expect([last.get("t"), last.get("r")]).toEqual([
+      timed.find((r) => r.id === "m-n")!.at,
+      timed.find((r) => r.id === "m-r")!.at,
+    ]);
   });
 });

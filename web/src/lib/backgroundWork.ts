@@ -1,6 +1,7 @@
 // Sub-agents and background tasks as one list for the Background pane: each
 // source's states and details normalised to the same row shape.
 
+import { formatDurationSecondsShort } from "../components/sidebar/format";
 import { asyncTaskRunning, type AsyncTask, type BackgroundAgent } from "./acpTypes";
 
 export type BackgroundKind = "subagent" | "workflow" | "shell" | "monitor" | "task";
@@ -19,6 +20,8 @@ export interface BackgroundItem {
   tokens: number | null;
   startedAt: string;
   endedAt: string | null;
+  /** When it last did anything; `null` for work that reports nothing while it runs. */
+  lastActiveAt: string | null;
   /** Set when this item can be stopped on its own. */
   stopTaskId: string | null;
   /** The transcript card holding its detail, when it has one. */
@@ -37,7 +40,7 @@ const AGENT_STATES: Record<BackgroundAgent["status"], BackgroundState> = {
   detached: "stopped",
 };
 
-function agentItem(agent: BackgroundAgent): BackgroundItem {
+function agentItem(agent: BackgroundAgent, activity: ReadonlyMap<string, string>): BackgroundItem {
   const state = AGENT_STATES[agent.status];
   // A native subagent reports no launching tool call; its card is keyed by its session.
   const native = agent.toolCallId === "";
@@ -59,6 +62,7 @@ function agentItem(agent: BackgroundAgent): BackgroundItem {
     tokens: null,
     startedAt: agent.startedAt,
     endedAt: agent.endedAt,
+    lastActiveAt: (native ? activity.get(agent.agentId) : agent.lastActiveAt) ?? agent.startedAt,
     stopTaskId: null,
     cardId: native ? `native-subagent-${agent.agentId}` : agent.toolCallId ? `subagent-${agent.toolCallId}` : null,
     viewAgentId: native ? agent.agentId : null,
@@ -89,6 +93,8 @@ function taskItem(task: AsyncTask): BackgroundItem {
     tokens: task.usage && task.usage.total_tokens > 0 ? task.usage.total_tokens : null,
     startedAt: task.startedAt,
     endedAt: task.endedAt,
+    // A shell or monitor reports nothing until it ends.
+    lastActiveAt: kind === "shell" || kind === "monitor" ? null : (task.lastActiveAt ?? task.startedAt),
     stopTaskId: running && task.canStop ? task.id : null,
     // A workflow's run heads its own transcript card.
     cardId: kind === "workflow" ? `native-subagent-${task.id}` : null,
@@ -97,9 +103,14 @@ function taskItem(task: AsyncTask): BackgroundItem {
   };
 }
 
-/** Running items newest first, then finished ones by when they ended. */
-export function backgroundItems(agents: readonly BackgroundAgent[], tasks: readonly AsyncTask[]): BackgroundItem[] {
-  const items = [...agents.map(agentItem), ...tasks.map(taskItem)];
+/** Running items newest first, then finished ones by when they ended. `activity`
+ *  holds each native subagent's latest transcript row time. */
+export function backgroundItems(
+  agents: readonly BackgroundAgent[],
+  tasks: readonly AsyncTask[],
+  activity: ReadonlyMap<string, string> = new Map(),
+): BackgroundItem[] {
+  const items = [...agents.map((agent) => agentItem(agent, activity)), ...tasks.map(taskItem)];
   const running = items.filter((i) => i.state === "running").sort((a, b) => b.startedAt.localeCompare(a.startedAt));
   const finished = items
     .filter((i) => i.state !== "running")
@@ -109,4 +120,22 @@ export function backgroundItems(agents: readonly BackgroundAgent[], tasks: reado
 
 export function runningBackgroundCount(agents: readonly BackgroundAgent[], tasks: readonly AsyncTask[]): number {
   return agents.filter((a) => AGENT_STATES[a.status] === "running").length + tasks.filter(asyncTaskRunning).length;
+}
+
+/** How long every running item that reports progress may be silent before it looks stuck. */
+export const QUIET_AFTER_MS = 5 * 60_000;
+
+/** When the running work that reports progress last did anything, or `null` when none does. */
+export function lastBackgroundActivity(items: readonly BackgroundItem[]): number | null {
+  const times = items
+    .filter((item) => item.state === "running" && item.lastActiveAt)
+    .map((item) => Date.parse(item.lastActiveAt!))
+    .filter(Number.isFinite);
+  return times.length > 0 ? Math.max(...times) : null;
+}
+
+/** `active 40s ago`, or `running 12m` for work that reports nothing while it runs. */
+export function backgroundAge(item: BackgroundItem, now: number): string {
+  const since = (iso: string) => formatDurationSecondsShort(Math.max(0, Math.floor((now - Date.parse(iso)) / 1000)));
+  return item.lastActiveAt ? `active ${since(item.lastActiveAt)} ago` : `running ${since(item.startedAt)}`;
 }
