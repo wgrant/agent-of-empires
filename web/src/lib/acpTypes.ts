@@ -1,5 +1,6 @@
 // Structured view wire types mirroring `src/acp/state.rs`; permissive so new Rust variants don't break the UI.
 
+import { agentIdOf } from "./agentView";
 import type { DiffComment } from "../components/diff/comments/types";
 
 export type ApprovalDecision = "Allow" | "AllowAlways" | "Deny" | "Cancelled";
@@ -793,7 +794,8 @@ export interface ActivityRow {
     | "compacted"
     | "summary"
     | "agent_notice"
-    | "subagent";
+    | "subagent"
+    | "subagent_woken";
   text: string;
   sendFailure?: string;
   toolCallId?: string;
@@ -1427,6 +1429,14 @@ export function applyEvent(state: AcpState, frame: AcpFrame): AcpState {
   // A native subagent's session reports itself, so it feeds the same records as a tailed one.
   if ("SubagentSpawned" in event) {
     const e = event.SubagentSpawned;
+    const agentId = agentIdOf(e.id);
+    // A message woke a waiting agent for another run.
+    if (agentId !== e.id) {
+      next.backgroundAgents = next.backgroundAgents.map((a) =>
+        a.agentId === agentId ? { ...a, status: "running", endedAt: null, lastText: null, warning: null } : a,
+      );
+      return next;
+    }
     const record: BackgroundAgent = {
       agentId: e.id,
       toolCallId: "",
@@ -1449,7 +1459,8 @@ export function applyEvent(state: AcpState, frame: AcpFrame): AcpState {
     return next;
   }
   if ("SubagentUpdate" in event) {
-    const { id, event: inner } = event.SubagentUpdate;
+    const id = agentIdOf(event.SubagentUpdate.id);
+    const inner = event.SubagentUpdate.event;
     next.backgroundAgents = next.backgroundAgents.map((a) =>
       a.agentId === id && !a.endedAt ? foldSubagentActivity(a, inner) : a,
     );
@@ -1457,8 +1468,9 @@ export function applyEvent(state: AcpState, frame: AcpFrame): AcpState {
   }
   if ("SubagentStateChanged" in event) {
     const e = event.SubagentStateChanged;
+    const id = agentIdOf(e.id);
     next.backgroundAgents = next.backgroundAgents.map((a) =>
-      a.agentId === e.id
+      a.agentId === id
         ? {
             ...a,
             status: e.state === "completed" ? "completed" : e.state === "failed" ? "error" : "detached",

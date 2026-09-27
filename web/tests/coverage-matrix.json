@@ -2795,10 +2795,15 @@
         "src/components/acp/activityMessages.test.ts",
         "src/components/acp/ToolCards.render.test.tsx",
         "src/lib/acpTypes.reducer.test.ts",
-        "src/components/acp/__tests__/BackgroundAgentsPanel.test.tsx"
+        "src/components/acp/__tests__/BackgroundAgentsPanel.test.tsx",
+        "src/lib/agentView.test.ts"
       ],
       "components": [
         "web/src/components/acp/NativeSubagentCard.tsx",
+        "web/src/components/acp/AgentSwitcher.tsx",
+        "web/src/components/acp/AgentMessageCard.tsx",
+        "web/src/hooks/useAgentView.ts",
+        "web/src/lib/agentView.ts",
         "web/src/components/acp/BackgroundAgentsPanel.tsx",
         "web/src/components/acp/AssistantReasoning.tsx",
         "web/src/components/acp/activityMessages.ts",

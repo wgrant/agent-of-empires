@@ -2,11 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 
-const FOCUS_EVENT = "aoe:focus-transcript-card";
+export const CARD_FOCUS_EVENT = "aoe:focus-transcript-card";
 const FLASH_MS = 1200;
 
 export function requestCardFocus(cardId: string): void {
-  window.dispatchEvent(new CustomEvent<string>(FOCUS_EVENT, { detail: cardId }));
+  window.dispatchEvent(new CustomEvent<string>(CARD_FOCUS_EVENT, { detail: cardId }));
 }
 
 /** For the card `cardId`: `open` runs when a focus is requested, then the
@@ -30,9 +30,9 @@ export function useCardFocus(cardId: string | undefined, open: () => void) {
       window.clearTimeout(timer);
       timer = window.setTimeout(() => setFlash(false), FLASH_MS);
     };
-    window.addEventListener(FOCUS_EVENT, onFocus);
+    window.addEventListener(CARD_FOCUS_EVENT, onFocus);
     return () => {
-      window.removeEventListener(FOCUS_EVENT, onFocus);
+      window.removeEventListener(CARD_FOCUS_EVENT, onFocus);
       window.clearTimeout(timer);
     };
   }, [cardId]);

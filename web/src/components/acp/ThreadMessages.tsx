@@ -18,6 +18,7 @@ import {
   type Compaction,
   type NativeSubagent,
 } from "./activityMessages";
+import { AgentMessageCard } from "./AgentMessageCard";
 import { CompactionCard } from "./CompactionCard";
 import { useMessageTimeTap } from "../../hooks/useMessageTimeTap";
 import { ElicitationAnswerCard } from "./ElicitationAnswerCard";
@@ -67,6 +68,12 @@ function UserText({ text }: { text: string }) {
   const answers = useAuiState(
     (s) => (s.message.metadata?.custom as { elicitationAnswers?: unknown } | undefined)?.elicitationAnswers,
   );
+  const agentMessage = useAuiState(
+    (s) => (s.message.metadata?.custom as { agentMessage?: unknown } | undefined)?.agentMessage === true,
+  );
+  if (agentMessage) {
+    return <AgentMessageCard text={text} />;
+  }
   if (isDiffCommentsCardPayload(typedPayload)) {
     return <DiffCommentsUserCard payload={typedPayload} />;
   }

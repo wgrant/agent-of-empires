@@ -345,15 +345,17 @@ export function Composer(props: Props) {
               // Cancel stays behind the Stop button; a stray Escape must not abort a turn.
               cancelOnEscape={false}
               placeholder={
-                turnActive
-                  ? availability.kind === "steer_now"
-                    ? "Steer the current turn…"
-                    : "Queue a follow-up…"
-                  : availability.kind === "blocked"
-                    ? "Sending is unavailable; your draft is kept"
-                    : availability.kind === "wake_agent"
-                      ? "Message to wake the agent…"
-                      : "Message… @ for files, / for commands"
+                availability.kind === "blocked" && availability.reason === "viewing_agent"
+                  ? `Viewing ${availability.agent}. Switch to Lead to send`
+                  : turnActive
+                    ? availability.kind === "steer_now"
+                      ? "Steer the current turn…"
+                      : "Queue a follow-up…"
+                    : availability.kind === "blocked"
+                      ? "Sending is unavailable; your draft is kept"
+                      : availability.kind === "wake_agent"
+                        ? "Message to wake the agent…"
+                        : "Message… @ for files, / for commands"
               }
               onInput={(e) => fitTextarea(e.currentTarget)}
               onFocus={() => {

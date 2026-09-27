@@ -37,6 +37,7 @@ function endsVisualBlock(row: ActivityRow): boolean {
     case "tool_start":
     case "notice":
     case "subagent":
+    case "subagent_woken":
       return false;
   }
 }
