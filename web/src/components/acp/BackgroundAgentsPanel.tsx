@@ -35,7 +35,8 @@ export function BackgroundAgentsPanel({
   const items = useBackgroundWork(sessionId);
   const running = items.filter((i) => i.state === "running");
   const now = useNow(15_000, running.length > 0);
-  const finished = items.filter((i) => i.state !== "running");
+  const idle = items.filter((i) => i.state === "idle");
+  const finished = items.filter((i) => i.state !== "running" && i.state !== "idle");
   // History folds away while something is live; with nothing running it is the content.
   const [showFinished, setShowFinished] = useState<boolean | null>(null);
   const finishedOpen = showFinished ?? running.length === 0;
@@ -64,6 +65,14 @@ export function BackgroundAgentsPanel({
               onShowInTranscript={onShowInTranscript}
               now={now}
             />
+          ))}
+        </>
+      )}
+      {idle.length > 0 && (
+        <>
+          <GroupHeader label={`Idle · ${idle.length}`} />
+          {idle.map((item) => (
+            <ItemRow key={item.key} item={item} sessionId={sessionId} onShowInTranscript={onShowInTranscript} />
           ))}
         </>
       )}
@@ -107,6 +116,7 @@ const KIND_ICONS: Record<BackgroundKind, typeof Layers> = {
 
 const STATE_DOTS: Record<BackgroundItem["state"], string> = {
   running: "animate-pulse bg-status-waiting",
+  idle: "border border-status-running",
   done: "bg-status-running",
   failed: "bg-status-error",
   stopped: "bg-text-dim/60",
