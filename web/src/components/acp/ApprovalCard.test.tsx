@@ -244,3 +244,15 @@ describe("ApprovalCard option lists", () => {
     });
   });
 });
+
+describe("ApprovalCard asker", () => {
+  it("names the subagent asking and opens its agent view", () => {
+    render(<ApprovalCard approval={makeApproval()} onResolve={vi.fn()} asker={{ id: "t", name: "tester" }} />);
+    expect(screen.getByTestId("approval-asker").textContent).toContain("Asked by tester");
+    expect(screen.getByRole("alertdialog").getAttribute("aria-label")).toContain("from tester");
+    const viewed = vi.fn();
+    window.addEventListener("aoe:view-agent", (e) => viewed((e as CustomEvent).detail), { once: true });
+    fireEvent.click(screen.getByRole("button", { name: "View agent" }));
+    expect(viewed).toHaveBeenCalledWith("t");
+  });
+});

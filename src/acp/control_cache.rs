@@ -200,6 +200,7 @@ mod tests {
                 choice: false,
                 requested_at: chrono::Utc::now(),
                 resolved: None,
+                subagent: None,
             },
         };
         cache.apply_if_cached("s-1", 2, &approval);
