@@ -55,19 +55,20 @@ test.describe("compact mode (#2288)", () => {
     await expect(page.locator(COUNT).first()).toBeVisible();
 
     // Entering compact hides an open filter and stops its query narrowing the list.
+    // The top bar also names the session opened above, so rows are matched in the sidebar.
     await page.getByRole("button", { name: "Filter sessions" }).click();
     const filterInput = page.getByTestId("sidebar-filter-input");
     // "beta" matches a title only; "alpha" would also match the project name.
     await filterInput.fill("beta");
-    await expect(page.getByText("alpha-session")).toHaveCount(0);
-    await expect(page.getByText("beta-session")).toBeVisible();
+    await expect(panel.getByText("alpha-session")).toHaveCount(0);
+    await expect(panel.getByText("beta-session")).toBeVisible();
     await page.getByRole("button", { name: "Compact sidebar" }).click();
     await expect(filterInput).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Filter sessions" })).toHaveCount(0);
-    await expect(page.getByText("alpha-session")).toBeVisible();
+    await expect(panel.getByText("alpha-session")).toBeVisible();
     await page.getByRole("button", { name: "Expand sidebar" }).click();
     await expect(filterInput).toHaveValue("beta");
-    await expect(page.getByText("alpha-session")).toHaveCount(0);
+    await expect(panel.getByText("alpha-session")).toHaveCount(0);
   });
 });
 
