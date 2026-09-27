@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { ActivityRow, Approval } from "./acpTypes";
 import {
   agentActivity,
+  agentsAwaited,
   agentIdOf,
   approvalAsker,
   lastActivityByAgent,
@@ -50,6 +51,19 @@ describe("agent views", () => {
       // A teammate between runs.
       { id: "m", name: "mate", kind: null, state: "idle", recent: true },
     ]);
+  });
+
+  it("waits on the running agents the lead's in-flight call started", () => {
+    const at = (t: string) => ({ at: `2026-09-27T00:00:${t}Z` });
+    const timeline = [
+      { ...header("bg", "background", null), ...at("01") },
+      { ...header("fork", "/code-review", null), ...at("05") },
+      { ...header("done", "finished", "completed"), ...at("06") },
+      { ...header("kid", "nested", null, "fork"), ...at("07") },
+    ];
+    const tool = { id: "skill", name: "Skill", kind: "other", args_preview: "{}", started_at: "2026-09-27T00:00:04Z" };
+    expect(agentsAwaited(timeline, tool)).toEqual([{ name: "/code-review", startedAt: "2026-09-27T00:00:05Z" }]);
+    expect(agentsAwaited(timeline, null)).toEqual([]);
   });
 
   it("keeps tabs for live, this turn's and viewed agents, and folds away the rest", () => {

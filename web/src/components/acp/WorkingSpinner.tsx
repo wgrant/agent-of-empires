@@ -25,6 +25,7 @@ export function WorkingSpinner({
   cancelEscalatesAt,
   compacting,
   compactionStartedAt = null,
+  awaiting = [],
   lastActivityRef,
 }: {
   thinking: boolean;
@@ -34,6 +35,8 @@ export function WorkingSpinner({
   compacting: boolean;
   /** When the running compaction began, as recorded, so its timer survives remounts. */
   compactionStartedAt?: string | null;
+  /** Agents the lead's in-flight call started and is waiting on. */
+  awaiting?: readonly { name: string; startedAt: string }[];
   lastActivityRef: React.RefObject<number>;
 }) {
   const [frame, setFrame] = useState(0);
@@ -85,7 +88,14 @@ export function WorkingSpinner({
     };
   }, [cancelEscalatesAt]);
 
-  const now = useNow(1000, compacting && compactionStartedAt != null);
+  const now = useNow(1000, (compacting && compactionStartedAt != null) || awaiting.length > 0);
+  const awaitedSince = Math.min(...awaiting.map((agent) => Date.parse(agent.startedAt)));
+  const awaitingLabel =
+    awaiting.length === 0
+      ? null
+      : `Waiting on ${awaiting.length === 1 ? awaiting[0]!.name : `${awaiting.length} agents`}… ${formatElapsed(
+          Math.max(0, Math.floor((now - awaitedSince) / 1000)),
+        )}`;
   const compactionStartMs = compactionStartedAt ? Date.parse(compactionStartedAt) : NaN;
   const compactingSecs = Number.isNaN(compactionStartMs)
     ? stalledSecs
@@ -100,9 +110,11 @@ export function WorkingSpinner({
       : "Stopping…"
     : compacting
       ? `Compaction in progress… ${formatElapsed(compactingSecs)}`
-      : showStalled
-        ? `Waiting on ${toolInFlight ? "tool" : "model"}… ${formatElapsed(stalledSecs)}`
-        : chooseVerb(deriveSpinnerState(thinking, tool), seed, tool);
+      : awaitingLabel
+        ? awaitingLabel
+        : showStalled
+          ? `Waiting on ${toolInFlight ? "tool" : "model"}… ${formatElapsed(stalledSecs)}`
+          : chooseVerb(deriveSpinnerState(thinking, tool), seed, tool);
 
   return (
     <div data-testid="acp-working-spinner" className="flex items-center gap-2 text-sm italic text-text-muted">
