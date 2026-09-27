@@ -360,7 +360,7 @@ function AcpChrome({
   return (
     <StructuredViewRoot>
       <AttentionChime approvals={state.pendingApprovals.length} elicitations={state.pendingElicitations.length} />
-      <PlanStrip plan={state.plan} />
+      <PlanStrip plan={state.plan} turnActive={state.turnActive} />
 
       <SessionBanners
         sessionId={sessionId}
