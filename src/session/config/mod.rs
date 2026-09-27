@@ -511,9 +511,9 @@ pub struct AcpConfig {
     pub show_tool_durations: bool,
     /// Ask agents to run subagents as native child sessions, the draft ACP
     /// subagent extension Claude and Codex implement, so a subagent's
-    /// messages, thinking, and tools stream in. Experimental; takes effect
-    /// when an agent next starts.
-    #[serde(default)]
+    /// messages, thinking, and tools stream in and it gets its own agent
+    /// view. Takes effect when an agent next starts.
+    #[serde(default = "default_true")]
     #[setting(label = "Native subagent sessions", widget = "toggle", advanced)]
     pub native_subagents: bool,
     /// Ask agents to report background work (Claude workflows, background
@@ -668,7 +668,7 @@ impl Default for AcpConfig {
             replay_events: default_replay_events(),
             node_path: String::new(),
             show_tool_durations: true,
-            native_subagents: false,
+            native_subagents: true,
             async_tasks: true,
             compaction_reminder: false,
             compaction_reminder_percent: default_compaction_reminder_percent(),
