@@ -205,6 +205,14 @@ describe("ToolCard headers", () => {
       [],
     ],
     [
+      "wakeup that stops the loop",
+      makeToolCall({ name: "ScheduleWakeup", args_preview: args({ stop: true }) }),
+      makeCompletion(),
+      { toolKey: "claude" },
+      ["scheduled wakeup", "stop the loop"],
+      ["wakes at"],
+    ],
+    [
       "cron create",
       makeToolCall({ name: "CronCreate", args_preview: args({ _aoe_title: "CronCreate", schedule: "0 9 * * *" }) }),
       makeCompletion(),

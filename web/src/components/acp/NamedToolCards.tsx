@@ -403,6 +403,9 @@ function withReason(main: React.ReactNode, reason: string | null) {
  *  sends them as `kind: "other"`. Titles map to header builders. */
 const SPECIAL_TOOLS = {
   ScheduleWakeup: (tool: ToolCall, args: Args): SpecialHeader => {
+    if (args?.["stop"] === true) {
+      return { icon: <Clock className={ICON} />, label: "scheduled wakeup", primary: "stop the loop" };
+    }
     const delaySeconds = numberArg(args ? args["delaySeconds"] : undefined);
     const started = Date.parse(tool.started_at);
     const wakeAt =
