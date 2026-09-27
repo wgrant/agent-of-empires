@@ -68,6 +68,7 @@ pub(super) fn child_events(id: &str, events: Vec<Event>) -> Vec<Event> {
             | Event::ToolCallStarted { .. }
             | Event::ToolCallUpdated { .. }
             | Event::ToolCallContent { .. }
+            | Event::ToolCallOutputDelta { .. }
             | Event::ToolCallCompleted { .. }
             | Event::DiffEmitted { .. }
             | Event::PlanUpdated { .. }
@@ -168,6 +169,11 @@ mod tests {
                 },
                 Event::ThinkingStarted,
                 Event::SessionTitleSuggested { title: "t".into() },
+                Event::ToolCallOutputDelta {
+                    tool_call_id: "t1".into(),
+                    data: "out".into(),
+                    replace: false,
+                },
             ],
         );
         assert!(matches!(
@@ -179,7 +185,11 @@ mod tests {
             matches!(&events[1], Event::SubagentSpawned { parent: Some(p), .. } if p == "child")
         );
         assert!(matches!(&events[2], Event::SubagentStateChanged { .. }));
-        assert_eq!(events.len(), 3);
+        assert!(matches!(
+            &events[3],
+            Event::SubagentUpdate { event, .. } if matches!(event.as_ref(), Event::ToolCallOutputDelta { .. })
+        ));
+        assert_eq!(events.len(), 4);
     }
 }
 
