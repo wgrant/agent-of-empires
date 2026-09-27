@@ -1,7 +1,7 @@
 // Native subagent sessions (ACP RFD #1992): a child's own transcript renders inside its card.
 
 import { test, expect } from "../../helpers/liveTest";
-import { chunk, endTurn, openStructuredView, script, startAcpSession } from "../../helpers/acp";
+import { HOLD, chunk, endTurn, openStructuredView, releaseTurn, script, startAcpSession } from "../../helpers/acp";
 
 test("a native subagent renders as a card holding its own transcript", async ({ page, spawnServe }) => {
   const kid = "kid-session";
@@ -99,4 +99,36 @@ test("a woken teammate stays one agent whose own view holds every run", async ({
   await page.keyboard.press("Escape");
   await expect(page.getByText("LEAD_REPLY")).toBeVisible();
   await expect(switcher.getByRole("tab", { name: "Lead" })).toHaveAttribute("aria-selected", "true");
+});
+
+test("the composer counts background work until it finishes", async ({ page, spawnServe }) => {
+  const kid = "worker-session";
+  const { serve, sessionId } = await startAcpSession(spawnServe, {
+    title: "story-background-chip",
+    fakeAcpScript: script(
+      endTurn(
+        {
+          sessionUpdate: "subagent_spawned",
+          subagentSessionId: kid,
+          name: "Explorer",
+          task: "Read it",
+          capabilities: {},
+        },
+        HOLD,
+        { sessionUpdate: "subagent_state_update", subagentSessionId: kid, state: "completed" },
+        chunk("ALL_DONE"),
+      ),
+    ),
+  });
+  await openStructuredView(page, serve, sessionId, "delegate");
+
+  const chip = page.getByTestId("composer-background-work").filter({ visible: true });
+  await expect(chip).toHaveText("1 in background", { timeout: 15_000 });
+  await expect(chip).toHaveAttribute("title", "Explorer");
+  await chip.click();
+  await expect(page.getByTestId("background-item").filter({ hasText: "Explorer" })).toBeVisible();
+
+  releaseTurn(serve);
+  await expect(page.getByText("ALL_DONE")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId("composer-background-work")).toHaveCount(0);
 });
