@@ -521,6 +521,7 @@ impl AcpClient {
         agent_key: String,
         source_profile: Option<String>,
         subagents: Vec<String>,
+        workflows: Vec<String>,
     ) -> Result<Self, AcpError> {
         // The binary name keeps the compatibility gate active on reattach; an
         // unknown agent maps to `Other` anyway.
@@ -534,6 +535,7 @@ impl AcpClient {
                 acp_session_id: stored_acp_session_id,
                 in_flight_turn,
                 subagents,
+                workflows,
             },
             cwd,
             additional_dirs,

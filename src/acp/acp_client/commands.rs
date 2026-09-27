@@ -86,5 +86,7 @@ pub(super) enum ConnectMode {
         in_flight_turn: bool,
         /// Native subagent session ids still running when the daemon stopped.
         subagents: Vec<String>,
+        /// Workflow task ids still running when the daemon stopped.
+        workflows: Vec<String>,
     },
 }
