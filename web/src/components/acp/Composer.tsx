@@ -456,7 +456,7 @@ export function Composer(props: Props) {
                     e.target.value = "";
                   }}
                 />
-                <span className="mx-1 h-4 w-px bg-surface-700" aria-hidden />
+                <span className="mx-1 hidden h-4 w-px bg-surface-700 @lg:block" aria-hidden />
                 <SessionSettingsControl
                   sessionId={sessionId}
                   currentAgent={props.currentAgent}
