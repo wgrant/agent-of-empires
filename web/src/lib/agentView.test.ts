@@ -11,16 +11,17 @@ const row = (id: string, kind: ActivityRow["kind"], text: string, extra: Partial
   at: AT,
   ...extra,
 });
-const header = (id: string, name: string, state: string | null, parent?: string) =>
+const header = (id: string, name: string, state: string | null, parent?: string, persistent = false) =>
   row(`subagent-${id}`, "subagent", `${name}'s task`, {
     subagentId: parent,
-    subagent: { id, name, state },
+    subagent: { id, name, state, persistent },
   });
 
 const rows: ActivityRow[] = [
   row("u1", "user_prompt", "team up"),
   header("r", "reviewer", "completed"),
   header("t", "tester", null),
+  header("m", "mate", "completed", undefined, true),
   row("m-r", "message", "bugs found", { subagentId: "r" }),
   row("woken-t", "subagent_woken", '<agent-message from="reviewer">\nadd() subtracts\n</agent-message>', {
     subagentId: "t",
@@ -36,6 +37,8 @@ describe("agent views", () => {
     expect(listAgents(rows)).toEqual([
       { id: "r", name: "reviewer", kind: null, state: "done" },
       { id: "t", name: "tester", kind: null, state: "running" },
+      // A teammate between runs.
+      { id: "m", name: "mate", kind: null, state: "idle" },
     ]);
   });
 

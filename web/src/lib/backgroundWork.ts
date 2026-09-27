@@ -46,7 +46,14 @@ function agentItem(agent: BackgroundAgent): BackgroundItem {
     kind: "subagent",
     name: agent.description || "Sub-agent",
     state,
-    stateLabel: agent.status === "stalled" ? "stalled" : agent.status === "detached" ? "detached" : "",
+    stateLabel:
+      agent.status === "stalled"
+        ? "stalled"
+        : agent.status === "detached"
+          ? "detached"
+          : agent.status === "completed" && agent.persistent
+            ? "idle"
+            : "",
     activity: state === "running" ? (agent.lastText ?? agent.lastTool) : (agent.result ?? agent.lastText),
     toolCount: agent.toolCount > 0 ? agent.toolCount : null,
     tokens: null,

@@ -760,6 +760,7 @@ mod tests {
             name: "n".into(),
             task: "t".into(),
             at: chrono::Utc::now(),
+            persistent: false,
         };
         record_from(
             &store,

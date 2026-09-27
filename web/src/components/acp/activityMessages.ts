@@ -48,6 +48,8 @@ export interface NativeSubagent {
   unresolved: boolean;
   /** Spawned by another subagent rather than the main agent. */
   nested: boolean;
+  /** A teammate that waits for messages between runs. */
+  persistent: boolean;
   startedAt: string;
   endedAt?: string;
   items: NativeSubagentItem[];
@@ -96,6 +98,7 @@ function nativeSubagent(
     // A workflow runs outside any turn, so only its own end state ends it.
     unresolved: state === null && !visiblyBusy && info.kind !== "workflow",
     nested: !!header.subagentId,
+    persistent: info.persistent ?? false,
     startedAt: header.at,
     ...(info.ended_at ? { endedAt: info.ended_at } : {}),
     items,
