@@ -40,6 +40,7 @@ mod tool_context;
 mod tool_output;
 mod transcript_filter;
 mod update_events;
+mod wake_hold;
 mod watchdog;
 
 pub(crate) use connection::CANCEL_ESCALATION_GRACE;
