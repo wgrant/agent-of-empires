@@ -63,11 +63,22 @@ describe("backgroundItems", () => {
   });
 
   it("links each item to its transcript card and offers stop only for a running stoppable task", () => {
-    const [native, tailed] = backgroundItems(
-      [agent({ agentId: "n", startedAt: at(2) }), agent({ agentId: "b", toolCallId: "toolu_1", startedAt: at(1) })],
+    const [native, tailed, nested] = backgroundItems(
+      [
+        agent({ agentId: "n", startedAt: at(2) }),
+        agent({ agentId: "b", toolCallId: "toolu_1", startedAt: at(1) }),
+        agent({ agentId: "c", startedAt: at(0) }),
+      ],
       [],
+      new Map(),
+      new Map([["c", "n"]]),
     );
-    expect([native!.cardId, tailed!.cardId]).toEqual(["native-subagent-n", "subagent-toolu_1"]);
+    // A nested subagent's card sits inside its ancestor's.
+    expect([native!.cardId, tailed!.cardId, nested!.cardId]).toEqual([
+      "native-subagent-n",
+      "subagent-toolu_1",
+      "native-subagent-n",
+    ]);
     const [workflow, shell, locked] = backgroundItems(
       [],
       [

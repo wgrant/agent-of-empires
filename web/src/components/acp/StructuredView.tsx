@@ -15,7 +15,7 @@ import { useWebSettings } from "../../hooks/useWebSettings";
 import { useDashboardConnectionDiagnostics } from "../../lib/connectionState";
 import { lastClearIndex } from "../../lib/acpHistoryWindow";
 import { visibleSessionNotices, type ActivityRow } from "../../lib/acpTypes";
-import { approvalAsker, listAgents } from "../../lib/agentView";
+import { approvalAsker, listAgents, resolveViewedAgent } from "../../lib/agentView";
 import { derivePromptOutbox } from "../../lib/acpPromptOutbox";
 import { AgentProfileProvider } from "../../lib/agentProfileContext";
 import { conversationFontSizeRem } from "../../lib/conversationFontSize";
@@ -280,7 +280,7 @@ function AcpChrome({
     session: { sessionId, kind: "structured", lifecycle: sessionDiagnostics },
   };
   const agents = useMemo(() => listAgents(state.activity), [state.activity]);
-  const viewedAgent = agents.find((a) => a.id === viewedAgentId);
+  const viewedAgent = useMemo(() => resolveViewedAgent(state.activity, viewedAgentId), [state.activity, viewedAgentId]);
   const viewingAgent = viewedAgent !== undefined;
   const sessionComposerAvailability = deriveComposerAvailability(conversationDiagnostics);
   const composerAvailability: ComposerAvailability =
@@ -385,7 +385,7 @@ function AcpChrome({
       />
 
       {agents.length > 0 && (
-        <AgentSwitcher agents={agents} viewedAgentId={viewingAgent ? viewedAgentId : null} onView={onViewAgent} />
+        <AgentSwitcher agents={agents} viewedAgentId={viewedAgent?.id ?? null} onView={onViewAgent} />
       )}
 
       <ThreadPrimitive.Root className="relative flex flex-1 flex-col min-h-0">
