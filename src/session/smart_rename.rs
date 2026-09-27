@@ -556,7 +556,7 @@ pub fn spawn_smart_rename_now(profile: &str, session_id: &str) {
 /// Re-exec `aoe __smart-rename [--force] <profile> <id>` as a detached child (setsid, null stdio,
 /// dropped handle), mirroring the `__acp-runner` launcher.
 fn spawn_detached(profile: &str, session_id: &str, force: bool) {
-    let Ok(exe) = std::env::current_exe() else {
+    let Ok(exe) = crate::process::current_exe_for_spawn() else {
         return;
     };
     let mut cmd = std::process::Command::new(exe);

@@ -57,8 +57,8 @@ pub(super) fn spawn_runner_detached(
     session_id: String,
     session_sandbox: Option<&SessionSandbox>,
 ) -> Result<(u32, Option<crate::session::ExecutionBinding>), AcpError> {
-    let current_exe =
-        std::env::current_exe().map_err(|e| AcpError::Spawn(format!("current_exe: {e}")))?;
+    let current_exe = crate::process::current_exe_for_spawn()
+        .map_err(|e| AcpError::Spawn(format!("current_exe: {e}")))?;
     let log_path = crate::process::worker_registry::log_path_for(&session_id)
         .map_err(|e| AcpError::Spawn(format!("log path: {e}")))?;
     if let Some(parent) = log_path.parent() {
