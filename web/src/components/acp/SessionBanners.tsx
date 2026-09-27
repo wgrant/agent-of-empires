@@ -316,25 +316,20 @@ const WAKING_GRACE_MS = 10_000;
 export function ScheduledWakeupBanner({ wakeAt, reason }: { wakeAt: string; reason: string | null }) {
   const targetMs = Date.parse(wakeAt);
   const [now, setNow] = useState(() => Date.now());
-  const [dismissed, setDismissed] = useState(false);
   const elapsed = !Number.isFinite(targetMs) || targetMs <= now;
-  // A fresh wake reuses this instance; un-dismiss during render.
-  const [prevWakeAt, setPrevWakeAt] = useState(wakeAt);
-  if (wakeAt !== prevWakeAt) {
-    setPrevWakeAt(wakeAt);
-    setDismissed(false);
-  }
+  // The grace runs from the wake itself, so a wake long past never shows.
+  const expired = targetMs + WAKING_GRACE_MS <= now;
   useEffect(() => {
     if (elapsed) return;
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
   }, [elapsed]);
   useEffect(() => {
-    if (!elapsed) return;
-    const id = setTimeout(() => setDismissed(true), WAKING_GRACE_MS);
+    if (!elapsed || expired) return;
+    const id = setTimeout(() => setNow(Date.now()), targetMs + WAKING_GRACE_MS - Date.now());
     return () => clearTimeout(id);
-  }, [elapsed]);
-  if (!Number.isFinite(targetMs) || dismissed) return null;
+  }, [elapsed, expired, targetMs]);
+  if (!Number.isFinite(targetMs) || expired) return null;
   const remaining = Math.max(0, Math.floor((targetMs - now) / 1000));
   const pad = (n: number) => String(n).padStart(2, "0");
   const wakeDate = new Date(targetMs);
