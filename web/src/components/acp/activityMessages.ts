@@ -231,7 +231,7 @@ export function activityToThreadMessages(
     } else if (row.kind === "compacted") {
       currentAssistant.appendCompaction(row);
     } else if (row.kind === "tool_start" && row.tool) {
-      currentAssistant.appendToolCall(row.tool);
+      currentAssistant.appendToolCall(row.tool, row.outputTail);
     } else if (row.kind === "tool_complete" || row.kind === "tool_error" || row.kind === "tool_stopped") {
       currentAssistant.completeToolCall(
         row.toolCallId ?? row.id.replace(/^(done|stopped)-/, ""),
@@ -308,7 +308,7 @@ class AssistantBuilder {
   }
 
   /** assistant-ui parts carry no timestamps or titles, so they travel as namespaced args. */
-  appendToolCall(tool: ToolCall) {
+  appendToolCall(tool: ToolCall, outputTail?: string) {
     const argsObj = parseJsonObject(tool.args_preview) ?? {};
     if (tool.name) argsObj._aoe_title = tool.name;
     if (tool.started_at) argsObj._aoe_started_at = tool.started_at;
@@ -316,6 +316,7 @@ class AssistantBuilder {
     // The wire name survives later retitles, so subagent launches stay recognisable.
     if (tool.raw_name) argsObj._aoe_raw_tool_name = tool.raw_name;
     if (tool.memory_recall) argsObj._aoe_memory_recall = tool.memory_recall;
+    if (outputTail) argsObj._aoe_output_tail = outputTail;
     this.parts.push({
       type: "tool-call",
       toolCallId: tool.id,

@@ -425,6 +425,19 @@ describe("failed-card folding", () => {
     expect(text()).toContain("tool failed");
   });
 
+  it("shows a running command's latest output, then its full output once done", () => {
+    const running = makeToolCall({
+      id: "bash-live",
+      kind: "execute",
+      args_preview: args({ command: "cargo build", _aoe_output_tail: "Compiling a\nCompiling b" }),
+    });
+    const { text, rerender } = renderCard(running);
+    expect(text()).toContain("Compiling b");
+    rerender(wrap(<ToolCard tool={running} result={makeCompletion({ text: "Compiling a\nCompiling b\nFinished" })} />));
+    expect(text()).toContain("3 lines");
+    expect(text()).not.toContain("_aoe_output_tail");
+  });
+
   it("auto-opens a card that fails mid-stream, then respects the user's fold", () => {
     const { text, toggle, rerender } = renderCard(fixtures.bash);
     expect(text()).not.toContain("tool failed");

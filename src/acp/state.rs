@@ -593,6 +593,13 @@ pub enum Event {
         tool_call_id: String,
         content: String,
     },
+    /// The next chunk of a running command's output, or with `replace` all of it.
+    ToolCallOutputDelta {
+        tool_call_id: String,
+        data: String,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        replace: bool,
+    },
     /// Late-arriving fields for an in-flight tool call.
     ToolCallUpdated {
         tool_call_id: String,
@@ -1208,6 +1215,7 @@ impl AcpState {
             // Titles live on `Instance`; wakeups and monitors are read from the log.
             Event::SessionTitleSuggested { .. }
             | Event::ToolCallContent { .. }
+            | Event::ToolCallOutputDelta { .. }
             | Event::RateLimitAutoResumed { .. }
             | Event::ModeSwitchFailed { .. }
             | Event::RawAgentUpdate { .. }

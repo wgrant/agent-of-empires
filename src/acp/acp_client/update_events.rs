@@ -20,8 +20,8 @@ use super::raw_input::{
 };
 use super::tool_output::{
     extract_diffs_from_content, extract_memory_recall, extract_tool_content_text,
-    extract_tool_output_blocks, preview_args, preview_optional_args, raw_event, tool_kind_str,
-    write_diff_from_meta,
+    extract_tool_output_blocks, preview_args, preview_optional_args, raw_event,
+    terminal_output_from_meta, tool_kind_str, write_diff_from_meta,
 };
 
 /// Keeps synthetic tool-call ids minted in the same millisecond distinct.
@@ -300,6 +300,14 @@ pub(super) fn map_update_to_events(
                     args_preview: new_args_preview,
                     started_at: in_progress.then(chrono::Utc::now),
                     diffs: new_diffs,
+                });
+            }
+            // Ahead of the completion, which folds the output streamed so far.
+            if let Some((data, replace)) = terminal_output_from_meta(&update.meta) {
+                events.push(Event::ToolCallOutputDelta {
+                    tool_call_id: id.clone(),
+                    data,
+                    replace,
                 });
             }
             if completed {
@@ -781,6 +789,37 @@ mod tests {
         assert_eq!(agent_id, "a6654829ea0a19032");
         assert_eq!(description, "grep tmux mentions repo-wide");
         assert!(output_file.ends_with(".output"));
+
+        // Streamed command output becomes an output delta, ahead of any completion.
+        let mut meta = serde_json::Map::new();
+        meta.insert(
+            "terminal_output_delta".to_string(),
+            serde_json::json!({ "terminal_id": "exec-1", "data": "ok\n" }),
+        );
+        let mut update = ToolCallUpdate::new(
+            "exec-1",
+            ToolCallUpdateFields::new().status(ToolCallStatus::Completed),
+        );
+        update.meta = Some(meta);
+        let events = claude(SessionUpdate::ToolCallUpdate(update));
+        assert!(
+            matches!(
+                events.as_slice(),
+                [Event::ToolCallOutputDelta { data, .. }, Event::ToolCallCompleted { .. }] if data == "ok\n"
+            ),
+            "{events:?}"
+        );
+        let mut meta = serde_json::Map::new();
+        meta.insert(
+            "terminal_output".to_string(),
+            serde_json::json!({ "terminal_id": "exec-1", "data": "all\n" }),
+        );
+        let mut update = ToolCallUpdate::new("exec-1", ToolCallUpdateFields::new());
+        update.meta = Some(meta);
+        assert!(matches!(
+            claude(SessionUpdate::ToolCallUpdate(update)).as_slice(),
+            [Event::ToolCallOutputDelta { replace: true, .. }]
+        ));
 
         {
             let bare = claude(tool_update(

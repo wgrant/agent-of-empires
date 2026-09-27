@@ -149,13 +149,8 @@ pub(super) fn extract_tool_output_blocks(
                 }
                 _ => {}
             },
-            ToolCallContent::Terminal(term) => {
-                has_media = true;
-                out.push(ToolOutputBlock::Text {
-                    text: format!("[terminal {}]", term.terminal_id.0),
-                });
-            }
-            ToolCallContent::Diff(_) => {}
+            // A terminal's output arrives as `terminal_output_delta`, folded into the text.
+            ToolCallContent::Terminal(_) | ToolCallContent::Diff(_) => {}
             _ => {}
         }
     }
@@ -252,6 +247,21 @@ pub(super) fn extract_diffs_from_content(
 /// otherwise fall through as an inert `RawAgentUpdate` and leave the edit card
 /// bodyless. `create` carries no `oldContent`, so its diff is against an empty
 /// file. `None` for anything else, which keeps the passthrough.
+/// Command output in the codex-acp terminal extension, which claude-agent-acp
+/// also speaks: a `terminal_output_delta` chunk, or a `terminal_output`
+/// snapshot (`true`) that replaces what streamed before it.
+pub(super) fn terminal_output_from_meta(
+    meta: &Option<serde_json::Map<String, serde_json::Value>>,
+) -> Option<(String, bool)> {
+    let map = meta.as_ref()?;
+    let (output, replace) = match map.get("terminal_output_delta") {
+        Some(delta) => (delta, false),
+        None => (map.get("terminal_output")?, true),
+    };
+    let data = output.get("data")?.as_str()?;
+    (replace || !data.is_empty()).then(|| (data.to_string(), replace))
+}
+
 pub(super) fn write_diff_from_meta(
     meta: &Option<serde_json::Map<String, serde_json::Value>>,
 ) -> Option<Vec<DiffPreview>> {
