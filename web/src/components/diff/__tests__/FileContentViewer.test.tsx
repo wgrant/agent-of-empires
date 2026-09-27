@@ -40,11 +40,11 @@ describe("FileContentViewer", () => {
     await waitFor(() => {
       expect(container.querySelector("h1")?.textContent).toBe("Plan");
     });
-    expect(screen.getByRole("button", { name: "Rendered" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "Preview" }).getAttribute("aria-pressed")).toBe("true");
 
-    fireEvent.click(screen.getByRole("button", { name: "Raw" }));
+    fireEvent.click(screen.getByRole("button", { name: "Diff" }));
     await waitFor(() => {
-      // Raw mode renders the whole-file view, which shows the literal source
+      // The raw view renders the whole file, which shows the literal source
       // including the "#".
       expect(container.textContent).toContain("# Plan");
     });
@@ -61,7 +61,7 @@ describe("FileContentViewer", () => {
     await waitFor(() => {
       expect(container.textContent).toContain("export const a = 1;");
     });
-    expect(screen.queryByRole("button", { name: "Rendered" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Preview" })).toBeNull();
   });
 
   it("shows an error when the fetch fails", async () => {
