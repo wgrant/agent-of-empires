@@ -97,6 +97,23 @@ fn reply<T: agent_client_protocol::JsonRpcResponse>(
     }
 }
 
+/// Run a request that waits on the user as its own task: handlers share one
+/// dispatch loop, so awaiting the answer there would hold back every other
+/// message from the agent. The loop resumes once the task drops `published`,
+/// after publishing the request, so later messages still follow it.
+async fn off_dispatch_loop<F>(
+    conn: ConnectionTo<Agent>,
+    run: impl FnOnce(oneshot::Sender<()>) -> F,
+) -> agent_client_protocol::Result<()>
+where
+    F: std::future::Future<Output = agent_client_protocol::Result<()>> + Send + 'static,
+{
+    let (published, admitted) = oneshot::channel();
+    conn.spawn(run(published))?;
+    let _ = admitted.await;
+    Ok(())
+}
+
 /// Register request handlers that each answer from a `SessionResources` clone.
 /// The builder is typestate, so each registration shadows the last.
 macro_rules! resource_requests {
@@ -267,9 +284,9 @@ pub(super) async fn run_connection_task<W, R>(
                 let pending = pending_responders.clone();
                 move |request: RequestPermissionRequest,
                       responder: Responder<RequestPermissionResponse>,
-                      _conn| {
+                      conn: ConnectionTo<Agent>| {
                     let (shared, pending) = (shared.clone(), pending.clone());
-                    async move {
+                    off_dispatch_loop(conn, move |published| async move {
                         let admission = match shared.ingress.request(&request.session_id).await {
                             Ok(guard) => guard,
                             Err(error) => return reply(responder, Err(error)),
@@ -296,11 +313,11 @@ pub(super) async fn run_connection_task<W, R>(
                             profile,
                             shared.tool_context_cache.clone(),
                             subagent,
-                            admission,
+                            (admission, published),
                         )
                         .await;
                         reply(responder, outcome)
-                    }
+                    })
                 }
             },
             agent_client_protocol::on_receive_request!(),
@@ -311,10 +328,10 @@ pub(super) async fn run_connection_task<W, R>(
                 let ingress = ingress.clone();
                 move |request: CreateElicitationRequest,
                       responder: Responder<CreateElicitationResponse>,
-                      _conn| {
+                      conn: ConnectionTo<Agent>| {
                     let (event_tx, pending) = (event_tx.clone(), pending_responders.clone());
                     let ingress = ingress.clone();
-                    async move {
+                    off_dispatch_loop(conn, move |published| async move {
                         // Only a session-scoped elicitation carries an identity
                         // to fence on.
                         let admission = if let ElicitationScope::Session(scope) = request.scope() {
@@ -326,10 +343,15 @@ pub(super) async fn run_connection_task<W, R>(
                             None
                         };
                         let _callback = admission.as_ref().map(|guard| ingress.callback(guard));
-                        let outcome =
-                            handle_elicitation_request(request, event_tx, pending, admission).await;
+                        let outcome = handle_elicitation_request(
+                            request,
+                            event_tx,
+                            pending,
+                            (admission, published),
+                        )
+                        .await;
                         reply(responder, outcome)
-                    }
+                    })
                 }
             },
             agent_client_protocol::on_receive_request!(),
