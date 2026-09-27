@@ -190,7 +190,30 @@ pub(super) fn compact_completed_stream_runs(
     drop(stmt);
 
     Ok(apply_chunk_runs(conn, &store.schema, runs)?
-        + outputs.apply(conn, &store.schema, session_id)?)
+        + outputs.apply(conn, &store.schema, session_id)?
+        + drop_turn_scratch(conn, &store.schema, session_id)?)
+}
+
+/// A finished turn's output-token count, and hooks that succeeded silently,
+/// which nothing shows once the turn is over.
+fn drop_turn_scratch(
+    conn: &Connection,
+    schema: &events::Schema,
+    session_id: &str,
+) -> Result<usize> {
+    conn.execute(
+        &format!(
+            "DELETE FROM {} WHERE session_id = ?1 AND (
+                 discriminant = 'TurnOutputTokens'
+                 OR (discriminant = 'HookUpdated'
+                     AND json_extract(event_json, '$.HookUpdated.status') = 'success'
+                     AND trim(coalesce(json_extract(event_json, '$.HookUpdated.output'), ''),
+                              ' ' || char(9) || char(10) || char(13)) = ''))",
+            schema.events_table()
+        ),
+        params![session_id],
+    )
+    .context("drop finished turn scratch events")
 }
 
 /// Each tool call's streamed output chunks in a finished turn, keyed by the
@@ -525,6 +548,63 @@ fn convert_raw_terminal_output(conn: &Connection, schema: &events::Schema) -> Re
 mod tests {
     use super::*;
     use crate::acp::event_store::test_support::{agent_chunk, open_store, user_prompt};
+
+    /// Replacing events keep only their latest, and a finished turn drops its
+    /// token count and silent hooks but keeps a hook worth reading.
+    #[test]
+    fn replaced_and_finished_turn_scratch_events_are_dropped() {
+        use crate::acp::event_store::test_support::{record_from, stopped};
+        let (_tmp, store) = open_store(1000);
+        let hook = |id: &str, status: &str, output: &str| Event::HookUpdated {
+            id: id.into(),
+            name: "PreToolUse:Bash".into(),
+            event: "PreToolUse".into(),
+            status: status.into(),
+            output: output.into(),
+            exit_code: None,
+        };
+        let suggestion = |text: &str| Event::PromptSuggested { text: text.into() };
+        record_from(
+            &store,
+            "s",
+            1,
+            [
+                user_prompt("go"),
+                hook("quiet", "running", ""),
+                hook("loud", "running", ""),
+                Event::TurnOutputTokens { tokens: 10 },
+                hook("quiet", "success", "\n"),
+                hook("loud", "error", "blocked"),
+                Event::TurnOutputTokens { tokens: 20 },
+                suggestion("old"),
+            ],
+        );
+        let kept = |store: &EventStore| -> Vec<String> {
+            store
+                .replay_from("s", 0)
+                .into_iter()
+                .filter(|(_, e)| !matches!(e, Event::UserPromptSent { .. } | Event::Stopped { .. }))
+                .map(|(seq, e)| format!("{seq}:{e:?}").chars().take(40).collect())
+                .collect()
+        };
+        assert_eq!(
+            kept(&store),
+            [
+                "5:HookUpdated { id: \"quiet\", name: \"PreT",
+                "6:HookUpdated { id: \"loud\", name: \"PreTo",
+                "7:TurnOutputTokens { tokens: 20 }",
+                "8:PromptSuggested { text: \"old\" }",
+            ]
+        );
+        record_from(&store, "s", 9, [stopped("end_turn"), suggestion("new")]);
+        assert_eq!(
+            kept(&store),
+            [
+                "6:HookUpdated { id: \"loud\", name: \"PreTo",
+                "10:PromptSuggested { text: \"new\" }",
+            ]
+        );
+    }
 
     #[test]
     fn stopped_turn_seals_consecutive_message_and_thought_runs() {

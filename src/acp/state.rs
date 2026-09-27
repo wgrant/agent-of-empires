@@ -600,6 +600,31 @@ pub enum Event {
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         replace: bool,
     },
+    /// A Claude Code hook's run; each update for an `id` replaces the last.
+    HookUpdated {
+        id: String,
+        name: String,
+        event: String,
+        /// `running`, then `success`, `error`, or `cancelled`.
+        status: String,
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        output: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        exit_code: Option<i32>,
+    },
+    /// The agent's guess at the user's next prompt.
+    PromptSuggested {
+        text: String,
+    },
+    /// A one-line summary of the tool calls it names.
+    ToolUseSummarized {
+        summary: String,
+        tool_call_ids: Vec<String>,
+    },
+    /// The running turn's output tokens so far, estimated until billed.
+    TurnOutputTokens {
+        tokens: u64,
+    },
     /// Late-arriving fields for an in-flight tool call.
     ToolCallUpdated {
         tool_call_id: String,
@@ -1216,6 +1241,10 @@ impl AcpState {
             Event::SessionTitleSuggested { .. }
             | Event::ToolCallContent { .. }
             | Event::ToolCallOutputDelta { .. }
+            | Event::HookUpdated { .. }
+            | Event::PromptSuggested { .. }
+            | Event::ToolUseSummarized { .. }
+            | Event::TurnOutputTokens { .. }
             | Event::RateLimitAutoResumed { .. }
             | Event::ModeSwitchFailed { .. }
             | Event::RawAgentUpdate { .. }

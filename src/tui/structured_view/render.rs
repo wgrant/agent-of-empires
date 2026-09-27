@@ -1415,6 +1415,20 @@ fn transcript_lines(
                     out.push(Line::default());
                 }
             }
+            TranscriptRowKind::Hook => {
+                if let Some((hook, headline)) = row
+                    .hook
+                    .as_ref()
+                    .and_then(|hook| Some((hook, hook.headline(&row.text)?)))
+                {
+                    let kind = match hook.status.as_str() {
+                        "error" => NoteKind::Warning,
+                        _ => NoteKind::Info,
+                    };
+                    out.push(note_line(kind, &headline));
+                    out.push(Line::default());
+                }
+            }
             TranscriptRowKind::Compacted => {
                 let info = row.compaction.clone().unwrap_or_default();
                 let kind = match info.state.as_str() {

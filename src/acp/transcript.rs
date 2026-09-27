@@ -56,6 +56,23 @@ pub struct TranscriptRow {
     /// The first row of a turn the agent started unprompted, so it opens a new reply.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub turn_start: bool,
+    /// The hook a `hook` row reports; `text` holds its output.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hook: Option<HookInfo>,
+    /// The agent's one-line summary of the run of tool calls this `tool_start` row is in.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_summary: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HookInfo {
+    /// Such as `PreToolUse:Bash`.
+    pub name: String,
+    pub event: String,
+    /// `running`, then `success`, `error`, or `cancelled`.
+    pub status: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exit_code: Option<i32>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -98,6 +115,26 @@ pub struct SubagentInfo {
     /// it idle.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub persistent: bool,
+}
+
+impl HookInfo {
+    /// One line for the hook, or none for one that succeeded silently, which
+    /// Claude Code does not show either.
+    pub fn headline(&self, output: &str) -> Option<String> {
+        let first = output.lines().find(|line| !line.trim().is_empty());
+        let outcome = match (self.status.as_str(), self.exit_code) {
+            ("running", _) => return Some(format!("Running {} hook", self.name)),
+            ("success", _) if first.is_none() => return None,
+            ("success", _) => format!("{} hook", self.name),
+            ("cancelled", _) => format!("{} hook cancelled", self.name),
+            (_, Some(code)) => format!("{} hook failed (exit {code})", self.name),
+            _ => format!("{} hook failed", self.name),
+        };
+        Some(match first {
+            Some(line) => format!("{outcome}: {}", line.trim()),
+            None => outcome,
+        })
+    }
 }
 
 impl CompactionInfo {
@@ -177,6 +214,8 @@ pub enum TranscriptRowKind {
     Subagent,
     /// A message that woke a waiting subagent for another run; `text` holds it.
     SubagentWoken,
+    /// One run of a Claude Code hook, from start to outcome.
+    Hook,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -237,6 +276,8 @@ pub struct TranscriptModel {
     /// This turn's latest compaction row per scope, which the compaction's
     /// later events, and repeats of them, update.
     compactions: HashMap<Option<String>, usize>,
+    /// Hook rows this turn that may still be running.
+    hooks: Vec<usize>,
     group_counter: u64,
     /// Frames at or below this seq are dropped, so replay overlap is harmless.
     last_seq: u64,
@@ -474,7 +515,7 @@ impl TranscriptModel {
             Event::Stopped { .. } => {
                 let empty = self.turn_active && !self.turn_has_output;
                 let mut deltas = self.sweep_open_tools(seq);
-                deltas.extend(self.interrupt_compactions());
+                deltas.extend(self.interrupt_unfinished());
                 // Some slash commands produce neither a chunk nor a tool call.
                 if empty {
                     deltas.push(self.push(
@@ -599,6 +640,49 @@ impl TranscriptModel {
                 info.duration_ms = duration_ms.or(info.duration_ms);
                 (*info != before).then_some(())
             }),
+            Event::HookUpdated {
+                id,
+                name,
+                event,
+                status,
+                output,
+                exit_code,
+            } => {
+                let hook = HookInfo {
+                    name: name.clone(),
+                    event: event.clone(),
+                    status: status.clone(),
+                    exit_code: *exit_code,
+                };
+                let row_id = format!("hook-{id}");
+                match self.rows.iter().rposition(|row| row.id == row_id) {
+                    Some(index) => {
+                        let row = &mut self.rows[index];
+                        row.text = output.clone();
+                        row.hook = Some(hook);
+                        vec![patch(row)]
+                    }
+                    None => {
+                        let mut row =
+                            self.grouped_row(row_id, TranscriptRowKind::Hook, output.clone());
+                        row.hook = Some(hook);
+                        self.hooks.push(self.rows.len());
+                        vec![self.append(row)]
+                    }
+                }
+            }
+            Event::ToolUseSummarized {
+                summary,
+                tool_call_ids,
+            } => tool_call_ids
+                .iter()
+                .filter_map(|id| {
+                    let index = self.find_tool_start(id)?;
+                    let row = &mut self.rows[index];
+                    row.tool_summary = Some(summary.clone());
+                    Some(patch(row))
+                })
+                .collect(),
             Event::AgentNotice {
                 severity,
                 title,
@@ -1168,9 +1252,17 @@ impl TranscriptModel {
         }
     }
 
-    /// A turn that ends mid-compaction leaves it with no verdict.
-    fn interrupt_compactions(&mut self) -> Vec<TranscriptDelta> {
+    /// A turn that ends mid-compaction leaves it with no verdict, and a hook
+    /// still running was cut short.
+    fn interrupt_unfinished(&mut self) -> Vec<TranscriptDelta> {
         let mut deltas = Vec::new();
+        for index in std::mem::take(&mut self.hooks) {
+            let row = &mut self.rows[index];
+            if let Some(hook) = row.hook.as_mut().filter(|h| h.status == "running") {
+                hook.status = "cancelled".into();
+                deltas.push(patch(row));
+            }
+        }
         for &index in self.compactions.values() {
             let row = &mut self.rows[index];
             if let Some(info) = row.compaction.as_mut().filter(|c| c.state == "running") {
@@ -1274,6 +1366,8 @@ impl TranscriptRow {
             compaction: None,
             output_tail: None,
             turn_start: false,
+            hook: None,
+            tool_summary: None,
         }
     }
 }
@@ -1571,6 +1665,52 @@ mod tests {
             (done.kind, done.text.as_str()),
             (TranscriptRowKind::ToolStopped, "Declined by you")
         );
+    }
+
+    #[test]
+    fn hooks_update_in_place_and_summaries_label_their_tools() {
+        let hook = |status: &str, output: &str, exit_code| Event::HookUpdated {
+            id: "h1".into(),
+            name: "PreToolUse:Bash".into(),
+            event: "PreToolUse".into(),
+            status: status.into(),
+            output: output.into(),
+            exit_code,
+        };
+        let model = fold([
+            started(tool("t1", "ls")),
+            started(tool("t2", "date")),
+            hook("running", "", None),
+            hook("error", "blocked: no ls\n", Some(2)),
+            Event::ToolUseSummarized {
+                summary: "Listed files".into(),
+                tool_call_ids: vec!["t1".into(), "t2".into(), "gone".into()],
+            },
+        ]);
+        let hook_rows: Vec<_> = model
+            .rows()
+            .iter()
+            .filter(|r| r.kind == TranscriptRowKind::Hook)
+            .collect();
+        assert_eq!(hook_rows.len(), 1);
+        let info = hook_rows[0].hook.as_ref().unwrap();
+        assert_eq!(
+            info.headline(&hook_rows[0].text).as_deref(),
+            Some("PreToolUse:Bash hook failed (exit 2): blocked: no ls")
+        );
+        for id in ["start-t1", "start-t2"] {
+            assert_eq!(
+                row(&model, id).tool_summary.as_deref(),
+                Some("Listed files")
+            );
+        }
+        // A silent success stays out of view, as in Claude Code.
+        let quiet = HookInfo {
+            status: "success".into(),
+            exit_code: Some(0),
+            ..info.clone()
+        };
+        assert_eq!(quiet.headline("\n"), None);
     }
 
     #[test]
