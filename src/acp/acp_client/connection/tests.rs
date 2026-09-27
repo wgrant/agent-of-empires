@@ -1,4 +1,6 @@
-//! The connection task driven against a fake agent over in-memory pipes.
+//! Connection behavior under a scripted fake agent: Cancel must not sit behind
+//! a sustained update stream, and a pending approval must not hold back other
+//! messages.
 
 use super::prompt::{SelectProbe, SELECT_PROBE};
 use super::*;
@@ -18,9 +20,60 @@ async fn write_line(w: &SharedWrite, line: &str) {
     guard.flush().await.unwrap();
 }
 
-/// Fairness of the in-flight-prompt select: Cancel must not sit behind the
-/// lifecycle arm, which a sustained update stream keeps permanently ready.
-/// A fake agent floods updates until `session/cancel` arrives.
+type Harness = (
+    ConnectionParams,
+    mpsc::Receiver<Event>,
+    mpsc::Sender<ClientCmd>,
+    oneshot::Receiver<Result<(), AcpError>>,
+    tempfile::TempDir,
+);
+
+fn connection_params(
+    label: &str,
+    daemon_write: tokio::io::DuplexStream,
+    daemon_read: tokio::io::DuplexStream,
+) -> (
+    ByteStreams<impl futures_util::AsyncWrite, impl futures_util::AsyncRead>,
+    Harness,
+) {
+    let (event_tx, event_rx) = mpsc::channel(64);
+    let (cmd_tx, cmd_rx) = mpsc::channel::<ClientCmd>(16);
+    let (ready_tx, ready_rx) = oneshot::channel::<Result<(), AcpError>>();
+    let temp = tempfile::tempdir().unwrap();
+    let cwd = temp.path().to_path_buf();
+    let transport = ByteStreams::new(daemon_write.compat_write(), daemon_read.compat());
+    let resources = SessionResources {
+        fs_policy: Arc::new(FsPolicy::new(vec![cwd.clone()])),
+        terminals: TerminalManager::new(),
+        cwd,
+        label: label.to_string(),
+        sandbox: None,
+    };
+    let params = ConnectionParams {
+        event_tx,
+        cmd_rx,
+        child: None,
+        pending_responders: Arc::new(Mutex::new(HashMap::new())),
+        resources,
+        mode: ConnectMode::Fresh {
+            stored_acp_session_id: None,
+            seed_history_replay: false,
+            fork_from: None,
+        },
+        ready_tx,
+        profile: &crate::acp::agent_profiles::GEMINI,
+        expected_agent: ExpectedAgent::Gemini,
+        source_profile: None,
+        default_effort: None,
+        default_mode: None,
+        default_model: None,
+        extensions: Default::default(),
+        mcp_servers: Vec::new(),
+        runner: None,
+    };
+    (transport, (params, event_rx, cmd_tx, ready_rx, temp))
+}
+
 #[tokio::test]
 async fn cancel_reaches_the_agent_while_notifications_remain_queued() {
     // Repeated contested polls make unbiased selection observable; this is
@@ -85,19 +138,8 @@ async fn cancel_under_flood() {
     let cancelled = Arc::new(AtomicBool::new(false));
     let flooded = Arc::new(AtomicBool::new(false));
 
-    let (event_tx, mut event_rx) = mpsc::channel(64);
-    let (cmd_tx, cmd_rx) = mpsc::channel::<ClientCmd>(16);
-    let (ready_tx, ready_rx) = oneshot::channel::<Result<(), AcpError>>();
-    let temp = tempfile::tempdir().unwrap();
-    let cwd = temp.path().to_path_buf();
-    let transport = ByteStreams::new(daemon_write.compat_write(), daemon_read.compat());
-    let resources = SessionResources {
-        fs_policy: Arc::new(FsPolicy::new(vec![cwd.clone()])),
-        terminals: TerminalManager::new(),
-        cwd,
-        label: "s-fair".to_string(),
-        sandbox: None,
-    };
+    let (transport, (params, mut event_rx, cmd_tx, ready_rx, _temp)) =
+        connection_params("s-fair", daemon_write, daemon_read);
     let (paused_tx, mut paused_rx) = oneshot::channel();
     let (resume_tx, resume_rx) = oneshot::channel();
     let (winner_tx, winner_rx) = oneshot::channel();
@@ -106,28 +148,6 @@ async fn cancel_under_flood() {
         armed: false,
         winner: Some(winner_tx),
     });
-    let params = ConnectionParams {
-        event_tx,
-        cmd_rx,
-        child: None,
-        pending_responders: Arc::new(Mutex::new(HashMap::new())),
-        resources,
-        mode: ConnectMode::Fresh {
-            stored_acp_session_id: None,
-            seed_history_replay: false,
-            fork_from: None,
-        },
-        ready_tx,
-        profile: &crate::acp::agent_profiles::GEMINI,
-        expected_agent: ExpectedAgent::Gemini,
-        source_profile: None,
-        default_effort: None,
-        default_mode: None,
-        default_model: None,
-        extensions: Default::default(),
-        mcp_servers: Vec::new(),
-        runner: None,
-    };
     let connection =
         tokio::spawn(SELECT_PROBE.scope(probe, run_connection_task(transport, params)));
     let agent = tokio::spawn(fake_agent(
@@ -197,6 +217,71 @@ async fn cancel_under_flood() {
     agent.abort();
     connection.abort();
     let _ = tokio::join!(flood, agent, connection);
+}
+
+/// Handler tasks share one dispatch loop, so an approval awaited there held
+/// back every later message until the user answered.
+#[tokio::test]
+async fn messages_keep_flowing_while_an_approval_waits() {
+    let (daemon_write, agent_read) = tokio::io::duplex(64 * 1024);
+    let (agent_write, daemon_read) = tokio::io::duplex(64 * 1024);
+    let agent_write: SharedWrite = Arc::new(Mutex::new(agent_write));
+    let (transport, (params, mut event_rx, cmd_tx, ready_rx, _temp)) =
+        connection_params("s-approve", daemon_write, daemon_read);
+    let connection = tokio::spawn(run_connection_task(transport, params));
+    let agent = tokio::spawn(async move {
+        let mut reader = BufReader::new(agent_read);
+        let mut line = String::new();
+        while reader.read_line(&mut line).await.unwrap_or(0) > 0 {
+            let msg: serde_json::Value = serde_json::from_str(line.trim()).unwrap_or_default();
+            line.clear();
+            let id = &msg["id"];
+            let replies = match msg["method"].as_str() {
+                Some("initialize") => vec![format!(
+                    r#"{{"jsonrpc":"2.0","id":{id},"result":{{"protocolVersion":1,"agentCapabilities":{{}}}}}}"#
+                )],
+                Some("session/new") => vec![format!(
+                    r#"{{"jsonrpc":"2.0","id":{id},"result":{{"sessionId":"s-approve"}}}}"#
+                )],
+                Some("session/prompt") => vec![
+                    r#"{"jsonrpc":"2.0","id":"perm","method":"session/request_permission","params":{"sessionId":"s-approve","toolCall":{"toolCallId":"t1","title":"rm -rf build"},"options":[{"optionId":"allow","name":"Allow","kind":"allow_once"}]}}"#.to_string(),
+                    r#"{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-approve","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"meanwhile"}}}}"#.to_string(),
+                ],
+                _ => Vec::new(),
+            };
+            for reply in replies {
+                write_line(&agent_write, &reply).await;
+            }
+        }
+    });
+
+    ready_rx
+        .await
+        .expect("handshake completes")
+        .expect("handshake ok");
+    cmd_tx
+        .send(ClientCmd::Prompt(vec![ContentBlock::Text(
+            TextContent::new("go"),
+        )]))
+        .await
+        .unwrap();
+    let mut asked = false;
+    tokio::time::timeout(Duration::from_secs(30), async {
+        loop {
+            match event_rx.recv().await.expect("event channel open") {
+                Event::ApprovalRequested { .. } => asked = true,
+                Event::AgentMessageChunk { text } if text == "meanwhile" => break,
+                _ => {}
+            }
+        }
+    })
+    .await
+    .expect("the update after an unanswered approval arrives");
+    assert!(asked, "the approval is published before the later update");
+
+    agent.abort();
+    connection.abort();
+    let _ = tokio::join!(agent, connection);
 }
 
 /// A new adapter process clears the previous process's identity before it can
