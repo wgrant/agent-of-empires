@@ -311,6 +311,23 @@ pub(super) fn map_update_to_events(
                 });
             }
             if completed {
+                // codex-acp can announce a command only as it ends; its own
+                // duration then dates the start.
+                if let Some(ms) = update
+                    .meta
+                    .as_ref()
+                    .and_then(|m| m.get("codex")?.get("durationMs")?.as_u64())
+                {
+                    events.push(Event::ToolCallUpdated {
+                        tool_call_id: id.clone(),
+                        title: None,
+                        args_preview: None,
+                        started_at: Some(
+                            chrono::Utc::now() - chrono::Duration::milliseconds(ms as i64),
+                        ),
+                        diffs: None,
+                    });
+                }
                 let async_subagent = matches!(
                     detect_off_protocol_work_completed(&update.fields.content),
                     Some(OffProtocolWorkKind::AsyncAgent)
@@ -820,6 +837,27 @@ mod tests {
             claude(SessionUpdate::ToolCallUpdate(update)).as_slice(),
             [Event::ToolCallOutputDelta { replace: true, .. }]
         ));
+
+        // A reported duration dates the start back from the completion.
+        let mut meta = serde_json::Map::new();
+        meta.insert(
+            "codex".to_string(),
+            serde_json::json!({ "durationMs": 1500 }),
+        );
+        let mut update = ToolCallUpdate::new(
+            "exec-2",
+            ToolCallUpdateFields::new().status(ToolCallStatus::Completed),
+        );
+        update.meta = Some(meta);
+        let events = claude(SessionUpdate::ToolCallUpdate(update));
+        let [Event::ToolCallUpdated {
+            started_at: Some(started),
+            ..
+        }, Event::ToolCallCompleted { completed_at, .. }] = events.as_slice()
+        else {
+            panic!("expected a back-dated start, got {events:?}");
+        };
+        assert!((*completed_at - *started).num_milliseconds() >= 1500);
 
         {
             let bare = claude(tool_update(
