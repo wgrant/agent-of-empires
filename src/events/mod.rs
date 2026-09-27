@@ -80,6 +80,7 @@ fn not_like_clauses(prefixes: &[&str]) -> (String, Vec<String>) {
 }
 
 const AUTO_VACUUM_INCREMENTAL: i64 = 2;
+const WAL_SIZE_LIMIT: i64 = 64 * 1024 * 1024;
 
 /// Let [`reclaim_free_pages`] return deleted rows' space to the filesystem,
 /// which otherwise keeps every page the log ever used. An existing log is
@@ -144,6 +145,10 @@ pub fn open(db_path: &Path, schema: &Schema) -> Result<Connection> {
         .context("enable WAL mode")?;
     conn.pragma_update(None, "synchronous", "NORMAL")
         .context("set synchronous=NORMAL")?;
+    // SQLite never shrinks a WAL on its own, so one large write, such as
+    // `use_incremental_vacuum`'s rewrite, would otherwise hold its size forever.
+    conn.pragma_update(None, "journal_size_limit", WAL_SIZE_LIMIT)
+        .context("set journal_size_limit")?;
     let events = schema.events_table();
     let attachments = schema.attachments_table();
     let pending_attachments = schema.pending_attachments_table();
@@ -197,6 +202,8 @@ pub fn open(db_path: &Path, schema: &Schema) -> Result<Connection> {
     ))
     .context("create event log schema")?;
     ensure_discriminant_column(&conn, events)?;
+    conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()))
+        .context("checkpoint the WAL")?;
     Ok(conn)
 }
 
@@ -850,6 +857,8 @@ mod tests {
                     .unwrap()
             };
             assert_eq!(pragma("auto_vacuum"), AUTO_VACUUM_INCREMENTAL, "{path:?}");
+            let wal = path.with_extension("db-wal");
+            assert_eq!(std::fs::metadata(&wal).map_or(0, |m| m.len()), 0, "{wal:?}");
             let payload = format!("{{\"E\":\"{}\"}}", "x".repeat(4000));
             for seq in 0..200 {
                 insert_event(&conn, &schema, "s", seq, &payload, 0).unwrap();
