@@ -303,7 +303,7 @@ class AssistantBuilder {
   appendReasoning(text: string) {
     if (!text) return;
     const last = this.parts[this.parts.length - 1];
-    if (last?.type === "reasoning") last.text += text;
+    if (last?.type === "reasoning") last.text += `\n\n${text}`;
     else this.parts.push({ type: "reasoning", text });
   }
 
