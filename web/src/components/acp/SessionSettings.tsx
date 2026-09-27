@@ -92,9 +92,10 @@ export function SessionSettingsControl(props: Props) {
         onClick={() => setOpen(true)}
         title={`Session settings: ${summaryText}`}
         aria-label={`Session settings: ${summaryText}`}
-        // Narrow footers truncate the chip on the toolbar's line instead of wrapping it onto its own.
+        // Narrow footers right-align the chip and truncate it on the toolbar's
+        // line instead of wrapping it onto its own.
         className={[
-          "inline-flex min-w-0 max-w-full flex-1 basis-0 items-center gap-1.5 @lg:flex-none @lg:basis-auto",
+          "ml-auto inline-flex min-w-0 max-w-full flex-initial items-center gap-1.5 @lg:ml-0 @lg:flex-none",
           "rounded-md border border-surface-700 bg-surface-800 px-2 py-1 text-[11px] font-medium text-text-secondary",
           "transition-colors hover:border-surface-600",
         ].join(" ")}
