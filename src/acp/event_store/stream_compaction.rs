@@ -5,7 +5,7 @@ use super::EventStore;
 use crate::acp::state::Event;
 use crate::events;
 
-const EVENT_COMPACTION_VERSION: i64 = 2;
+const EVENT_COMPACTION_VERSION: i64 = 3;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ChunkKind {
@@ -409,7 +409,22 @@ pub(super) fn run_legacy_compaction(conn: &Connection, schema: &events::Schema) 
             stream_chunk_rows: 0,
         }
     };
-    let terminal_output_rows = convert_raw_terminal_output(conn, schema)?;
+    let terminal_output_rows = if version < 2 {
+        convert_raw_terminal_output(conn, schema)?
+    } else {
+        0
+    };
+    // Claude's raw tool results, read at ingest and otherwise stored twice.
+    let raw_tool_result_rows = conn
+        .execute(
+            &format!(
+                "DELETE FROM {} WHERE discriminant = 'RawAgentUpdate'
+                   AND json_extract(event_json, '$.RawAgentUpdate.payload._meta.claudeCode.toolResponse') IS NOT NULL",
+                schema.events_table()
+            ),
+            [],
+        )
+        .context("drop stored raw tool results")?;
     conn.execute(
         "INSERT INTO acp_event_store_meta (key, value) VALUES ('compaction_version', ?1)
          ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -421,6 +436,7 @@ pub(super) fn run_legacy_compaction(conn: &Connection, schema: &events::Schema) 
         tool_content_rows = report.tool_content_rows,
         stream_chunk_rows = report.stream_chunk_rows,
         terminal_output_rows,
+        raw_tool_result_rows,
         "compacted historical structured view events"
     );
     Ok(())
@@ -694,6 +710,12 @@ mod tests {
             raw("exec-1", "two\n"),
             Event::RawAgentUpdate {
                 payload: serde_json::json!({ "unrelated": true }),
+            },
+            Event::RawAgentUpdate {
+                payload: serde_json::json!({
+                    "toolCallId": "toolu_1",
+                    "_meta": { "claudeCode": { "toolResponse": { "stdout": "dup" } } }
+                }),
             },
         ];
         {

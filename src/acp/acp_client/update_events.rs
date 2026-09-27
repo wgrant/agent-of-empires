@@ -350,6 +350,10 @@ pub(super) fn map_update_to_events(
                 let payload = serde_json::to_value(&update).unwrap_or(serde_json::Value::Null);
                 match background_agent_launched_from_value(&payload) {
                     Some(event) => events.push(event),
+                    // Claude's raw tool result, already read above; the
+                    // completion carries the output, so storing it again
+                    // only doubles every result.
+                    None if payload.pointer("/_meta/claudeCode/toolResponse").is_some() => {}
                     None => events.push(Event::RawAgentUpdate { payload }),
                 }
             }
@@ -837,6 +841,16 @@ mod tests {
             claude(SessionUpdate::ToolCallUpdate(update)).as_slice(),
             [Event::ToolCallOutputDelta { replace: true, .. }]
         ));
+
+        // Claude's raw tool result, read at ingest, is not stored again.
+        let mut meta = serde_json::Map::new();
+        meta.insert(
+            "claudeCode".to_string(),
+            serde_json::json!({ "toolName": "Bash", "toolResponse": { "stdout": "ok", "stderr": "" } }),
+        );
+        let mut update = ToolCallUpdate::new("toolu_raw", ToolCallUpdateFields::new());
+        update.meta = Some(meta);
+        assert!(claude(SessionUpdate::ToolCallUpdate(update)).is_empty());
 
         // A reported duration dates the start back from the completion.
         let mut meta = serde_json::Map::new();
