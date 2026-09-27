@@ -127,12 +127,12 @@ impl WorkflowAttribution {
     }
 
     /// The workflow owning this tool call, claiming it when it is newly
-    /// `started` while no prompt runs and exactly one workflow does.
+    /// `started` while the lead has no turn running and exactly one workflow does.
     pub(super) fn owner(
         &mut self,
         tool_call_id: &str,
         started: bool,
-        prompt_active: bool,
+        lead_turn: bool,
     ) -> Option<String> {
         if let Some(owner) = self.tools.get(tool_call_id) {
             return Some(owner.clone());
@@ -140,7 +140,7 @@ impl WorkflowAttribution {
         let [workflow] = self.running.as_slice() else {
             return None;
         };
-        if !started || prompt_active || self.tools.len() >= MAX_ATTRIBUTED_TOOLS {
+        if !started || lead_turn || self.tools.len() >= MAX_ATTRIBUTED_TOOLS {
             return None;
         }
         self.tools

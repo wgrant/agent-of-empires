@@ -261,6 +261,12 @@ impl BetweenPromptTracker {
         }
     }
 
+    /// Whether the lead has visibly started a turn of its own.
+    pub(super) fn agent_turn_announced(&self) -> bool {
+        let state = self.state();
+        state.active && state.announced
+    }
+
     pub(super) fn deactivate(&self) {
         let mut state = self.state();
         state.active = false;
@@ -606,5 +612,20 @@ mod tests {
         // A child carried across a reattach counts the same.
         tracker.readmit_subagents(["kept".to_string()]);
         assert!(tracker.work_state().is_busy());
+    }
+
+    #[test]
+    fn only_the_leads_own_activity_announces_its_turn() {
+        let tracker = BetweenPromptTracker::default();
+        let claim = TerminalClaim::new();
+        tracker.observe_subagent_activity(1_000);
+        assert!(!tracker.agent_turn_announced());
+        tracker.observe(Some(&LifecycleSignal::Progress), None, 2_000, false, &claim);
+        assert!(
+            tracker.agent_turn_announced(),
+            "a wake's first text claims its tools"
+        );
+        tracker.deactivate();
+        assert!(!tracker.agent_turn_announced());
     }
 }
