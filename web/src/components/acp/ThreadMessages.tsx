@@ -19,7 +19,9 @@ import {
   type NativeSubagent,
 } from "./activityMessages";
 import { CompactionCard } from "./CompactionCard";
+import { useMessageTimeTap } from "../../hooks/useMessageTimeTap";
 import { ElicitationAnswerCard } from "./ElicitationAnswerCard";
+import { MessageTime } from "./MessageTime";
 import { Markdown } from "./Markdown";
 import { AsyncSubagentCard, SubagentCard, ToolGroupCard } from "./GroupToolCards";
 import { NativeSubagentCard } from "./NativeSubagentCard";
@@ -30,8 +32,10 @@ export function UserMessage() {
   const sendFailure = useAuiState(
     (s) => (s.message.metadata?.custom as { promptSendFailure?: unknown } | undefined)?.promptSendFailure,
   );
+  const timeTap = useMessageTimeTap();
   return (
-    <MessagePrimitive.Root className="group mt-4 flex flex-col items-end gap-1">
+    <MessagePrimitive.Root className="group relative mt-4 flex flex-col items-end gap-1" onClick={timeTap.onClick}>
+      <MessageTime tapped={timeTap.shown} align="end" />
       <MessagePrimitive.Parts components={{ Text: UserText, Image: UserImage }} />
       {typeof sendFailure === "string" && sendFailure && <PromptSendFailureNotice reason={sendFailure} />}
     </MessagePrimitive.Root>
@@ -83,8 +87,10 @@ function UserText({ text }: { text: string }) {
 }
 
 export function AssistantMessage() {
+  const timeTap = useMessageTimeTap();
   return (
-    <MessagePrimitive.Root className="group mt-4 mr-auto w-full">
+    <MessagePrimitive.Root className="group relative mt-4 mr-auto w-full" onClick={timeTap.onClick}>
+      <MessageTime tapped={timeTap.shown} align="start" />
       <div className="text-sm text-text-primary leading-relaxed">
         <MessagePrimitive.Parts
           components={{ Text: AssistantText, Reasoning: AssistantReasoning, tools: { Override: AssistantToolCall } }}
