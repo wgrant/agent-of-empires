@@ -15,9 +15,12 @@ const STEP_TITLE_CLASS: Partial<Record<Plan["steps"][number]["status"], string>>
   InProgress: "text-text-primary font-medium",
 };
 
-export function PlanStrip({ plan }: { plan: Plan | null }) {
+/** The agent's plan; a finished one stays only until its turn ends. */
+export function PlanStrip({ plan, turnActive }: { plan: Plan | null; turnActive: boolean }) {
   const [expanded, setExpanded] = useState(false);
   if (!plan || plan.steps.length === 0) return null;
+  const finished = plan.steps.every((s) => s.status === "Done" || s.status === "Cancelled");
+  if (finished && !turnActive) return null;
 
   // Same active-step rule as the server's `plan_summary_from_plan`, so the strip and sidebar agree.
   const current =
