@@ -50,6 +50,15 @@ pub(crate) const HAS_CODEX_MANAGED_PREFERENCES: bool = true;
 
 pub(crate) mod metrics;
 
+/// This executable's path, for spawning another copy of it. A binary replaced
+/// on disk (a rebuild or an upgrade) is run from its original path.
+pub fn current_exe_for_spawn() -> std::io::Result<std::path::PathBuf> {
+    let exe = std::env::current_exe()?;
+    #[cfg(target_os = "linux")]
+    let exe = linux::replaced_exe(exe);
+    Ok(exe)
+}
+
 pub mod worker;
 
 pub mod worker_registry;
