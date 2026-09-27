@@ -33,6 +33,7 @@ function endsVisualBlock(row: ActivityRow): boolean {
     case "compacted":
     case "summary":
     case "agent_notice":
+    case "hook":
       return true;
     case "tool_start":
     case "notice":

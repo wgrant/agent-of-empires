@@ -117,6 +117,17 @@ describe("toolbar and send", () => {
     expect(textarea().value).toMatch(/@.*\//s);
   });
 
+  it("offers the agent's suggestion in an empty composer and takes it on Tab", async () => {
+    const { textarea, rerender } = mount({ promptSuggestion: "run the tests" });
+    expect(textarea().placeholder).toBe("run the tests  (Tab to use)");
+    fireEvent.keyDown(textarea(), { key: "Tab" });
+    await flush();
+    expect(textarea().value).toBe("run the tests");
+    // Not while a turn runs, when the placeholder is about steering.
+    rerender(<Harness promptSuggestion="run the tests" isRunning />);
+    expect(textarea().placeholder).not.toContain("run the tests");
+  });
+
   it("enables Send only for non-whitespace text", () => {
     const { textarea } = mount();
     const send = screen.getByRole("button", { name: "Send message" }) as HTMLButtonElement;

@@ -7,7 +7,8 @@ import type { ThreadMessageLike } from "@assistant-ui/react";
 
 import { hasTodoArrayArgsText, parseJsonObject } from "../../lib/acpArgs";
 import { lastClearIndex } from "../../lib/acpHistoryWindow";
-import type { ActivityRow, CompactionInfo, ToolCall, ToolOutputBlock } from "../../lib/acpTypes";
+import type { ActivityRow, CompactionInfo, HookInfo, ToolCall, ToolOutputBlock } from "../../lib/acpTypes";
+import { hookHeadline } from "../../lib/agentHooks";
 import { type AgentProfile, DEFAULT_AGENT_PROFILE, isSubagentToolName } from "../../lib/agentProfiles";
 
 /** Synthetic part for a subagent Task with its child tool calls. */
@@ -20,6 +21,14 @@ export const TODO_GROUP_NAME = "_aoe_todo_group";
 export const NATIVE_SUBAGENT_NAME = "_aoe_native_subagent";
 /** Synthetic part for a compaction and the summary it kept. */
 export const COMPACTION_NAME = "_aoe_compaction";
+/** Synthetic part for a Claude Code hook's run. */
+export const HOOK_NAME = "_aoe_hook";
+
+/** What a hook card renders. */
+export interface HookRun {
+  hook: HookInfo;
+  output: string;
+}
 
 /** What a compaction card renders. */
 export interface Compaction extends CompactionInfo {
@@ -228,8 +237,10 @@ export function activityToThreadMessages(
       if (row.subagent) currentAssistant.appendSubagent(nativeSubagent(row, rowsByOwner, visiblyBusy));
     } else if (row.kind === "compacted") {
       currentAssistant.appendCompaction(row);
+    } else if (row.kind === "hook") {
+      if (row.hook && hookHeadline(row.hook, row.text)) currentAssistant.appendHook(row, row.hook);
     } else if (row.kind === "tool_start" && row.tool) {
-      currentAssistant.appendToolCall(row.tool, row.outputTail);
+      currentAssistant.appendToolCall(row.tool, row.outputTail, row.toolSummary);
     } else if (row.kind === "tool_complete" || row.kind === "tool_error" || row.kind === "tool_stopped") {
       currentAssistant.completeToolCall(
         row.toolCallId ?? row.id.replace(/^(done|stopped)-/, ""),
@@ -306,7 +317,7 @@ class AssistantBuilder {
   }
 
   /** assistant-ui parts carry no timestamps or titles, so they travel as namespaced args. */
-  appendToolCall(tool: ToolCall, outputTail?: string) {
+  appendToolCall(tool: ToolCall, outputTail?: string, summary?: string) {
     const argsObj = parseJsonObject(tool.args_preview) ?? {};
     if (tool.name) argsObj._aoe_title = tool.name;
     if (tool.started_at) argsObj._aoe_started_at = tool.started_at;
@@ -315,6 +326,7 @@ class AssistantBuilder {
     if (tool.raw_name) argsObj._aoe_raw_tool_name = tool.raw_name;
     if (tool.memory_recall) argsObj._aoe_memory_recall = tool.memory_recall;
     if (outputTail) argsObj._aoe_output_tail = outputTail;
+    if (summary) argsObj._aoe_summary = summary;
     this.parts.push({
       type: "tool-call",
       toolCallId: tool.id,
@@ -330,6 +342,11 @@ class AssistantBuilder {
       toolName: NATIVE_SUBAGENT_NAME,
       argsText: JSON.stringify(subagent),
     });
+  }
+
+  appendHook(row: ActivityRow, hook: HookInfo) {
+    const run: HookRun = { hook, output: row.text };
+    this.parts.push({ type: "tool-call", toolCallId: row.id, toolName: HOOK_NAME, argsText: JSON.stringify(run) });
   }
 
   appendCompaction(row: ActivityRow) {
@@ -469,7 +486,8 @@ function collapseToolRuns(parts: DraftPart[], todosEnabled: boolean): DraftPart[
     run = [];
   };
   for (const part of parts) {
-    if (part.type === "tool-call") {
+    // A hook worth showing separates the tool calls around it, like text.
+    if (part.type === "tool-call" && part.toolName !== HOOK_NAME) {
       run.push(part);
     } else {
       flushRun();

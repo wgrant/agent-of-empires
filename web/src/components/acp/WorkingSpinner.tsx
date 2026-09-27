@@ -8,6 +8,7 @@ import {
   chooseVerb,
   deriveSpinnerState,
 } from "../../lib/acpRattle";
+import { formatTokens } from "../../lib/turnUsage";
 
 // Streaming silence before the "waiting on" label.
 const STALLED_AFTER_SECS = 30;
@@ -26,6 +27,7 @@ export function WorkingSpinner({
   compacting,
   compactionStartedAt = null,
   awaiting = [],
+  outputTokens = null,
   lastActivityRef,
 }: {
   thinking: boolean;
@@ -37,6 +39,8 @@ export function WorkingSpinner({
   compactionStartedAt?: string | null;
   /** Agents the lead's in-flight call started and is waiting on. */
   awaiting?: readonly { name: string; startedAt: string }[];
+  /** The turn's output tokens so far, as the CLI's spinner counts them. */
+  outputTokens?: number | null;
   lastActivityRef: React.RefObject<number>;
 }) {
   const [frame, setFrame] = useState(0);
@@ -122,6 +126,11 @@ export function WorkingSpinner({
         {SPINNER_FRAMES[frame]}
       </span>
       <span>{label}</span>
+      {outputTokens != null && outputTokens > 0 && !cancelling && (
+        <span data-testid="acp-working-tokens" className="not-italic text-text-dim">
+          · ↓ {formatTokens(outputTokens)} tokens
+        </span>
+      )}
     </div>
   );
 }

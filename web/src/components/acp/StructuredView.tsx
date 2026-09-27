@@ -464,6 +464,7 @@ function AcpChrome({
                     compacting={conversationNextStep.compacting}
                     compactionStartedAt={runningCompactionStart(state.activity)}
                     awaiting={agentsAwaited(state.activity, state.inFlightTool)}
+                    outputTokens={state.turnOutputTokens}
                     lastActivityRef={ctx.lastActivityRef}
                   />
                 </div>
@@ -650,6 +651,7 @@ function ComposerDock({
           quota={state.quota}
           lastModel={state.lastModel}
           lastTurnUsage={state.lastTurnUsage}
+          promptSuggestion={state.promptSuggestion}
           availableCommands={state.availableCommands}
           availability={availability}
           turnActive={state.turnActive}

@@ -15,11 +15,14 @@ import {
   SUBAGENT_TASK_NAME,
   TODO_GROUP_NAME,
   TOOL_GROUP_NAME,
+  HOOK_NAME,
   type Compaction,
+  type HookRun,
   type NativeSubagent,
 } from "./activityMessages";
 import { AgentMessageCard } from "./AgentMessageCard";
 import { CompactionCard } from "./CompactionCard";
+import { HookCard } from "./HookCard";
 import { ContextPrimerCard } from "./ContextPrimerCard";
 import { parseContextPrimer } from "../../lib/contextPrimer";
 import { useMessageTimeTap } from "../../hooks/useMessageTimeTap";
@@ -240,6 +243,10 @@ function AssistantToolCall(props: ToolPart) {
       return <AssistantToolGroup {...props} />;
     case TODO_GROUP_NAME:
       return <AssistantTodoGroup {...props} />;
+    case HOOK_NAME: {
+      const run = props.argsText ? (parseJsonObject(props.argsText) as HookRun | null) : null;
+      return run ? <HookCard hook={run.hook} output={run.output} /> : null;
+    }
     case COMPACTION_NAME: {
       const compaction = props.argsText ? (parseJsonObject(props.argsText) as Compaction | null) : null;
       return compaction ? <CompactionCard compaction={compaction} /> : null;

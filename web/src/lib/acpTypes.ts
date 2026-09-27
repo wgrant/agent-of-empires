@@ -421,6 +421,19 @@ export type AcpEvent =
       };
     }
   | { TurnTokenUsage: { usage: TurnTokenUsage } }
+  | {
+      HookUpdated: {
+        id: string;
+        name: string;
+        event: string;
+        status: string;
+        output?: string;
+        exit_code?: number | null;
+      };
+    }
+  | { PromptSuggested: { text: string } }
+  | { ToolUseSummarized: { summary: string; tool_call_ids: string[] } }
+  | { TurnOutputTokens: { tokens: number } }
   | { ModeChanged: { mode: SessionMode } }
   | {
       ModesAvailable: {
@@ -592,6 +605,10 @@ export interface AcpState {
   /** Latest model and turn token counts, latched like quota. */
   lastModel: string | null;
   lastTurnUsage: TurnTokenUsage | null;
+  /** The agent's guess at the next prompt, until one is sent. */
+  promptSuggestion: string | null;
+  /** The running turn's output tokens so far. */
+  turnOutputTokens: number | null;
   /** Cost at the latest context boundary, subtracted from the agent's lifetime total. */
   usageBaseline: { cost: number } | null;
   /** Usage when the compaction reminder was dismissed, or null while armed. */
@@ -775,7 +792,8 @@ export interface ActivityRow {
     | "summary"
     | "agent_notice"
     | "subagent"
-    | "subagent_woken";
+    | "subagent_woken"
+    | "hook";
   text: string;
   sendFailure?: string;
   toolCallId?: string;
@@ -803,7 +821,21 @@ export interface ActivityRow {
   turnStart?: boolean;
   /** The latest lines of a running tool's output, on its `tool_start` row. */
   outputTail?: string;
+  /** The hook a `hook` row reports; `text` holds its output. */
+  hook?: HookInfo;
+  /** The agent's one-line summary of the tool run a `tool_start` row is in. */
+  toolSummary?: string;
   at: string; // ISO-8601
+}
+
+/** Wire mirror of the Rust `HookInfo`. */
+export interface HookInfo {
+  /** Such as `PreToolUse:Bash`. */
+  name: string;
+  event: string;
+  /** `running`, then `success`, `error`, or `cancelled`. */
+  status: string;
+  exit_code?: number | null;
 }
 
 /** Wire mirror of the Rust `CompactionInfo`. */
@@ -860,6 +892,8 @@ export interface TranscriptRow {
   compaction?: CompactionInfo | null;
   output_tail?: string | null;
   turn_start?: boolean;
+  hook?: HookInfo | null;
+  tool_summary?: string | null;
 }
 
 export type TranscriptDelta =
@@ -916,6 +950,8 @@ export function transcriptRowToActivity(row: TranscriptRow, sessionId: string): 
     ...(row.compaction ? { compaction: row.compaction } : {}),
     ...(row.output_tail ? { outputTail: row.output_tail } : {}),
     ...(row.turn_start ? { turnStart: true } : {}),
+    ...(row.hook ? { hook: row.hook } : {}),
+    ...(row.tool_summary ? { toolSummary: row.tool_summary } : {}),
   };
 }
 
@@ -943,7 +979,14 @@ export function mergeServerRows(existing: ActivityRow[], incoming: ActivityRow[]
       // Keep the earliest raw_name across a retitling merge for subagent classification.
       if (prev.tool.raw_name) merged.raw_name = prev.tool.raw_name;
       // The newest frame owns the live tail, including clearing it.
-      out[idx] = { ...prev, tool: merged, text: merged.name, at: merged.started_at, outputTail: row.outputTail };
+      out[idx] = {
+        ...prev,
+        tool: merged,
+        text: merged.name,
+        at: merged.started_at,
+        outputTail: row.outputTail,
+        toolSummary: row.toolSummary ?? prev.toolSummary,
+      };
     } else {
       out[idx] = row;
     }
@@ -984,6 +1027,8 @@ export function emptyAcpState(): AcpState {
     quota: null,
     lastModel: null,
     lastTurnUsage: null,
+    promptSuggestion: null,
+    turnOutputTokens: null,
     usageBaseline: null,
     compactionReminderDismissed: null,
     activity: [],
@@ -1043,6 +1088,8 @@ function applyNewTurnResets(next: AcpState): void {
   next.rateLimitRetriesExhausted = false;
   next.rateLimitParked = false;
   next.rejectedPrompts = [];
+  next.promptSuggestion = null;
+  next.turnOutputTokens = null;
   next.agentUnresponsive = false;
   next.agentOrphaned = false;
   // A mid-wait user prompt is not the /loop wake; only clear once the wake time has passed.
@@ -1117,6 +1164,15 @@ export function applyEvent(state: AcpState, frame: AcpFrame): AcpState {
     next.lastTurnUsage = event.TurnTokenUsage.usage;
     return next;
   }
+  if ("TurnOutputTokens" in event) {
+    next.turnOutputTokens = event.TurnOutputTokens.tokens;
+    return next;
+  }
+  if ("PromptSuggested" in event) {
+    // One arriving late, after the next prompt went out, suggests nothing.
+    if (!next.turnActive) next.promptSuggestion = event.PromptSuggested.text;
+    return next;
+  }
   if ("UsageUpdated" in event) {
     // Subtract the boundary baseline from the lifetime cost the agent reports.
     const incoming = event.UsageUpdated.usage;
@@ -1189,6 +1245,7 @@ export function applyEvent(state: AcpState, frame: AcpFrame): AcpState {
   if ("Stopped" in event) {
     // Whether this `Stopped` ends the turn is the daemon's call (see closeTurn); the escalation deadline is ours.
     next.cancelEscalatesAt = null;
+    next.turnOutputTokens = null;
     closeTurn(next);
     if (next.monitorArmed && next.monitorWorkSeen) {
       next.monitorArmed = false;

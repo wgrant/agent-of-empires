@@ -22,6 +22,7 @@ interface SpinnerOpts {
   compacting?: boolean;
   compactionStartedSecsAgo?: number;
   awaiting?: string[];
+  outputTokens?: number;
 }
 
 function renderSpinner(opts: SpinnerOpts) {
@@ -42,6 +43,7 @@ function renderSpinner(opts: SpinnerOpts) {
         name,
         startedAt: new Date(Date.now() - 65_000).toISOString(),
       }))}
+      outputTokens={opts.outputTokens ?? null}
       lastActivityRef={ref}
     />,
   );
@@ -95,5 +97,13 @@ describe("WorkingSpinner", () => {
     else expect(screen.queryByText(/waiting on (model|tool)…/i)).toBeNull();
     if (!opts.compacting || opts.cancelling) expect(screen.queryByText(/compaction in progress…/i)).toBeNull();
     expect(screen.queryByRole("button")).toBeNull();
+  });
+
+  it("counts the turn's output tokens, as the CLI does, until stopping", () => {
+    renderSpinner({ stalledSecs: 1, tool: null, outputTokens: 3_456 });
+    expect(screen.getByTestId("acp-working-tokens").textContent).toBe("· ↓ 3.5k tokens");
+    cleanup();
+    renderSpinner({ stalledSecs: 1, tool: null, outputTokens: 3_456, cancelling: true });
+    expect(screen.queryByTestId("acp-working-tokens")).toBeNull();
   });
 });
