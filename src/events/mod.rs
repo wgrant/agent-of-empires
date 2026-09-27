@@ -8,7 +8,7 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use rusqlite::types::Value;
 use rusqlite::{params, params_from_iter, Connection, OptionalExtension};
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 
 #[derive(Debug, Clone)]
 pub struct Schema {
@@ -79,6 +79,56 @@ fn not_like_clauses(prefixes: &[&str]) -> (String, Vec<String>) {
     (fragment, patterns)
 }
 
+const AUTO_VACUUM_INCREMENTAL: i64 = 2;
+
+/// Let [`reclaim_free_pages`] return deleted rows' space to the filesystem,
+/// which otherwise keeps every page the log ever used. An existing log is
+/// rewritten once to switch; a failed rewrite retries on the next open.
+fn use_incremental_vacuum(conn: &Connection, db_path: &Path) -> Result<()> {
+    let mode: i64 = conn
+        .query_row("PRAGMA auto_vacuum", [], |row| row.get(0))
+        .context("read auto_vacuum")?;
+    if mode == AUTO_VACUUM_INCREMENTAL {
+        return Ok(());
+    }
+    conn.pragma_update(None, "auto_vacuum", "INCREMENTAL")
+        .context("set auto_vacuum=INCREMENTAL")?;
+    let populated: bool = conn
+        .query_row("SELECT EXISTS (SELECT 1 FROM sqlite_master)", [], |row| {
+            row.get(0)
+        })
+        .context("check for an existing event log")?;
+    if populated {
+        let started = std::time::Instant::now();
+        match conn.execute_batch("VACUUM") {
+            Ok(()) => info!(
+                target: "events",
+                path = %db_path.display(),
+                elapsed_ms = started.elapsed().as_millis() as u64,
+                "rewrote event log for incremental vacuum"
+            ),
+            Err(error) => warn!(
+                target: "events",
+                path = %db_path.display(),
+                %error,
+                "event log rewrite for incremental vacuum failed"
+            ),
+        }
+    }
+    Ok(())
+}
+
+/// Return the free pages left by deleted rows to the filesystem.
+pub fn reclaim_free_pages(conn: &Connection) -> Result<()> {
+    // Each step frees one page, so run the pragma to completion.
+    let mut stmt = conn
+        .prepare("PRAGMA incremental_vacuum")
+        .context("prepare incremental vacuum")?;
+    let mut rows = stmt.query([]).context("incremental vacuum")?;
+    while rows.next().context("incremental vacuum")?.is_some() {}
+    Ok(())
+}
+
 pub fn open(db_path: &Path, schema: &Schema) -> Result<Connection> {
     if let Some(parent) = db_path.parent() {
         if !parent.exists() {
@@ -89,6 +139,7 @@ pub fn open(db_path: &Path, schema: &Schema) -> Result<Connection> {
     }
     let conn = Connection::open(db_path)
         .with_context(|| format!("open event log at {}", db_path.display()))?;
+    use_incremental_vacuum(&conn, db_path)?;
     conn.pragma_update(None, "journal_mode", "WAL")
         .context("enable WAL mode")?;
     conn.pragma_update(None, "synchronous", "NORMAL")
@@ -778,6 +829,38 @@ mod tests {
         ))
         .unwrap();
         conn
+    }
+
+    /// A new log starts incremental and a legacy one is rewritten to it, and
+    /// either then hands deleted rows' pages back to the filesystem.
+    #[test]
+    fn logs_return_deleted_space_to_the_filesystem() {
+        let schema = Schema::new("t").unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let legacy = dir.path().join("legacy.db");
+        {
+            let conn = Connection::open(&legacy).unwrap();
+            conn.execute_batch("PRAGMA journal_mode = WAL; CREATE TABLE old (x);")
+                .unwrap();
+        }
+        for path in [dir.path().join("new.db"), legacy] {
+            let conn = open(&path, &schema).unwrap();
+            let pragma = |name: &str| -> i64 {
+                conn.query_row(&format!("PRAGMA {name}"), [], |row| row.get(0))
+                    .unwrap()
+            };
+            assert_eq!(pragma("auto_vacuum"), AUTO_VACUUM_INCREMENTAL, "{path:?}");
+            let payload = format!("{{\"E\":\"{}\"}}", "x".repeat(4000));
+            for seq in 0..200 {
+                insert_event(&conn, &schema, "s", seq, &payload, 0).unwrap();
+            }
+            let full = pragma("page_count");
+            conn.execute("DELETE FROM t_events", []).unwrap();
+            assert!(pragma("freelist_count") > 0);
+            reclaim_free_pages(&conn).unwrap();
+            assert_eq!(pragma("freelist_count"), 0, "{path:?}");
+            assert!(pragma("page_count") < full / 2, "{path:?}");
+        }
     }
 
     #[test]
