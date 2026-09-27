@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ConversationLifecycleNotice } from "./SessionBanners";
 import { rateLimitDetail } from "./SystemNotices";
-import { composerAvailabilityNoticeLabel } from "./StructuredView";
+import { composerAvailabilityNoticeLabel } from "./status/conversationSyncStatus";
 import type { SessionIncident } from "./status/conversationDiagnostics";
 
 afterEach(() => {
