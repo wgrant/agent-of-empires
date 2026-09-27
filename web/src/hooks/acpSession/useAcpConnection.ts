@@ -43,8 +43,14 @@ type ServerMessage =
   | { kind: "lagged"; skipped?: number }
   | { kind: "heartbeat" }
   | { kind: "reduced_state"; state?: ReducedState; unchanged?: string[] }
-  | { kind: "transcript_snapshot"; rows?: TranscriptRow[]; removed?: string[] }
+  | { kind: "transcript_snapshot"; rows?: TranscriptRow[]; removed?: string[]; last_event_at?: string | null }
   | { kind: "transcript_delta"; delta?: TranscriptDelta };
+
+/** When the session last did anything, so a stall timer survives switching sessions. */
+export function lastActivityAt(lastEventAt: string | null | undefined, now = Date.now()): number {
+  const at = lastEventAt ? Date.parse(lastEventAt) : NaN;
+  return Number.isNaN(at) ? now : Math.min(at, now);
+}
 
 function closeQuietly(ws: WebSocket): void {
   try {
@@ -299,9 +305,10 @@ export function useAcpConnection(
           return;
         }
         case "transcript_snapshot": {
-          const rows = toActivityRows((data as { rows?: TranscriptRow[] }).rows ?? [], sessionId);
-          const removed = (data as { removed?: string[] }).removed ?? [];
-          lastActivityRef.current = Date.now();
+          const snapshot = data as { rows?: TranscriptRow[]; removed?: string[]; last_event_at?: string | null };
+          const rows = toActivityRows(snapshot.rows ?? [], sessionId);
+          const removed = snapshot.removed ?? [];
+          lastActivityRef.current = lastActivityAt(snapshot.last_event_at);
           dispatch({ kind: "transcript_snapshot", rows, removed });
           return;
         }
