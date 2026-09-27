@@ -32,6 +32,18 @@ pub struct BackgroundActivity {
 }
 
 impl EventStore {
+    pub fn unfinished_workflow_ids(&self, session_id: &str) -> Vec<String> {
+        query_strings(
+            &self.conn(),
+            &format!(
+                "SELECT json_extract(event_json, '$.AsyncTaskSpawned.id') {UNFINISHED_TASKS}
+                   AND json_extract(event_json, '$.AsyncTaskSpawned.task_type') = 'workflow'"
+            ),
+            "unfinished_workflow_ids",
+            session_id,
+        )
+    }
+
     pub fn unfinished_async_task_ids(&self, session_id: &str) -> Vec<String> {
         query_strings(
             &self.conn(),
@@ -148,5 +160,10 @@ mod tests {
             (2, 1, Some(4_000))
         );
         assert_eq!(store.unfinished_async_task_ids("s-1"), ["sh"]);
+        assert!(store.unfinished_workflow_ids("s-1").is_empty());
+        store
+            .record_at("s-1", 5, &task("wf", "workflow"), 5_000)
+            .unwrap();
+        assert_eq!(store.unfinished_workflow_ids("s-1"), ["wf"]);
     }
 }

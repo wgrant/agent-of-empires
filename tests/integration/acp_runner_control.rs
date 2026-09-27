@@ -746,6 +746,7 @@ for line in sys.stdin:
                 "fake-agent".into(),
                 None,
                 Vec::new(),
+                Vec::new(),
             ),
         )
         .await
@@ -1432,6 +1433,7 @@ for line in sys.stdin:
         "review-agent".into(),
         None,
         Vec::new(),
+        Vec::new(),
     )
     .await
     .unwrap();
@@ -1601,6 +1603,7 @@ for line in sys.stdin:
         "stream-agent".into(),
         None,
         Vec::new(),
+        Vec::new(),
     )
     .await
     .unwrap();
@@ -1746,6 +1749,7 @@ for line in sys.stdin:
             None,
             "review-agent".into(),
             None,
+            Vec::new(),
             Vec::new(),
         )
         .await
@@ -2119,6 +2123,7 @@ for line in sys.stdin:
         "review-agent".into(),
         None,
         vec!["kid".into()],
+        Vec::new(),
     )
     .await
     .unwrap();

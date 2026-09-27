@@ -53,6 +53,10 @@ pub trait BroadcastSink: Send + Sync + 'static {
     fn unfinished_async_task_ids(&self, _session_id: &str) -> Vec<String> {
         Vec::new()
     }
+    /// The unfinished async tasks that are workflows.
+    fn unfinished_workflow_ids(&self, _session_id: &str) -> Vec<String> {
+        Vec::new()
+    }
     /// Persist a prompt attachment keyed to its `UserPromptSent` seq.
     fn record_attachment(&self, _session_id: &str, _seq: u64, _blob: &AttachmentBlob) -> bool {
         true
@@ -113,6 +117,10 @@ impl BroadcastSink for ChannelSink {
 
     fn unfinished_async_task_ids(&self, session_id: &str) -> Vec<String> {
         self.event_store.unfinished_async_task_ids(session_id)
+    }
+
+    fn unfinished_workflow_ids(&self, session_id: &str) -> Vec<String> {
+        self.event_store.unfinished_workflow_ids(session_id)
     }
 
     fn record_attachment(&self, session_id: &str, seq: u64, blob: &AttachmentBlob) -> bool {
