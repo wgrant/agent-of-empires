@@ -63,6 +63,8 @@ function cardLabel(subagent: NativeSubagent): "workflow" | "skill" | "subagent" 
 
 export function NativeSubagentCard({ subagent }: { subagent: NativeSubagent }) {
   const status = subagentStatus(subagent);
+  // A teammate between runs is waiting for a message, not finished.
+  const idle = status === "ok" && subagent.persistent;
   const [open, setOpen] = useToolCardExpansion(status);
   const focus = useCardFocus(`native-subagent-${subagent.id}`, () => setOpen(true));
   const tools = subagent.items.filter((item) => item.type === "tool").length;
@@ -89,7 +91,14 @@ export function NativeSubagentCard({ subagent }: { subagent: NativeSubagent }) {
         </>
       }
       // A narrow card keeps its name; the Background pane still shows the activity.
-      meta={latest && <span className="hidden max-w-[40%] truncate text-[11px] text-text-dim sm:inline">{latest}</span>}
+      meta={
+        idle ? (
+          <span className="text-[11px] text-text-dim">idle</span>
+        ) : (
+          latest && <span className="hidden max-w-[40%] truncate text-[11px] text-text-dim sm:inline">{latest}</span>
+        )
+      }
+      neutralOnDone={idle}
       expanded={open}
       onToggle={() => setOpen((v) => !v)}
       body={

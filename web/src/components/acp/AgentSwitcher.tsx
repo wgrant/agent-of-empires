@@ -8,6 +8,7 @@ import type { AgentRunState, AgentSummary } from "../../lib/agentView";
 
 const DOTS: Record<AgentRunState, string> = {
   running: "bg-brand-400 animate-pulse",
+  idle: "border border-status-running",
   done: "bg-status-running",
   failed: "bg-status-error",
   stopped: "bg-text-dim",
@@ -15,6 +16,7 @@ const DOTS: Record<AgentRunState, string> = {
 
 const LABELS: Record<AgentRunState, string> = {
   running: "working",
+  idle: "idle",
   done: "done",
   failed: "failed",
   stopped: "stopped",

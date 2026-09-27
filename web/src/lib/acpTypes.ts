@@ -377,7 +377,16 @@ export type AcpEvent =
   | { RateLimit: { info: RateLimitInfo } }
   | { RateLimitAutoResumed: { resets_at: string; manual?: boolean } }
   | { UsageUpdated: { usage: SessionUsage } }
-  | { SubagentSpawned: { id: string; parent?: string | null; name: string; task: string; at: string } }
+  | {
+      SubagentSpawned: {
+        id: string;
+        parent?: string | null;
+        name: string;
+        task: string;
+        at: string;
+        persistent?: boolean;
+      };
+    }
   | { SubagentStateChanged: { id: string; state: string; at: string } }
   | { SubagentUpdate: { id: string; event: AcpEvent } }
   | {
@@ -690,6 +699,8 @@ export interface BackgroundAgent {
   lastText: string | null;
   result: string | null;
   warning: string | null;
+  /** A native teammate that waits for messages between runs. */
+  persistent?: boolean;
 }
 
 export interface AsyncTaskUsage {
@@ -808,6 +819,8 @@ export interface SubagentInfo {
   /** Absent while it runs; then `completed`, `failed`, `cancelled`, or `disconnected`. */
   state?: string | null;
   ended_at?: string | null;
+  /** A teammate that waits for messages between runs: a finished run leaves it idle. */
+  persistent?: boolean;
 }
 
 /** Wire mirror of the Rust `TranscriptRow` (src/acp/transcript.rs). */
@@ -1362,13 +1375,16 @@ export function applyEvent(state: AcpState, frame: AcpFrame): AcpState {
     // A message woke a waiting agent for another run.
     if (agentId !== e.id) {
       next.backgroundAgents = next.backgroundAgents.map((a) =>
-        a.agentId === agentId ? { ...a, status: "running", endedAt: null, lastText: null, warning: null } : a,
+        a.agentId === agentId
+          ? { ...a, status: "running", endedAt: null, lastText: null, warning: null, persistent: true }
+          : a,
       );
       return next;
     }
     const record: BackgroundAgent = {
       agentId: e.id,
       toolCallId: "",
+      ...(e.persistent ? { persistent: true } : {}),
       description: e.name,
       prompt: e.task,
       model: "",

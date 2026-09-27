@@ -175,6 +175,11 @@ pub(super) fn extension_events(update: &Value) -> Vec<Event> {
                 name: field(update, "name").unwrap_or("Subagent").to_string(),
                 task: field(update, "task").unwrap_or_default().to_string(),
                 at: chrono::Utc::now(),
+                // claude-agent-acp (AoE fork) marks a named teammate.
+                persistent: update
+                    .pointer("/_meta/claudeCode/teammate")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
             })
             .into_iter()
             .collect(),
@@ -285,6 +290,11 @@ mod tests {
                 Some("SubagentStarted { id: \"c9\" }"),
             ),
             (
+                json!({"sessionUpdate": "subagent_spawned", "subagentSessionId": "t1", "name": "tester", "task": "Wait", "capabilities": {}, "_meta": {"claudeCode": {"teammate": true}}}),
+                vec!["SubagentSpawned:t1:tester:Wait:teammate"],
+                Some("SubagentStarted { id: \"t1\" }"),
+            ),
+            (
                 json!({"sessionUpdate": "async_task_spawned", "asyncTaskId": "w1", "name": "calc-bug-check", "taskType": "workflow", "description": "Check calc.py", "showInTranscript": false, "canStop": true}),
                 vec!["AsyncTaskSpawned:w1:calc-bug-check:workflow:true"],
                 None,
@@ -350,8 +360,12 @@ mod tests {
                         parent: None,
                         name,
                         task,
+                        persistent,
                         ..
-                    } => format!("SubagentSpawned:{id}:{name}:{task}"),
+                    } => format!(
+                        "SubagentSpawned:{id}:{name}:{task}{}",
+                        if *persistent { ":teammate" } else { "" }
+                    ),
                     Event::AsyncTaskSpawned {
                         id,
                         name,

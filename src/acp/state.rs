@@ -783,6 +783,10 @@ pub enum Event {
         name: String,
         task: String,
         at: DateTime<Utc>,
+        /// A teammate that waits for messages between runs, so a finished run
+        /// leaves it idle rather than done.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        persistent: bool,
     },
     /// A native subagent ended: `completed`, `failed`, `cancelled`, or `disconnected`.
     SubagentStateChanged {
