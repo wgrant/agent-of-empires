@@ -22,6 +22,21 @@ pub(super) fn spawned_child(update: &SessionUpdate) -> Option<SessionId> {
         .map(|id| SessionId::new(id.to_string()))
 }
 
+/// The child an update reports ended. A woken teammate runs under a new
+/// session id, so an ended one never speaks again.
+pub(super) fn ended_child(update: &SessionUpdate) -> Option<SessionId> {
+    let update = extension_update(update)?;
+    let ended = update.get("sessionUpdate")?.as_str()? == "subagent_state_update"
+        && matches!(
+            update.get("state")?.as_str()?,
+            "completed" | "failed" | "cancelled" | "disconnected"
+        );
+    ended
+        .then(|| update.get("subagentSessionId")?.as_str())
+        .flatten()
+        .map(|id| SessionId::new(id.to_string()))
+}
+
 /// Tag a transcript event with the subagent it came from, if any.
 pub(super) fn scoped(subagent: Option<&str>, event: Event) -> Event {
     match subagent {
