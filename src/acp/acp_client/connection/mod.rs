@@ -97,10 +97,11 @@ fn reply<T: agent_client_protocol::JsonRpcResponse>(
     }
 }
 
-/// Run a request that waits on the user as its own task: handlers share one
-/// dispatch loop, so awaiting the answer there would hold back every other
-/// message from the agent. The loop resumes once the task drops `published`,
-/// after publishing the request, so later messages still follow it.
+/// Run a request that can take a while, such as one waiting on the user, as
+/// its own task: handlers share one dispatch loop, so awaiting it there would
+/// hold back every other message from the agent. The loop resumes once the
+/// task drops `published`, after admitting the request, so later messages
+/// still follow it.
 async fn off_dispatch_loop<F>(
     conn: ConnectionTo<Agent>,
     run: impl FnOnce(oneshot::Sender<()>) -> F,
@@ -124,16 +125,19 @@ macro_rules! resource_requests {
                 let res = $resources.clone();
                 let ingress = $ingress.clone();
                 builder.on_receive_request(
-                    move |request: $req, responder: Responder<$resp>, _conn| {
+                    move |request: $req, responder: Responder<$resp>, conn: ConnectionTo<Agent>| {
                         let (res, ingress) = (res.clone(), ingress.clone());
-                        async move {
+                        off_dispatch_loop(conn, move |published| async move {
                             // A foreign session's callback performs no effect.
-                            let _guard = match ingress.request(&request.session_id).await {
+                            let admission = match ingress.request(&request.session_id).await {
                                 Ok(guard) => guard,
                                 Err(error) => return reply(responder, Err(error)),
                             };
+                            // A terminal runs its whole command here.
+                            let _callback = ingress.callback(&admission);
+                            drop((admission, published));
                             reply(responder, $handler(request, res).await)
-                        }
+                        })
                     },
                     agent_client_protocol::on_receive_request!(),
                 )
