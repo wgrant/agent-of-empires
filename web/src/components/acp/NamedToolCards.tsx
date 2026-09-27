@@ -338,10 +338,10 @@ interface SpecialHeader {
   body?: React.ReactNode;
 }
 
-/** A SendMessage result: `{success, message}` JSON. */
+/** A SendMessage result: `{success, message}` JSON, or plain text such as an adapter error. */
 function messageOutcome(output: string | undefined): { ok: boolean | null; message: string | null } {
   const parsed = output ? parseJsonObject(output) : null;
-  if (!parsed) return { ok: null, message: null };
+  if (!parsed) return { ok: null, message: output?.trim() || null };
   return { ok: typeof parsed.success === "boolean" ? parsed.success : null, message: pickStr(parsed, "message") };
 }
 
@@ -349,17 +349,20 @@ function SendMessageBody({
   to,
   message,
   failure,
+  note,
 }: {
   to: string | null;
   message: string | null;
   failure: string | null;
+  note: string | null;
 }) {
   const { agents } = useContext(BackgroundAgentsContext);
   // A native subagent reports no launching tool call; its record is keyed by its session.
   const recipient = to ? agents.find((a) => a.toolCallId === "" && a.description === to) : undefined;
   return (
     <div className="flex flex-col gap-1.5 px-3 py-2">
-      {failure && <p className="text-xs text-status-error">{failure}</p>}
+      {failure && <p className="whitespace-pre-wrap break-words text-xs text-status-error">{failure}</p>}
+      {note && <p className="whitespace-pre-wrap break-words text-xs text-text-dim">{note}</p>}
       {message && (
         <div className="max-h-64 overflow-y-auto text-sm text-text-primary">
           <Markdown text={message} smooth={false} />
@@ -453,10 +456,11 @@ const SPECIAL_TOOLS = {
       primary: mono(load ?? query, "search tools"),
     };
   },
-  SendMessage: (_tool: ToolCall, args: Args, output?: string): SpecialHeader => {
+  SendMessage: (_tool: ToolCall, args: Args, output?: string, failed?: boolean): SpecialHeader => {
     const to = pickStr(args, "to");
     const message = pickStr(args, "message");
     const outcome = messageOutcome(output);
+    const failure = failed || outcome.ok === false ? (outcome.message ?? "(no error detail provided)") : null;
     return {
       icon: <Send className={ICON} />,
       label: "message",
@@ -468,7 +472,14 @@ const SPECIAL_TOOLS = {
         <span className={TABULAR_META}>woke {to}</span>
       ),
       status: outcome.ok === false ? "err" : undefined,
-      body: <SendMessageBody to={to} message={message} failure={outcome.ok === false ? outcome.message : null} />,
+      body: (
+        <SendMessageBody
+          to={to}
+          message={message}
+          failure={failure}
+          note={!failure && outcome.ok === null ? outcome.message : null}
+        />
+      ),
     };
   },
   ListAgents: (_tool: ToolCall, _args: Args, output?: string): SpecialHeader => {
@@ -535,7 +546,11 @@ export function classifySpecialTool(
 export function SpecialToolCard({ tool, result, name }: ToolCardProps & { name: SpecialToolName }) {
   const args = useToolArgs(tool);
   const output = result?.text ?? "";
-  const { status: statusOverride, body: customBody, ...header } = SPECIAL_TOOLS[name](tool, args, output);
+  const {
+    status: statusOverride,
+    body: customBody,
+    ...header
+  } = SPECIAL_TOOLS[name](tool, args, output, result?.kind === "tool_error");
   const status = statusOverride ?? statusFor(result);
   const [open, setOpen] = useToolCardExpansion(status);
   // A wakeup's `prompt` is a loop sentinel or a repeat of the user's input.
