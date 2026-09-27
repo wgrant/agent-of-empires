@@ -1,6 +1,7 @@
 //! Session-update kinds the ACP crate cannot represent yet: `notice`,
 //! `compaction_update`, `compaction_summary_chunk`, the native subagent
-//! lifecycle, and AIR async tasks. The handshake advertises the capabilities that unlock them;
+//! lifecycle, AIR async tasks, and the claude-agent-acp fork's
+//! [`AOE_SESSION_UPDATES`]. The handshake advertises the capabilities that unlock them;
 //! see `initialize_params`. They are tunnelled
 //! through a `session_info_update`'s `_meta`, keeping the typed pipeline's
 //! session-identity and ordering guarantees.
@@ -23,6 +24,14 @@ const EXTENSION_KINDS: &[&str] = &[
     "async_task_progress",
     "async_task_state_update",
 ];
+/// Claude Code state the claude-agent-acp fork sends to a client listing it
+/// in `clientCapabilities._meta["aoe/sessionUpdates"]`.
+pub(super) const AOE_SESSION_UPDATES: &[&str] = &[
+    "hook_update",
+    "prompt_suggestion",
+    "tool_use_summary",
+    "turn_output_tokens",
+];
 
 /// Rewrite an extension update inside `session/update` params into its tunnelled form.
 pub(super) fn tunnel_extension_update(params: &mut Value) {
@@ -38,7 +47,7 @@ pub(super) fn tunnel_extension_update(params: &mut Value) {
     let is_extension = update
         .get("sessionUpdate")
         .and_then(Value::as_str)
-        .is_some_and(|kind| EXTENSION_KINDS.contains(&kind));
+        .is_some_and(|kind| EXTENSION_KINDS.contains(&kind) || AOE_SESSION_UPDATES.contains(&kind));
     if is_extension {
         let original = update.take();
         *update = json!({
@@ -205,6 +214,43 @@ pub(super) fn extension_events(update: &Value) -> Vec<Event> {
         Some(kind @ ("async_task_spawned" | "async_task_progress" | "async_task_state_update")) => {
             async_task_events(kind, update).into_iter().collect()
         }
+        Some("hook_update") => match (owned(update, "hookId"), field(update, "status")) {
+            (Some(id), Some(status)) => vec![Event::HookUpdated {
+                id,
+                name: owned(update, "name").unwrap_or_else(|| "Hook".into()),
+                event: owned(update, "event").unwrap_or_default(),
+                status: status.to_string(),
+                output: owned(update, "output").unwrap_or_default(),
+                exit_code: update
+                    .get("exitCode")
+                    .and_then(Value::as_i64)
+                    .and_then(|code| i32::try_from(code).ok()),
+            }],
+            _ => Vec::new(),
+        },
+        Some("prompt_suggestion") => owned(update, "suggestion")
+            .map(|text| Event::PromptSuggested { text })
+            .into_iter()
+            .collect(),
+        Some("tool_use_summary") => owned(update, "summary")
+            .map(|summary| Event::ToolUseSummarized {
+                summary,
+                tool_call_ids: update
+                    .get("toolCallIds")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|id| id.as_str().map(str::to_string))
+                    .collect(),
+            })
+            .into_iter()
+            .collect(),
+        Some("turn_output_tokens") => update
+            .get("tokens")
+            .and_then(Value::as_u64)
+            .map(|tokens| Event::TurnOutputTokens { tokens })
+            .into_iter()
+            .collect(),
         // The summary also arrives whole on the completed update.
         _ => Vec::new(),
     }
@@ -328,6 +374,30 @@ mod tests {
                 json!({"sessionUpdate": "subagent_state_update", "subagentSessionId": "c9", "state": "failed"}),
                 vec!["SubagentStateChanged:c9:failed"],
                 Some("SubagentEnded { id: \"c9\" }"),
+            ),
+            (
+                json!({"sessionUpdate": "hook_update", "hookId": "h1", "name": "PreToolUse:Bash", "event": "PreToolUse", "status": "error", "output": "blocked\n", "exitCode": 2}),
+                vec![
+                    r#"HookUpdated { id: "h1", name: "PreToolUse:Bash", event: "PreToolUse", status: "error", output: "blocked\n", exit_code: Some(2) }"#,
+                ],
+                None,
+            ),
+            (
+                json!({"sessionUpdate": "prompt_suggestion", "suggestion": "run the tests"}),
+                vec![r#"PromptSuggested { text: "run the tests" }"#],
+                None,
+            ),
+            (
+                json!({"sessionUpdate": "tool_use_summary", "summary": "Read 2 files", "toolCallIds": ["t1", "t2"]}),
+                vec![
+                    r#"ToolUseSummarized { summary: "Read 2 files", tool_call_ids: ["t1", "t2"] }"#,
+                ],
+                None,
+            ),
+            (
+                json!({"sessionUpdate": "turn_output_tokens", "tokens": 1234}),
+                vec!["TurnOutputTokens { tokens: 1234 }"],
+                None,
             ),
         ];
         for (raw, want_events, want_signal) in cases {
