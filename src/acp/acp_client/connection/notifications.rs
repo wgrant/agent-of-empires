@@ -164,6 +164,12 @@ impl Shared {
         }
     }
 
+    /// A user prompt or a turn the lead started itself: new tool calls are
+    /// the lead's, not a running workflow's.
+    pub(super) fn lead_turn_running(&self) -> bool {
+        self.prompt_in_flight.load(Ordering::Relaxed) || self.between_prompt.agent_turn_announced()
+    }
+
     pub(super) fn reset_message_dedup(&self) {
         self.agent_msg_dedup
             .lock()
@@ -190,11 +196,7 @@ impl Shared {
                 .workflows
                 .lock()
                 .expect("workflow attribution mutex poisoned")
-                .owner(
-                    tool_call_id,
-                    started,
-                    self.prompt_in_flight.load(Ordering::Relaxed),
-                ),
+                .owner(tool_call_id, started, self.lead_turn_running()),
             _ => None,
         };
         let subagent = native_subagent.clone().or_else(|| workflow.clone());

@@ -286,7 +286,7 @@ pub(super) async fn run_connection_task<W, R>(
                                 .owner(
                                     &request.tool_call.tool_call_id.0,
                                     true,
-                                    shared.prompt_in_flight.load(Ordering::Relaxed),
+                                    shared.lead_turn_running(),
                                 )
                         };
                         let outcome = handle_permission_request(
