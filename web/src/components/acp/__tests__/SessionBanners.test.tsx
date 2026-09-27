@@ -107,6 +107,13 @@ describe("ScheduledWakeupBanner", () => {
     expect(container.textContent).toBe("");
   });
 
+  it("never shows a wake that passed longer ago than the grace window", () => {
+    const { container } = render(
+      <ScheduledWakeupBanner wakeAt={new Date(Date.now() - 60_000).toISOString()} reason="fallback" />,
+    );
+    expect(container.textContent).toBe("");
+  });
+
   it("keeps the countdown while the wake is still in the future", () => {
     vi.useFakeTimers();
     const { container } = render(
