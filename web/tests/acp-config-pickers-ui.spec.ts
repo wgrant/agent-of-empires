@@ -112,11 +112,18 @@ test("OpenCode's long model menu stays within the mobile viewport and scrolls", 
   expect(bounds).not.toBeNull();
   expect(bounds!.y).toBeGreaterThanOrEqual(0);
   expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(664);
+  expect(bounds!.x).toBeGreaterThanOrEqual(0);
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(390);
 
-  const scrollTop = await menu.evaluate((element) => {
-    element.scrollTop = element.scrollHeight;
-    return element.scrollTop;
-  });
+  // The options scroll beneath the menu's fixed heading.
+  const scrollTop = await menu
+    .getByRole("menuitem")
+    .first()
+    .evaluate((item) => {
+      const list = item.parentElement!;
+      list.scrollTop = list.scrollHeight;
+      return list.scrollTop;
+    });
   expect(scrollTop).toBeGreaterThan(0);
   await expect(page.getByTestId("config-option-model-value-model-30")).toBeVisible();
 });
