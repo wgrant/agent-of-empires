@@ -49,7 +49,7 @@ import {
   type ComposerAvailability,
   type ConversationDiagnosticsSnapshot,
 } from "./status/conversationDiagnostics";
-import { deriveConversationSyncStatus } from "./status/conversationSyncStatus";
+import { composerAvailabilityNoticeLabel, deriveConversationSyncStatus } from "./status/conversationSyncStatus";
 import { deriveConversationNextStep } from "./status/conversationStatus";
 import {
   deriveSessionDiagnostics,
@@ -647,19 +647,6 @@ function ConversationAvailabilityNotice({ label }: { label: string }) {
       {label}
     </div>
   );
-}
-
-export function composerAvailabilityNoticeLabel(
-  availability: ComposerAvailability,
-  conversationSync: ReturnType<typeof deriveConversationSyncStatus>,
-): string | null {
-  if (conversationSync === "reconnect") {
-    return "Updating conversation…";
-  }
-  if (availability.kind === "queue_for_recovery") {
-    return "Messages will be queued until the session resumes.";
-  }
-  return null;
 }
 
 function ComposerAvailabilityNotice({
