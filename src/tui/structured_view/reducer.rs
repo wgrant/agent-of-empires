@@ -474,6 +474,7 @@ mod tests {
             choice: false,
             requested_at: Utc::now(),
             resolved: None,
+            subagent: None,
         }
     }
 

@@ -1,7 +1,7 @@
 // The subagents a session delegated to, and each one's own transcript as a
 // thread of its own.
 
-import type { ActivityRow } from "./acpTypes";
+import type { ActivityRow, Approval } from "./acpTypes";
 
 /** `idle`: a teammate between runs, waiting for a message. */
 export type AgentRunState = "running" | "idle" | "done" | "failed" | "stopped";
@@ -83,6 +83,23 @@ export function lastActivityByAgent(rows: readonly ActivityRow[]): Map<string, s
     }
   }
   return latest;
+}
+
+/** The subagent asking for an approval, and the top-level agent whose view shows it. */
+export function approvalAsker(approval: Approval, rows: readonly ActivityRow[]): { id: string; name: string } | null {
+  if (!approval.subagent) return null;
+  const headers = new Map(
+    rows.flatMap((r) => (r.kind === "subagent" && r.subagent ? [[r.subagent.id, r] as const] : [])),
+  );
+  const asker = headers.get(agentIdOf(approval.subagent));
+  if (!asker?.subagent) return null;
+  let top = asker;
+  for (let depth = 0; top.subagentId && depth < 32; depth += 1) {
+    const parent = headers.get(top.subagentId);
+    if (!parent) break;
+    top = parent;
+  }
+  return { id: top.subagent!.id, name: asker.subagent.name };
 }
 
 export interface AgentMessage {

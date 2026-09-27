@@ -99,6 +99,9 @@ pub struct Approval {
     pub choice: bool,
     pub requested_at: DateTime<Utc>,
     pub resolved: Option<ResolvedApproval>,
+    /// The subagent session asking, when it is not the main agent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subagent: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

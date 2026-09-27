@@ -344,6 +344,7 @@ mod tests {
                 choice: false,
                 requested_at: Utc::now(),
                 resolved: None,
+                subagent: None,
             },
         };
         // (name, events, status, age_secs, expect_repair)

@@ -14,7 +14,7 @@ import { useSessionThinkingDisplay } from "../../hooks/useSessionThinkingDisplay
 import { useWebSettings } from "../../hooks/useWebSettings";
 import { useDashboardConnectionDiagnostics } from "../../lib/connectionState";
 import { lastClearIndex } from "../../lib/acpHistoryWindow";
-import { listAgents } from "../../lib/agentView";
+import { approvalAsker, listAgents } from "../../lib/agentView";
 import { derivePromptOutbox } from "../../lib/acpPromptOutbox";
 import { AgentProfileProvider } from "../../lib/agentProfileContext";
 import { conversationFontSizeRem } from "../../lib/conversationFontSize";
@@ -482,6 +482,7 @@ function AcpChrome({
                 <ApprovalCard
                   key={approval.nonce}
                   approval={approval}
+                  asker={approvalAsker(approval, state.activity)}
                   onResolve={(decision, optionId) => ctx.resolveApproval(approval.nonce, decision, optionId)}
                 />
               ))}

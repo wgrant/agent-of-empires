@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import type { ActivityRow } from "./acpTypes";
-import { agentActivity, agentIdOf, lastActivityByAgent, listAgents, parseAgentMessages } from "./agentView";
+import type { ActivityRow, Approval } from "./acpTypes";
+import {
+  agentActivity,
+  agentIdOf,
+  approvalAsker,
+  lastActivityByAgent,
+  listAgents,
+  parseAgentMessages,
+} from "./agentView";
 
 const AT = "2026-09-27T00:00:00Z";
 const row = (id: string, kind: ActivityRow["kind"], text: string, extra: Partial<ActivityRow> = {}): ActivityRow => ({
@@ -73,5 +80,12 @@ describe("agent views", () => {
       timed.find((r) => r.id === "m-n")!.at,
       timed.find((r) => r.id === "m-r")!.at,
     ]);
+  });
+
+  it("names who asks for an approval, and the top-level agent whose view shows it", () => {
+    const asking = (subagent: string | null) => ({ subagent }) as Approval;
+    expect(approvalAsker(asking("t:generation:2"), rows)).toEqual({ id: "t", name: "tester" });
+    expect(approvalAsker(asking("n"), rows)).toEqual({ id: "t", name: "nested" });
+    expect(approvalAsker(asking(null), rows)).toBeNull();
   });
 });

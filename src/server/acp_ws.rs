@@ -777,6 +777,7 @@ mod tests {
             choice: false,
             requested_at: chrono::Utc::now(),
             resolved: None,
+            subagent: None,
         };
         let history = vec![
             (
@@ -1065,6 +1066,7 @@ mod tests {
             choice: false,
             requested_at: chrono::Utc::now(),
             resolved: None,
+            subagent: None,
         };
         let state = crate::server::test_support::build_test_app_state(Vec::new());
         let event = Event::ApprovalRequested {
