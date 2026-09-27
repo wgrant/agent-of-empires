@@ -210,7 +210,8 @@ pub(super) async fn handle_permission_request(
     // generic client rendered no labels and sent no option id, so by-kind
     // selection would answer the agent's first option for the user (#3741).
     let choice_list = is_choice_list(&offered);
-    let approval = build_approval(tool_call, offered);
+    let mut approval = build_approval(tool_call, offered);
+    approval.subagent = subagent.map(str::to_string);
     let nonce = approval.nonce.clone();
 
     let (resolve_tx, resolve_rx) = oneshot::channel::<ApprovalResolutionMessage>();
@@ -519,10 +520,12 @@ mod tests {
             pending.clone(),
             &crate::acp::agent_profiles::GEMINI,
             cache,
-            None,
+            Some("kid".into()),
         ));
         let nonce = loop {
             if let Event::ApprovalRequested { approval } = event_rx.recv().await.expect("events") {
+                // The card names the subagent asking.
+                assert_eq!(approval.subagent.as_deref(), Some("kid"));
                 break approval.nonce;
             }
         };

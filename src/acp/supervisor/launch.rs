@@ -1571,6 +1571,7 @@ mod tests {
             choice: false,
             requested_at: chrono::Utc::now(),
             resolved: None,
+            subagent: None,
         };
         sink.publish(
             "s-startup",

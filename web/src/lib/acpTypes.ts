@@ -177,6 +177,8 @@ export interface Approval {
     message?: string | null;
     resolved_at: string;
   } | null;
+  /** The subagent session asking, when it is not the main agent. */
+  subagent?: string | null;
 }
 
 export type ElicitationFieldKind = "free_text" | "single_select" | "multi_select" | "number" | "integer" | "boolean";

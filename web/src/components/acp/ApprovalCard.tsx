@@ -22,15 +22,18 @@ import { AlertTriangle, Check, ChevronDown, MessageCircleQuestion, Shield, X } f
 import type { Approval, ApprovalDecision, ApprovalOptionKind } from "../../lib/acpTypes";
 import { useServerDown, OFFLINE_TITLE } from "../../lib/connectionState";
 import { hasArgsBody, humanizePermissionTitle, parseJsonObject, previewFromArgs } from "../../lib/acpArgs";
+import { requestAgentView } from "../../hooks/useAgentView";
 
 interface Props {
   approval: Approval;
   onResolve: (decision: ApprovalDecision, optionId?: string) => Promise<void>;
+  /** The subagent asking, when it is not the main agent. */
+  asker?: { id: string; name: string } | null;
 }
 
 const LONG_PRESS_MS = 800;
 
-export function ApprovalCard({ approval, onResolve }: Props) {
+export function ApprovalCard({ approval, onResolve, asker }: Props) {
   const offline = useServerDown();
   const [phase, setPhase] = useState<"pending" | "submitting" | "rolled-back">("pending");
   const [progress, setProgress] = useState(0);
@@ -143,10 +146,27 @@ export function ApprovalCard({ approval, onResolve }: Props) {
         approval.destructive ? "border-rose-900/60 bg-rose-950/20" : "border-brand-700/40 bg-brand-700/5",
       ].join(" ")}
       role="alertdialog"
-      aria-label={`${isChoice && !approval.destructive ? "Question" : "Approval needed"}: ${humanizePermissionTitle(
+      aria-label={`${isChoice && !approval.destructive ? "Question" : "Approval needed"}${asker ? ` from ${asker.name}` : ""}: ${humanizePermissionTitle(
         approval.tool_call.name,
       )}`}
     >
+      {asker && (
+        <div
+          data-testid="approval-asker"
+          className="flex items-center gap-1.5 border-b border-surface-800/60 px-3 py-1 text-[11px] text-text-dim"
+        >
+          <span>
+            Asked by <span className="text-text-secondary">{asker.name}</span>
+          </span>
+          <button
+            type="button"
+            onClick={() => requestAgentView(asker.id)}
+            className="ml-auto text-text-dim hover:text-text-secondary"
+          >
+            View agent
+          </button>
+        </div>
+      )}
       <Header
         type={canExpand ? "button" : undefined}
         onClick={canExpand ? () => setExpanded((v) => !v) : undefined}

@@ -18,6 +18,7 @@ pub fn build_approval(tool_call: ToolCall, options: Vec<ApprovalOption>) -> Appr
         options,
         requested_at: Utc::now(),
         resolved: None,
+        subagent: None,
     }
 }
 

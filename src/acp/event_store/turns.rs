@@ -793,6 +793,7 @@ mod tests {
                 choice: false,
                 requested_at: chrono::Utc::now(),
                 resolved: None,
+                subagent: None,
             },
         };
         let elicitation = |nonce: &Nonce| Event::ElicitationRequested {
