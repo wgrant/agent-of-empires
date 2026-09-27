@@ -1,10 +1,11 @@
 // Structured view conversation surface. assistant-ui renders the thread shell;
 // state lives in AcpRuntime and is only fed to assistant-ui, never owned by it.
 
-import { useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ThreadPrimitive } from "@assistant-ui/react";
 import { ChevronDown, LoaderCircle, RotateCcw } from "lucide-react";
 
+import { useAgentView } from "../../hooks/useAgentView";
 import { useHasMessageMargin } from "../../hooks/useHasMessageMargin";
 import { useIsWideViewport } from "../../hooks/useIsWideViewport";
 import { useConnectionIncidentVisibility } from "../../hooks/useConnectionIncidentVisibility";
@@ -13,6 +14,7 @@ import { useSessionThinkingDisplay } from "../../hooks/useSessionThinkingDisplay
 import { useWebSettings } from "../../hooks/useWebSettings";
 import { useDashboardConnectionDiagnostics } from "../../lib/connectionState";
 import { lastClearIndex } from "../../lib/acpHistoryWindow";
+import { listAgents } from "../../lib/agentView";
 import { derivePromptOutbox } from "../../lib/acpPromptOutbox";
 import { AgentProfileProvider } from "../../lib/agentProfileContext";
 import { conversationFontSizeRem } from "../../lib/conversationFontSize";
@@ -25,6 +27,7 @@ import { AcpFileRefContext } from "./AcpFileRefContext";
 import { AcpRuntime, type AcpContext } from "./AcpRuntime";
 import { ApprovalCard } from "./ApprovalCard";
 import { AskUserQuestionCard } from "./AskUserQuestionCard";
+import { AgentSwitcher } from "./AgentSwitcher";
 import { AttentionChime } from "./AttentionChime";
 import { BackgroundAgentsContext } from "./backgroundAgentsContext";
 import { CompactionReminderBanner } from "./CompactionReminderBanner";
@@ -109,6 +112,7 @@ export function StructuredView(props: Props) {
   const [showClearedTurns, setShowClearedTurns] = useState(false);
   const [toolDensity, toggleToolDensity] = useToolDensityPref();
   const thinkingDisplay = useSessionThinkingDisplay(sessionId).effective;
+  const [viewedAgentId, setViewedAgentId] = useAgentView(sessionId);
   return (
     <AcpFileRefContext.Provider value={{ onOpenFileRef, fileRefSession }}>
       <AgentProfileProvider toolKey={tool} clearAliases={clearAliases}>
@@ -119,6 +123,7 @@ export function StructuredView(props: Props) {
               archivedAt={archivedAt}
               snoozedUntil={snoozedUntil}
               showClearedTurns={showClearedTurns}
+              viewedAgentId={viewedAgentId}
             >
               {(ctx) => (
                 <BackgroundAgentsContext.Provider
@@ -134,6 +139,8 @@ export function StructuredView(props: Props) {
                     onToggleClearedTurns={() => setShowClearedTurns((v) => !v)}
                     toolDensity={toolDensity}
                     onToggleToolDensity={toggleToolDensity}
+                    viewedAgentId={viewedAgentId}
+                    onViewAgent={setViewedAgentId}
                   />
                 </BackgroundAgentsContext.Provider>
               )}
@@ -182,6 +189,8 @@ interface ChromeProps {
   onToggleClearedTurns: () => void;
   toolDensity: "detailed" | "compact";
   onToggleToolDensity: () => void;
+  viewedAgentId: string | null;
+  onViewAgent: (agentId: string | null) => void;
 }
 
 function AcpChrome({
@@ -191,6 +200,8 @@ function AcpChrome({
   onToggleClearedTurns,
   toolDensity,
   onToggleToolDensity,
+  viewedAgentId,
+  onViewAgent,
 }: ChromeProps) {
   const { sessionId, acpWorkerState, acpAgent } = view;
   const { state, status } = ctx;
@@ -260,7 +271,14 @@ function AcpChrome({
     connection: connectionSnapshot,
     session: { sessionId, kind: "structured", lifecycle: sessionDiagnostics },
   };
-  const composerAvailability = deriveComposerAvailability(conversationDiagnostics);
+  const agents = useMemo(() => listAgents(state.activity), [state.activity]);
+  const viewedAgent = agents.find((a) => a.id === viewedAgentId);
+  const viewingAgent = viewedAgent !== undefined;
+  const sessionComposerAvailability = deriveComposerAvailability(conversationDiagnostics);
+  const composerAvailability: ComposerAvailability =
+    viewingAgent && sessionComposerAvailability.kind !== "read_only"
+      ? { kind: "blocked", reason: "viewing_agent", agent: viewedAgent.name }
+      : sessionComposerAvailability;
   const displayConnectionDiagnostics = selectConnectionDiagnostics(connectionSnapshot);
   const conversationSync = deriveConversationSyncStatus({
     replaySyncing: ctx.replaySyncing,
@@ -358,6 +376,10 @@ function AcpChrome({
         dismissError={ctx.dismissError}
       />
 
+      {agents.length > 0 && (
+        <AgentSwitcher agents={agents} viewedAgentId={viewingAgent ? viewedAgentId : null} onView={onViewAgent} />
+      )}
+
       <ThreadPrimitive.Root className="relative flex flex-1 flex-col min-h-0">
         {connectionNotice}
         <div className="relative flex min-h-0 flex-1 flex-col">
@@ -388,7 +410,7 @@ function AcpChrome({
                 </div>
               )}
 
-              {hiddenCount > 0 && (
+              {hiddenCount > 0 && !viewingAgent && (
                 <ClearedTurnsBanner
                   hiddenCount={hiddenCount}
                   expanded={showClearedTurns}
@@ -396,7 +418,7 @@ function AcpChrome({
                 />
               )}
 
-              {ctx.canLoadEarlierHistory && (
+              {ctx.canLoadEarlierHistory && !viewingAgent && (
                 <div className="mb-3 flex justify-center">
                   <button
                     type="button"
@@ -412,7 +434,7 @@ function AcpChrome({
 
               <ThreadPrimitive.Messages components={{ UserMessage, AssistantMessage }} />
 
-              {ctx.canLoadNewerHistory && (
+              {ctx.canLoadNewerHistory && !viewingAgent && (
                 <div className="mt-3 flex justify-center">
                   <button
                     type="button"
@@ -425,7 +447,7 @@ function AcpChrome({
                 </div>
               )}
 
-              {conversationNextStep?.kind === "working" && (
+              {conversationNextStep?.kind === "working" && !viewingAgent && (
                 <div className="mt-3 ml-1">
                   <WorkingSpinner
                     thinking={conversationNextStep.thinking}

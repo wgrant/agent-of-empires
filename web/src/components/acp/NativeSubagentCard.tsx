@@ -4,7 +4,9 @@
 import { Sparkles, Workflow } from "lucide-react";
 
 import type { NativeSubagent, NativeSubagentItem } from "./activityMessages";
+import { requestAgentView } from "../../hooks/useAgentView";
 import { useCardFocus } from "../../hooks/useCardFocus";
+import { AgentMessageCard } from "./AgentMessageCard";
 import { AssistantReasoning } from "./AssistantReasoning";
 import { Markdown } from "./Markdown";
 import { CardChrome, PlaceholderLine, useToolCardExpansion, type Status } from "./ToolCardChrome";
@@ -45,6 +47,8 @@ function ItemView({ item }: { item: NativeSubagentItem }) {
       return item.start.tool ? <ToolCard tool={item.start.tool} result={item.result} nested /> : null;
     case "subagent":
       return <NativeSubagentCard subagent={item.subagent} />;
+    case "message":
+      return <AgentMessageCard text={item.text} align="start" />;
   }
 }
 
@@ -94,6 +98,15 @@ export function NativeSubagentCard({ subagent }: { subagent: NativeSubagent }) {
             data-testid="native-subagent-body"
             className="flex flex-col gap-1 border-t border-surface-800 bg-surface-900/30 px-3 py-2"
           >
+            {!subagent.nested && (
+              <button
+                type="button"
+                onClick={() => requestAgentView(subagent.id)}
+                className="self-end text-[11px] text-text-dim hover:text-text-secondary"
+              >
+                Open agent view
+              </button>
+            )}
             {subagent.task && label === "skill" ? (
               // The skill's own recipe, not a task the agent wrote.
               <details className="text-xs text-text-dim">

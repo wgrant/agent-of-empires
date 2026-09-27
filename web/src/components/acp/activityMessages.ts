@@ -31,7 +31,9 @@ export type NativeSubagentItem =
   | { type: "text"; text: string }
   | { type: "reasoning"; text: string }
   | { type: "tool"; start: ActivityRow; result?: ActivityRow }
-  | { type: "subagent"; subagent: NativeSubagent };
+  | { type: "subagent"; subagent: NativeSubagent }
+  /** A message that woke the agent for another run. */
+  | { type: "message"; text: string };
 
 export interface NativeSubagent {
   id: string;
@@ -44,6 +46,8 @@ export interface NativeSubagent {
   state: string | null;
   /** No terminal state arrived and nothing is running any more. */
   unresolved: boolean;
+  /** Spawned by another subagent rather than the main agent. */
+  nested: boolean;
   startedAt: string;
   endedAt?: string;
   items: NativeSubagentItem[];
@@ -66,6 +70,8 @@ function nativeSubagent(
   for (const row of rowsByOwner.get(info.id) ?? []) {
     if (row.kind === "subagent" && row.subagent) {
       items.push({ type: "subagent", subagent: nativeSubagent(row, rowsByOwner, visiblyBusy) });
+    } else if (row.kind === "subagent_woken") {
+      items.push({ type: "message", text: row.text });
     } else if (row.kind === "tool_start" && row.tool) {
       const item = { type: "tool" as const, start: row };
       tools.set(row.tool.id, item);
@@ -89,6 +95,7 @@ function nativeSubagent(
     state,
     // A workflow runs outside any turn, so only its own end state ends it.
     unresolved: state === null && !visiblyBusy && info.kind !== "workflow",
+    nested: !!header.subagentId,
     startedAt: header.at,
     ...(info.ended_at ? { endedAt: info.ended_at } : {}),
     items,
@@ -206,6 +213,11 @@ export function activityToThreadMessages(
     }
     if (row.kind === "user_diff_comments") {
       pushUser(row, [{ type: "text", text: row.text }], withCustom("diffComments", row.diffComments));
+      continue;
+    }
+    // Opens a run in an agent's own view: its task, or the message that woke it.
+    if (row.kind === "subagent_woken") {
+      pushUser(row, [{ type: "text", text: row.text }], withCustom("agentMessage", true));
       continue;
     }
 
