@@ -468,6 +468,7 @@ impl<S: BroadcastSink> Drain<S> {
             session_id,
             super::publish::WORKER_REPLACED_DETACH_WARNING,
         );
+        super::publish::stop_orphaned_background_work_on(&*self.sink, &self.next_seqs, session_id);
         info!(
             target: "acp.supervisor",
             session = %session_id,

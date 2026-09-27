@@ -7,6 +7,19 @@ use rusqlite::params;
 
 use super::{logged, query_strings, EventStore};
 
+/// Async tasks spawned and not yet in a terminal state.
+const UNFINISHED_TASKS: &str = "FROM acp_events
+     WHERE session_id = ?1
+       AND discriminant = 'AsyncTaskSpawned'
+       AND json_extract(event_json, '$.AsyncTaskSpawned.id') NOT IN (
+           SELECT json_extract(event_json, '$.AsyncTaskStateChanged.id')
+           FROM acp_events
+           WHERE session_id = ?1
+             AND discriminant = 'AsyncTaskStateChanged'
+             AND json_extract(event_json, '$.AsyncTaskStateChanged.state')
+                 NOT IN ('running', 'paused')
+       )";
+
 /// A session's unfinished subagents and background tasks.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BackgroundActivity {
@@ -19,6 +32,15 @@ pub struct BackgroundActivity {
 }
 
 impl EventStore {
+    pub fn unfinished_async_task_ids(&self, session_id: &str) -> Vec<String> {
+        query_strings(
+            &self.conn(),
+            &format!("SELECT json_extract(event_json, '$.AsyncTaskSpawned.id') {UNFINISHED_TASKS}"),
+            "unfinished_async_task_ids",
+            session_id,
+        )
+    }
+
     /// `None` when nothing runs in the background.
     pub fn background_activity(&self, session_id: &str) -> Option<BackgroundActivity> {
         // A woken teammate runs as `<id>:generation:<n>`; count the agent once.
@@ -34,18 +56,9 @@ impl EventStore {
         let conn = self.conn();
         let task_types = query_strings(
             &conn,
-            "SELECT json_extract(event_json, '$.AsyncTaskSpawned.task_type')
-             FROM acp_events
-             WHERE session_id = ?1
-               AND discriminant = 'AsyncTaskSpawned'
-               AND json_extract(event_json, '$.AsyncTaskSpawned.id') NOT IN (
-                   SELECT json_extract(event_json, '$.AsyncTaskStateChanged.id')
-                   FROM acp_events
-                   WHERE session_id = ?1
-                     AND discriminant = 'AsyncTaskStateChanged'
-                     AND json_extract(event_json, '$.AsyncTaskStateChanged.state')
-                         NOT IN ('running', 'paused')
-               )",
+            &format!(
+                "SELECT json_extract(event_json, '$.AsyncTaskSpawned.task_type') {UNFINISHED_TASKS}"
+            ),
             "background_activity tasks",
             session_id,
         );
@@ -134,5 +147,6 @@ mod tests {
             ),
             (2, 1, Some(4_000))
         );
+        assert_eq!(store.unfinished_async_task_ids("s-1"), ["sh"]);
     }
 }
