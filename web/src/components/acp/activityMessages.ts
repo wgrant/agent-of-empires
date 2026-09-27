@@ -24,6 +24,7 @@ export const COMPACTION_NAME = "_aoe_compaction";
 /** What a compaction card renders. */
 export interface Compaction extends CompactionInfo {
   summary: string;
+  startedAt: string;
 }
 
 /** What a native subagent card renders, in its session's order. */
@@ -339,7 +340,7 @@ class AssistantBuilder {
   }
 
   appendCompaction(row: ActivityRow) {
-    const compaction: Compaction = { state: "completed", ...row.compaction, summary: row.text };
+    const compaction: Compaction = { state: "completed", ...row.compaction, summary: row.text, startedAt: row.at };
     this.parts.push({
       type: "tool-call",
       toolCallId: row.id,

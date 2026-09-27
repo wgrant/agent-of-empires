@@ -68,6 +68,9 @@ pub struct CompactionInfo {
     pub post_tokens: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub duration_ms: Option<u64>,
+    /// When it stopped running, whatever the outcome.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ended_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1022,7 +1025,16 @@ impl TranscriptModel {
             }
         };
         let fresh = self.rows[index].id == format!("compacted-{seq}");
-        let changed = update(&mut self.rows[index]).is_some();
+        let now = self.now;
+        let row = &mut self.rows[index];
+        let changed = update(row).is_some();
+        let ended = row
+            .compaction
+            .as_mut()
+            .filter(|info| info.state != "running" && info.ended_at.is_none())
+            .map(|info| info.ended_at = Some(now))
+            .is_some();
+        let changed = changed || ended;
         let row = &self.rows[index];
         if fresh {
             vec![TranscriptDelta::Append(row.clone())]
@@ -1040,6 +1052,7 @@ impl TranscriptModel {
             let row = &mut self.rows[index];
             if let Some(info) = row.compaction.as_mut().filter(|c| c.state == "running") {
                 info.state = "interrupted".into();
+                info.ended_at = Some(self.now);
                 deltas.push(patch(row));
             }
         }
@@ -1502,6 +1515,19 @@ mod tests {
                 (TranscriptRowKind::Message, at(20)),
             ]
         );
+    }
+
+    #[test]
+    fn a_compaction_spans_from_its_start_to_its_verdict() {
+        let mut m = TranscriptModel::new();
+        m.apply_event_at(1, &prompt("go"), at(0));
+        m.apply_event_at(2, &Event::ConversationCompactionStarted, at(10));
+        m.apply_event_at(3, &Event::ConversationCompacted, at(70));
+        // A repeat of the verdict does not move its end.
+        m.apply_event_at(4, &Event::ConversationCompacted, at(90));
+        let row = &m.rows()[1];
+        let ended = row.compaction.as_ref().and_then(|c| c.ended_at);
+        assert_eq!((row.at, ended), (at(10), Some(at(70))));
     }
 
     #[test]

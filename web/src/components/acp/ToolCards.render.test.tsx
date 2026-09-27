@@ -993,7 +993,9 @@ describe("HighlightedBlock stale-content transitions (#3974)", () => {
 
 describe("CompactionCard", () => {
   const card = (over: Partial<Parameters<typeof CompactionCard>[0]["compaction"]> = {}) =>
-    render(<CompactionCard compaction={{ state: "completed", summary: "", ...over }} />);
+    render(
+      <CompactionCard compaction={{ state: "completed", summary: "", startedAt: "2026-09-27T00:00:00Z", ...over }} />,
+    );
 
   it("states the outcome and measurements, with the kept summary folded until toggled", () => {
     const { container, getByRole, queryByTestId } = card({
