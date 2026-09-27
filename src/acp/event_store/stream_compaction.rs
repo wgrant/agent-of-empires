@@ -152,6 +152,10 @@ pub(super) fn compact_completed_stream_runs(
                 continue;
             }
         };
+        // A subagent's events interleave with the main agent's text without ending it.
+        if matches!(event, Event::SubagentUpdate { .. }) {
+            continue;
+        }
         let Some((kind, text)) = stream_chunk(&event) else {
             if let Some(run) = current.take().filter(|run| run.chunks > 1) {
                 runs.push(run);
@@ -342,6 +346,10 @@ mod tests {
         let (_tmp, store) = open_store(1000);
         let events = [
             agent_chunk("Hel"),
+            Event::SubagentUpdate {
+                id: "a1".into(),
+                event: Box::new(agent_chunk("sub")),
+            },
             agent_chunk("lo"),
             Event::AgentThoughtChunk {
                 text: "plan".into(),
@@ -361,17 +369,17 @@ mod tests {
         let replay = store.replay_from("s-1", 0);
         assert_eq!(
             replay.iter().map(|(seq, _)| *seq).collect::<Vec<_>>(),
-            vec![2, 4, 5, 6]
+            vec![2, 3, 5, 6, 7]
         );
         assert!(matches!(
-            &replay[0].1,
+            &replay[1].1,
             Event::AgentMessageSnapshot { block_start_seq: 1, text } if text == "Hello"
         ));
         assert!(matches!(
-            &replay[1].1,
-            Event::AgentThoughtSnapshot { block_start_seq: 3, text } if text == "planning"
+            &replay[2].1,
+            Event::AgentThoughtSnapshot { block_start_seq: 4, text } if text == "planning"
         ));
-        assert!(matches!(&replay[2].1, Event::AgentMessageChunk { text } if text == "Done"));
+        assert!(matches!(&replay[3].1, Event::AgentMessageChunk { text } if text == "Done"));
     }
 
     #[test]
