@@ -71,7 +71,10 @@ test.describe("wizard", () => {
     await wizard.getByRole("button", { name: /Launch session/ }).click();
 
     await waitForStructuredView(page);
-    await expect(page.getByRole("button", { name: /Agent \(full access\)/ }).first()).toBeVisible({ timeout: 15_000 });
+    // The session settings chip shows a full-access mode under auto-approve as Yolo.
+    await expect(page.getByRole("button", { name: /^Session settings: Codex · Yolo/ }).first()).toBeVisible({
+      timeout: 15_000,
+    });
     const sessions = await waitForSessions(serve.baseUrl);
     expect(sessions).toHaveLength(1);
     expect(sessions[0]!.tool).toBe("codex");
