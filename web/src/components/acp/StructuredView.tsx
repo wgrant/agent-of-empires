@@ -5,6 +5,7 @@ import { useLayoutEffect, useRef, useState } from "react";
 import { ThreadPrimitive } from "@assistant-ui/react";
 import { ChevronDown, LoaderCircle, RotateCcw } from "lucide-react";
 
+import { useHasMessageMargin } from "../../hooks/useHasMessageMargin";
 import { useIsWideViewport } from "../../hooks/useIsWideViewport";
 import { useConnectionIncidentVisibility } from "../../hooks/useConnectionIncidentVisibility";
 import { useMobileKeyboard } from "../../hooks/useMobileKeyboard";
@@ -307,6 +308,7 @@ function AcpChrome({
     pendingJumpToLatestRef.current = false;
     requestAnimationFrame(scrollToBottom);
   }, [ctx.canLoadNewerHistory, scrollToBottom]);
+  const hasMessageMargin = useHasMessageMargin(messagesContentRef);
   useLayoutEffect(() => {
     const viewport = viewportRef.current;
     const previousInset = previousConnectionInsetRef.current;
@@ -372,7 +374,8 @@ function AcpChrome({
           >
             <div
               ref={messagesContentRef}
-              className="mx-auto max-w-3xl px-4 pb-6 xl:max-w-4xl 2xl:max-w-5xl"
+              data-message-margin={hasMessageMargin || undefined}
+              className="group/transcript mx-auto max-w-3xl px-4 pb-6 xl:max-w-4xl 2xl:max-w-5xl"
               style={{ paddingTop: `${24 + connectionInset}px` }}
             >
               {!readOnly && (

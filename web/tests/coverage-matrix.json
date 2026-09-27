@@ -2759,6 +2759,18 @@
       ]
     },
     {
+      "id": "acp.message-time",
+      "kind": "mocked-playwright",
+      "risk": "low",
+      "specs": ["tests/message-time.spec.ts", "src/lib/messageTime.test.ts"],
+      "components": [
+        "web/src/components/acp/MessageTime.tsx",
+        "web/src/hooks/useHasMessageMargin.ts",
+        "web/src/hooks/useMessageTimeTap.ts",
+        "web/src/components/acp/ThreadMessages.tsx"
+      ]
+    },
+    {
       "id": "acp.compaction-card",
       "kind": "live-playwright",
       "risk": "low",
