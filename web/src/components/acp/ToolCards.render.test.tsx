@@ -1080,4 +1080,16 @@ describe("SendMessage card", () => {
     fireEvent.click(getByRole("button", { name: "Open tester's view" }));
     expect(viewed).toHaveBeenCalledWith("t1");
   });
+
+  // A failure opens on its own; a success needs a click.
+  it.each([
+    ["a plain-text error", makeError({ text: "No agent named ghost" }), "No agent named ghost", false],
+    ["a JSON failure", makeCompletion({ text: '{"success":false,"message":"inbox full"}' }), "inbox full", false],
+    ["plain-text output", makeCompletion({ text: "Queued for ghost" }), "Queued for ghost", true],
+  ])("shows the result of %s", (_name, result, text, click) => {
+    const tool = makeToolCall({ name: "SendMessage", args_preview: args({ to: "ghost", message: "hi" }) });
+    const { container } = render(wrap(<ToolCard tool={tool} result={result} />, { toolKey: "claude" }));
+    if (click) fireEvent.click(container.querySelector("button")!);
+    expect(container.textContent).toContain(text);
+  });
 });
