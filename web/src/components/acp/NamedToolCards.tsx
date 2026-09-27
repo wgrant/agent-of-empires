@@ -460,7 +460,7 @@ const SPECIAL_TOOLS = {
     const to = pickStr(args, "to");
     const message = pickStr(args, "message");
     const outcome = messageOutcome(output);
-    const failure = failed || outcome.ok === false ? (outcome.message ?? "(no error detail provided)") : null;
+    const failure = failed || outcome.ok === false ? (outcome.message ?? "No error output") : null;
     return {
       icon: <Send className={ICON} />,
       label: "message",
