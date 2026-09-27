@@ -20,6 +20,8 @@ import {
 } from "./activityMessages";
 import { AgentMessageCard } from "./AgentMessageCard";
 import { CompactionCard } from "./CompactionCard";
+import { ContextPrimerCard } from "./ContextPrimerCard";
+import { parseContextPrimer } from "../../lib/contextPrimer";
 import { useMessageTimeTap } from "../../hooks/useMessageTimeTap";
 import { ElicitationAnswerCard } from "./ElicitationAnswerCard";
 import { MessageTime } from "./MessageTime";
@@ -84,6 +86,10 @@ function UserText({ text }: { text: string }) {
   const payload = parseDiffCommentsSentinel(text);
   if (payload) {
     return <DiffCommentsUserCard payload={payload} />;
+  }
+  const primer = parseContextPrimer(text);
+  if (primer) {
+    return <ContextPrimerCard primer={primer} />;
   }
   // `breaks`: the composer is a plain textarea, so a single newline must stay visible.
   return (

@@ -5,7 +5,7 @@
 // resolves through ArtifactImage's authenticated fetch instead (see artifactMedia.tsx).
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import {
   AssistantRuntimeProvider,
   ThreadPrimitive,
@@ -114,5 +114,23 @@ describe("AssistantMessage group parts", () => {
     rerender(<Harness messages={messages("a longer reply")} />);
     getByText("a longer reply");
     expect(groupParses()).toBe(afterMount);
+  });
+});
+
+describe("UserMessage context primer", () => {
+  it("folds the recap and shows the request outside the fold", () => {
+    const text =
+      "# Prior structured view context\n\nThe previous ACP session could not be loaded.\n\n## Transcript\n\n" +
+      "### Turn 1\n\nUser:\nfix the parser\n\n### Turn 2\n\nUser:\nadd tests\n\n---\n\n## Current request\n\nShip it.\n";
+    render(<Harness messages={[{ role: "user", content: [{ type: "text", text }] }]} />);
+
+    const toggle = screen.getByRole("button", { name: /Context restored from 2 earlier turns/ });
+    expect(screen.getByText("Ship it.")).toBeTruthy();
+    expect(screen.queryByText(/fix the parser/)).toBeNull();
+
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByTestId("context-primer-recap").textContent).toContain("fix the parser");
+    expect(screen.queryByText(/could not be loaded/)).toBeNull();
   });
 });
