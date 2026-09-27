@@ -209,11 +209,12 @@ export function AcpRuntime({
     () => (viewedAgentId ? agentActivity(acp.state.activity, viewedAgentId) : []),
     [viewedAgentId, acp.state.activity],
   );
-  const viewingAgent = agentRows.length > 0;
-  const agentRunning = useMemo(
-    () => listAgents(acp.state.activity).some((a) => a.id === viewedAgentId && a.state === "running"),
+  const viewedAgent = useMemo(
+    () => listAgents(acp.state.activity).find((a) => a.id === viewedAgentId),
     [acp.state.activity, viewedAgentId],
   );
+  const viewingAgent = viewedAgent !== undefined;
+  const agentRunning = viewedAgent?.state === "running";
   const messages = useMemo(
     () =>
       viewingAgent

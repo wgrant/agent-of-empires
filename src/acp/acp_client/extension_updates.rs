@@ -119,6 +119,12 @@ fn notice(severity: &str, title: &str, description: Option<&str>) -> Event {
     }
 }
 
+/// codex-acp invents a task for an agent multi-agent v2 never told it
+/// about; showing it would read as the agent's real instructions.
+fn is_invented_task(task: &str) -> bool {
+    task == "Delegated task" || task.starts_with("Delegated task for ")
+}
+
 /// A terminal compaction update, with the facts claude-agent-acp reports in
 /// `_meta.contextCompaction`.
 fn compaction_ended(status: &str, update: &Value) -> Event {
@@ -173,7 +179,10 @@ pub(super) fn extension_events(update: &Value) -> Vec<Event> {
                 id: id.to_string(),
                 parent: None,
                 name: field(update, "name").unwrap_or("Subagent").to_string(),
-                task: field(update, "task").unwrap_or_default().to_string(),
+                task: field(update, "task")
+                    .filter(|task| !is_invented_task(task))
+                    .unwrap_or_default()
+                    .to_string(),
                 at: chrono::Utc::now(),
                 // claude-agent-acp (AoE fork) marks a named teammate.
                 persistent: update
@@ -288,6 +297,12 @@ mod tests {
                 json!({"sessionUpdate": "subagent_spawned", "subagentSessionId": "c9", "name": "Explore", "task": "Find it", "capabilities": {}}),
                 vec!["SubagentSpawned:c9:Explore:Find it"],
                 Some("SubagentStarted { id: \"c9\" }"),
+            ),
+            // codex-acp's invented task is no task at all.
+            (
+                json!({"sessionUpdate": "subagent_spawned", "subagentSessionId": "r1", "name": "Reviewer", "task": "Delegated task for Reviewer", "capabilities": {}}),
+                vec!["SubagentSpawned:r1:Reviewer:"],
+                Some("SubagentStarted { id: \"r1\" }"),
             ),
             (
                 json!({"sessionUpdate": "subagent_spawned", "subagentSessionId": "t1", "name": "tester", "task": "Wait", "capabilities": {}, "_meta": {"claudeCode": {"teammate": true}}}),
