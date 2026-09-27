@@ -45,7 +45,7 @@ export interface TrashMockOptions {
   groupAxis?: boolean;
 }
 
-function sessionPayload(s: TrashSession) {
+export function sessionPayload(s: TrashSession) {
   const cleanable = s.cleanableWorktree ?? false;
   const sandboxed = s.sandboxed ?? false;
   return sessionResponse({

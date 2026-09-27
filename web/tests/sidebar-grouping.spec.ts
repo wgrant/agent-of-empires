@@ -120,7 +120,8 @@ test.describe("sidebar repo groups (#1220)", () => {
 
     // Collapsed, the header uses the projected token; border-brand-600 fails contrast on catppuccin-latte.
     await expandBtn.click();
-    await expect(page.getByText("alpha-session")).toBeHidden();
+    // The top bar names the open session too; the row is what folds away.
+    await expect(page.locator('[data-tour="sidebar"]').getByText("alpha-session")).toBeHidden();
     expect(await alphaHeader.getAttribute("class")).toContain("border-session-active");
     expect(await betaHeader.getAttribute("class")).not.toContain("border-session-active");
     // toHaveCSS polls past the color transition.

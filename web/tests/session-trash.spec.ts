@@ -4,6 +4,7 @@ import {
   confirmDelete,
   installTrashMocks,
   openDeleteDialogFromRow,
+  sessionPayload,
   openPurgeDialog,
   openTrash,
   sessionRows,
@@ -115,20 +116,19 @@ test.describe("Multi-session workspace trash", () => {
   });
 
   test("stop, start, and delete on a group slice act only on that row's sessions (#4019)", async ({ page }) => {
-    const handle = await install(
-      page,
-      workspace(
-        { id: "sess-a", groupPath: "alpha", trashed: false, status: "Stopped" },
-        { id: "sess-b", groupPath: "beta", trashed: false },
-        { id: "sess-c", groupPath: "gamma", trashed: false, status: "Stopped" },
-        { id: "sess-d", groupPath: "gamma", trashed: false, status: "Stopped" },
-      ),
+    const sessions = workspace(
+      { id: "sess-a", groupPath: "alpha", trashed: false, status: "Stopped" },
+      { id: "sess-b", groupPath: "beta", trashed: false },
+      { id: "sess-c", groupPath: "gamma", trashed: false, status: "Stopped" },
+      { id: "sess-d", groupPath: "gamma", trashed: false, status: "Stopped" },
     );
+    const handle = await install(page, sessions);
     const lifecycle: string[] = [];
     await page.route(/\/api\/sessions\/[^/]+\/(stop|start)$/, (r) => {
       const [, id, verb] = new URL(r.request().url()).pathname.match(/sessions\/([^/]+)\/(\w+)$/)!;
       lifecycle.push(`${verb} ${id}`);
-      return r.fulfill({ json: { id } });
+      // Like the server, answer with the whole session: the client adopts it.
+      return r.fulfill({ json: sessionPayload(sessions.find((s) => s.id === id)!) });
     });
     await page.goto("/");
     // A two-session row is labelled by its branch, so gamma is the row naming neither single session.

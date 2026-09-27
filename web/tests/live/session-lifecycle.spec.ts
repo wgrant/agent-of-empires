@@ -93,45 +93,32 @@ test.describe("ensure_session restart flow", () => {
       const sessionButton = page.getByRole("link").filter({ hasText: title }).first();
       await expect(sessionButton).toBeVisible();
       await sessionButton.click();
-      // The agent and paired shell panes both render the placeholder; only the agent's /ensure is held.
-      await expect(page.getByText("Starting session...").first()).toBeVisible();
+      // The agent and paired shell panes both render the notice; only the agent's /ensure is held.
+      const starting = page.getByTestId("terminal-starting-notice").first();
+      await expect(starting).toBeVisible();
       releaseEnsure();
       await expect(page.locator("[data-live-content]").filter({ hasText: "ENSURE_CONNECTED" })).toBeVisible();
-      await expect(page.getByText("Starting session...").first()).toBeHidden({ timeout: 15_000 });
+      await expect(starting).toBeHidden({ timeout: 15_000 });
     } finally {
       releaseEnsure();
     }
   });
 });
 
-test("SIGTERM surfaces the alert; restart() clears it and flashes reconnected", async ({ serve, page }) => {
-  // Filter by text: an unrelated dnd-kit live region is also role=status.
-  const alertBanner = page.getByRole("alert").filter({ hasText: /server unreachable/i });
-  const reconnectedBanner = page.getByRole("status").filter({ hasText: /reconnected/i });
+test("SIGTERM shows the dashboard connection as unavailable until restart restores it", async ({ serve, page }) => {
+  const connection = page.getByRole("button", { name: "Show connection status" });
   await page.goto(serve.baseUrl, { waitUntil: "domcontentloaded" });
-  // The first successful sessions poll must land before the kill, or "Reconnected" fires early.
+  // The first successful sessions poll must land before the kill.
   await page.waitForResponse((r) => r.url().endsWith("/api/sessions") && r.status() === 200, { timeout: 10_000 });
-  await expect(alertBanner).toBeHidden();
-  await expect(reconnectedBanner).toBeHidden();
+  await expect(connection).toHaveAttribute("aria-description", "Connection healthy.");
 
   // Kill separately from restart() so the 3s sessions poll can observe the outage.
   serve.proc.kill("SIGTERM");
-  await expect(alertBanner).toBeVisible({ timeout: 8_000 });
+  await expect(connection).toHaveAttribute("aria-description", "Connection to AoE is unavailable.", {
+    timeout: 8_000,
+  });
   await serve.restart();
-  await expect
-    .poll(
-      () =>
-        fetch(`${serve.baseUrl}/api/about`).then(
-          (r) => r.status,
-          () => -1,
-        ),
-      { timeout: 10_000 },
-    )
-    .toBe(200);
-  await expect(reconnectedBanner).toBeVisible({ timeout: 8_000 });
-  // The flash dismisses itself after 3s.
-  await expect(reconnectedBanner).toBeHidden({ timeout: 6_000 });
-  await expect(alertBanner).toBeHidden();
+  await expect(connection).toHaveAttribute("aria-description", "Connection healthy.", { timeout: 15_000 });
 });
 
 test("peer rename surfaces within the watcher budget", async ({ page, spawnServe }) => {
