@@ -12,6 +12,8 @@ export interface AgentSummary {
   /** `workflow` for a Claude workflow run. */
   kind: string | null;
   state: AgentRunState;
+  /** Spawned since the latest user prompt. */
+  recent: boolean;
 }
 
 const TERMINAL: Record<string, AgentRunState> = {
@@ -35,7 +37,8 @@ export function agentIdOf(sessionId: string): string {
 
 /** The agents the main agent delegated to directly, in the order they started. */
 export function listAgents(rows: readonly ActivityRow[]): AgentSummary[] {
-  return rows.flatMap((row) =>
+  const lastPrompt = rows.findLastIndex((row) => row.kind === "user_prompt" && !row.subagentId);
+  return rows.flatMap((row, index) =>
     row.kind === "subagent" && row.subagent && !row.subagentId
       ? [
           {
@@ -43,10 +46,24 @@ export function listAgents(rows: readonly ActivityRow[]): AgentSummary[] {
             name: row.subagent.name,
             kind: row.subagent.kind ?? null,
             state: runState(row.subagent.state ?? null, row.subagent.persistent ?? false),
+            recent: index > lastPrompt,
           },
         ]
       : [],
   );
+}
+
+/**
+ * The agents worth a tab: live ones, this turn's, and the one on view. Older
+ * finished agents stay reachable from an overflow list instead of piling up.
+ */
+export function partitionAgents(
+  agents: readonly AgentSummary[],
+  viewedAgentId: string | null,
+): { shown: AgentSummary[]; earlier: AgentSummary[] } {
+  const keep = (agent: AgentSummary) =>
+    agent.state === "running" || agent.state === "idle" || agent.recent || agent.id === viewedAgentId;
+  return { shown: agents.filter(keep), earlier: agents.filter((agent) => !keep(agent)) };
 }
 
 /**
