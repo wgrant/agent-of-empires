@@ -157,6 +157,37 @@ export function nextHistoryWindowSize(rows: readonly ActivityRow[], visibleRows:
   return next;
 }
 
+/**
+ * `rows[start, end)`, plus the spawn row of each subagent whose rows the
+ * window holds but whose spawn precedes it. A subagent's rows render only in
+ * the card built from its spawn row, so that row goes just before the
+ * subagent's first windowed row. Pulling `start` back instead could span a
+ * long-lived teammate's whole life.
+ */
+export function windowRows(rows: readonly ActivityRow[], start: number, end = rows.length): ActivityRow[] {
+  const slice = rows.slice(start, end);
+  if (start <= 0) return slice;
+  const placed = new Set(slice.flatMap((r) => (r.kind === "subagent" && r.subagent ? [r.subagent.id] : [])));
+  let earlier: Map<string, ActivityRow> | null = null;
+  const out: ActivityRow[] = [];
+  const place = (agentId: string) => {
+    if (placed.has(agentId)) return;
+    placed.add(agentId);
+    earlier ??= new Map(
+      rows.slice(0, start).flatMap((r) => (r.kind === "subagent" && r.subagent ? [[r.subagent.id, r] as const] : [])),
+    );
+    const spawn = earlier.get(agentId);
+    if (!spawn) return;
+    if (spawn.subagentId) place(spawn.subagentId);
+    out.push(spawn);
+  };
+  for (const row of slice) {
+    if (row.subagentId) place(row.subagentId);
+    out.push(row);
+  }
+  return out;
+}
+
 /** Index of the latest `/clear` divider, or -1 when there is none. The fold
  *  pins to the LAST clear so repeated /clears collapse cumulatively. The
  *  message tree, the runtime key, and the ClearedTurnsBanner all measure the

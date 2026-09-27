@@ -7,6 +7,7 @@ import {
   historyWindowStart,
   initialHistoryWindow,
   nextHistoryWindowSize,
+  windowRows,
 } from "../lib/acpHistoryWindow";
 
 const MAX_REMEMBERED_HISTORY_WINDOWS = 50;
@@ -38,7 +39,7 @@ export function clearRememberedHistoryWindows(): void {
 }
 
 export interface HistoryWindowState {
-  /** The bounded slice of `activity` to render. */
+  /** The bounded range of `activity` to render, with its subagents' spawn rows. */
   windowedActivity: ActivityRow[];
   /** True when older rows remain that "Load earlier" would reveal. */
   canLoadEarlier: boolean;
@@ -165,7 +166,7 @@ export function useHistoryWindow(
     () => historyWindow(activity, visibleRows, showClearedTurns, boundedEnd, pinnedStart),
     [activity, boundedEnd, visibleRows, showClearedTurns, pinnedStart],
   );
-  const windowedActivity = useMemo(() => activity.slice(start, boundedEnd), [activity, boundedEnd, start]);
+  const windowedActivity = useMemo(() => windowRows(activity, start, boundedEnd), [activity, boundedEnd, start]);
   const canLoadNewer = boundedEnd < activity.length;
   // Read-only browser-console aid for diagnosing a production history jump.
   // The transcript cache tells us whether rows exist; this adds the separate

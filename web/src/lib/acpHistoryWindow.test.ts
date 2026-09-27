@@ -7,6 +7,7 @@ import {
   historyWindowStart,
   initialHistoryWindow,
   lastUserBoundaryIndex,
+  windowRows,
 } from "./acpHistoryWindow";
 
 function row(kind: ActivityRow["kind"], i: number): ActivityRow {
@@ -135,5 +136,31 @@ describe("initialHistoryWindow", () => {
     expect(lastUserBoundaryIndex(rows)).toBe(-1);
     expect(initialHistoryWindow(rows)).toBe(DEFAULT_HISTORY_WINDOW);
     expect(initialHistoryWindow([])).toBe(DEFAULT_HISTORY_WINDOW);
+  });
+});
+
+describe("windowRows", () => {
+  const spawn = (id: string, owner?: string): ActivityRow => ({
+    id: `spawn-${id}`,
+    kind: "subagent",
+    text: "",
+    subagent: { id, name: id },
+    subagentId: owner,
+  });
+  const owned = (id: string, owner: string): ActivityRow => ({ ...row("message", 0), id, subagentId: owner });
+  const ids = (rows: ActivityRow[]) => rows.map((r) => r.id);
+
+  it("places an earlier spawn row, and its parent's, before the subagent's first windowed row", () => {
+    const rows = [
+      spawn("mate"),
+      spawn("child", "mate"),
+      row("message", 1),
+      row("message", 2),
+      owned("woken", "child"),
+      owned("reply", "mate"),
+    ];
+    expect(ids(windowRows(rows, 3))).toEqual(["message-2", "spawn-mate", "spawn-child", "woken", "reply"]);
+    expect(ids(windowRows(rows, 1))).toEqual(ids(rows));
+    expect(ids(windowRows(rows, 0, 3))).toEqual(ids(rows.slice(0, 3)));
   });
 });
