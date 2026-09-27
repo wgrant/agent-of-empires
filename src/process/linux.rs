@@ -444,3 +444,32 @@ full avg10=0.10 avg60=0.20 avg300=0.30 total=42
         assert_eq!(parse_psi_some_avg10("full avg10=5.0 total=9"), None);
     }
 }
+
+/// The kernel reports an executable deleted or replaced since exec as
+/// `<path> (deleted)`; the file now at `<path>` is the one to run.
+pub(super) fn replaced_exe(exe: std::path::PathBuf) -> std::path::PathBuf {
+    match exe
+        .to_str()
+        .and_then(|path| path.strip_suffix(" (deleted)"))
+    {
+        Some(path) if std::path::Path::new(path).is_file() => path.into(),
+        _ => exe,
+    }
+}
+
+#[cfg(test)]
+mod replaced_exe_tests {
+    use super::replaced_exe;
+
+    #[test]
+    fn a_replaced_binary_runs_from_its_original_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let exe = dir.path().join("aoe");
+        let reported = dir.path().join("aoe (deleted)");
+        // Deleted and not replaced: nothing better to run.
+        assert_eq!(replaced_exe(reported.clone()), reported);
+        std::fs::write(&exe, b"").unwrap();
+        assert_eq!(replaced_exe(reported), exe);
+        assert_eq!(replaced_exe(exe.clone()), exe);
+    }
+}
