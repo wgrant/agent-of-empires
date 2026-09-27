@@ -289,7 +289,8 @@ test("mobile composer shows a compact usage hint inside the viewport", async ({ 
   });
   await openStructuredSession(page, mock);
 
-  const usage = page.getByTestId("composer-usage");
+  // The collapsed composer's status bar; the full footer is hidden on a phone.
+  const usage = page.getByTestId("composer-mobile-status").getByTestId("composer-usage");
   await expect(usage).toBeVisible({ timeout: 15_000 });
   await expect(usage).toHaveAccessibleName(/Context window: .* tokens used \(60%\)/);
   await expect(usage).toContainText("60%");
