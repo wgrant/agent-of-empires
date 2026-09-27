@@ -48,6 +48,7 @@ import {
   IOS_ACCESSORY_BAR_PX,
 } from "./composerInput";
 import { compactComposerStatusText, composerStatusParts, composerStatusText } from "./composerStatus";
+import { BackgroundWorkChip } from "./BackgroundWorkChip";
 import { SessionSettingsControl } from "./SessionSettings";
 import { SwitchAgentModal } from "./SwitchAgentModal";
 import {
@@ -290,6 +291,7 @@ export function Composer(props: Props) {
                     {compactComposerStatusText(statusParts)}
                   </span>
                 </button>
+                <BackgroundWorkChip sessionId={sessionId} compact />
                 {queuedPrompts.length > 0 && (
                   <span
                     data-testid="composer-mobile-queued-count"
@@ -464,6 +466,7 @@ export function Composer(props: Props) {
               </div>
 
               <div className="ml-auto flex w-full items-center gap-2 pl-1.5 @lg:w-auto @lg:pl-0">
+                <BackgroundWorkChip sessionId={sessionId} />
                 <UsageHint
                   usage={props.sessionUsage}
                   quota={props.quota}
