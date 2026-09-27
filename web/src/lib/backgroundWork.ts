@@ -5,7 +5,8 @@ import { formatDurationSecondsShort } from "../components/sidebar/format";
 import { asyncTaskRunning, type AsyncTask, type BackgroundAgent } from "./acpTypes";
 
 export type BackgroundKind = "subagent" | "workflow" | "shell" | "monitor" | "task";
-export type BackgroundState = "running" | "done" | "failed" | "stopped";
+/** `idle`: a teammate between runs, waiting for a message. */
+export type BackgroundState = "running" | "idle" | "done" | "failed" | "stopped";
 
 export interface BackgroundItem {
   key: string;
@@ -41,7 +42,8 @@ const AGENT_STATES: Record<BackgroundAgent["status"], BackgroundState> = {
 };
 
 function agentItem(agent: BackgroundAgent, activity: ReadonlyMap<string, string>): BackgroundItem {
-  const state = AGENT_STATES[agent.status];
+  const finished = AGENT_STATES[agent.status];
+  const state = finished === "done" && agent.persistent ? "idle" : finished;
   // A native subagent reports no launching tool call; its card is keyed by its session.
   const native = agent.toolCallId === "";
   return {
@@ -49,14 +51,7 @@ function agentItem(agent: BackgroundAgent, activity: ReadonlyMap<string, string>
     kind: "subagent",
     name: agent.description || "Sub-agent",
     state,
-    stateLabel:
-      agent.status === "stalled"
-        ? "stalled"
-        : agent.status === "detached"
-          ? "detached"
-          : agent.status === "completed" && agent.persistent
-            ? "idle"
-            : "",
+    stateLabel: agent.status === "stalled" ? "stalled" : agent.status === "detached" ? "detached" : "",
     activity: state === "running" ? (agent.lastText ?? agent.lastTool) : (agent.result ?? agent.lastText),
     toolCount: agent.toolCount > 0 ? agent.toolCount : null,
     tokens: null,

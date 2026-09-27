@@ -192,4 +192,21 @@ describe("BackgroundAgentsPanel", () => {
     expect(byText).toEqual({ "active 1m ago": false, "active 7m ago": true });
     activityMock.mockReturnValue(NO_ROWS);
   });
+
+  it("groups a teammate between runs as idle, apart from running and finished work", () => {
+    const { container } = renderPanel([
+      agent({
+        agentId: "mate",
+        toolCallId: "",
+        description: "tester",
+        status: "completed",
+        persistent: true,
+        endedAt: new Date().toISOString(),
+      }),
+      agent({ agentId: "busy", description: "reviewer" }),
+    ]);
+    const text = container.textContent ?? "";
+    expect(text).toMatch(/Running · 1.*reviewer.*Idle · 1.*tester/);
+    expect(text).not.toContain("Finished");
+  });
 });
