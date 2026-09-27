@@ -1,6 +1,7 @@
 //! Disk-backed event log for structured view sessions.
 
 mod attachments;
+mod background;
 mod rate_limit;
 mod replay;
 mod search;
@@ -19,6 +20,7 @@ use super::state::Event;
 use crate::events;
 
 pub use attachments::AttachmentBlob;
+pub use background::BackgroundActivity;
 pub use rate_limit::RateLimitPark;
 pub use replay::{ReplayPage, StoredEvent};
 pub use search::ContentHit;

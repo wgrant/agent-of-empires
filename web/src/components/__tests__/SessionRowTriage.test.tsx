@@ -37,6 +37,25 @@ describe("SessionRow chips", () => {
     ["worker stopping", { view: "structured", acp_worker_state: "stopping" }, ["Stopping"], []],
     ["armed monitor", { monitor_active: true, monitor_description: "clippy passes" }, ["Monitoring clippy passes"], []],
     ["no monitor", {}, [], [/^Monitoring/]],
+    [
+      "busy background work",
+      { background: { running: 2, reporting: 1, last_active_at: new Date(Date.now() - 60_000).toISOString() } },
+      ["2 running in the background"],
+      [/quiet/],
+    ],
+    [
+      "quiet background work",
+      { background: { running: 1, reporting: 1, last_active_at: new Date(Date.now() - 7 * 60_000).toISOString() } },
+      [/^1 running in the background, quiet 7m$/],
+      [],
+    ],
+    // A shell alone reports nothing, so its silence is not a warning.
+    [
+      "a silent shell",
+      { background: { running: 1, reporting: 0, last_active_at: new Date(Date.now() - 60 * 60_000).toISOString() } },
+      ["1 running in the background"],
+      [/quiet/],
+    ],
   ] as [string, Partial<SessionResponse>, (string | RegExp)[], (string | RegExp)[]][])(
     "%s",
     (_name, over, present, absent) => {

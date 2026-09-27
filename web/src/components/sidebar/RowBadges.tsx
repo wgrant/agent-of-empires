@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Archive, Hourglass, Moon, Pencil, Sparkles } from "lucide-react";
+import { Archive, Hourglass, Layers, Moon, Pencil, Sparkles } from "lucide-react";
 import type {
   ContextResumeAvailability,
   ContextResumeUnavailableReason,
@@ -8,6 +8,8 @@ import type {
 } from "../../lib/types";
 import { useHasDraftForSessions } from "../../lib/acpDrafts";
 import { useQueuedCountForSessions } from "../../hooks/useAcpQueueCount";
+import { useNow } from "../../hooks/useNow";
+import { QUIET_AFTER_MS } from "../../lib/backgroundWork";
 import { summarizeRateLimits } from "../../lib/rateLimitSummary";
 import { computeSessionRowTag, useSessionRowTagMode } from "../../lib/sessionRowTag";
 import { PluginRowLine } from "../plugin/PluginSlots";
@@ -83,6 +85,27 @@ function WakeupCountdown({ wakeAt, reason }: { wakeAt: string; reason: string | 
     >
       <span aria-hidden="true">⏰</span>
       {label}
+    </Chip>
+  );
+}
+
+/** Running background work; amber once everything that reports progress has gone quiet. */
+function BackgroundBadge({ background }: { background: NonNullable<SessionResponse["background"]> }) {
+  const lastMs = background.last_active_at ? Date.parse(background.last_active_at) : NaN;
+  const watching = background.reporting > 0 && Number.isFinite(lastMs);
+  const now = useNow(30_000, watching);
+  const quietMs = watching ? now - lastMs : 0;
+  const quiet = quietMs >= QUIET_AFTER_MS ? formatDurationSecondsShort(Math.floor(quietMs / 1000)) : null;
+  const running = `${background.running} running in the background`;
+  return (
+    <Chip
+      title={quiet ? `${running}; nothing has reported progress for ${quiet}` : running}
+      label={quiet ? `${running}, quiet ${quiet}` : running}
+      className={`${CHIP} gap-0.5 ${quiet ? AMBER : MUTED}`}
+    >
+      <Layers className="h-3 w-3" aria-hidden />
+      {background.running}
+      {quiet && <span className="hidden sm:inline">· quiet {quiet}</span>}
     </Chip>
   );
 }
@@ -198,6 +221,7 @@ export function RowTrailingBadges({ workspace, model }: { workspace: Workspace; 
         </Chip>
       )}
       {first?.next_wakeup_at && <WakeupCountdown wakeAt={first.next_wakeup_at} reason={first.next_wakeup_reason} />}
+      {first?.background && <BackgroundBadge background={first.background} />}
       {first?.monitor_active && (
         <Chip
           title={first.monitor_description ? `Monitoring: ${first.monitor_description}` : "Monitoring a background job"}
