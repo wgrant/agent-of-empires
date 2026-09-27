@@ -273,7 +273,8 @@ pub(super) fn stop_orphaned_background_work_on<S: BroadcastSink>(
         })
         .chain(tasks.into_iter().map(|id| Event::AsyncTaskStateChanged {
             id,
-            state: "stopped".into(),
+            // Not `stopped`, which the adapter sends ahead of a normal finish.
+            state: "interrupted".into(),
             summary: Some("the agent running this task was replaced".into()),
             tool_call_id: None,
             at,

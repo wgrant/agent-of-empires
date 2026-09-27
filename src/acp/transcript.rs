@@ -675,13 +675,14 @@ impl TranscriptModel {
                     Some(())
                 });
                 // claude-agent-acp never forwards a workflow agent's tool
-                // result, and reports `stopped` just before `completed`.
-                deltas.extend(self.close_open_tools(
-                    seq,
-                    Some(id),
-                    TranscriptRowKind::ToolComplete,
-                    *at,
-                ));
+                // result, and reports `stopped` just before `completed`; any
+                // other end interrupted the calls still open.
+                let kind = if matches!(state, "completed" | "cancelled") {
+                    TranscriptRowKind::ToolComplete
+                } else {
+                    TranscriptRowKind::ToolStopped
+                };
+                deltas.extend(self.close_open_tools(seq, Some(id), kind, *at));
                 deltas
             }
             Event::SubagentStateChanged { id, state, at } => {
@@ -1488,6 +1489,31 @@ mod tests {
             )
         );
         assert_eq!(model.rows()[2].subagent_id.as_deref(), Some("wf1"));
+
+        // A workflow interrupted with its worker leaves its calls stopped, not done.
+        let model = fold([
+            Event::AsyncTaskSpawned {
+                id: "wf2".into(),
+                name: "wf".into(),
+                task_type: "workflow".into(),
+                description: None,
+                tool_call_id: None,
+                can_stop: true,
+                at: at(10),
+            },
+            Event::SubagentUpdate {
+                id: "wf2".into(),
+                event: Box::new(started(tool("t2", "Bash"))),
+            },
+            Event::AsyncTaskStateChanged {
+                id: "wf2".into(),
+                state: "interrupted".into(),
+                summary: None,
+                tool_call_id: None,
+                at: at(20),
+            },
+        ]);
+        assert_eq!(kinds(&model).last(), Some(&TranscriptRowKind::ToolStopped));
     }
 
     #[test]
