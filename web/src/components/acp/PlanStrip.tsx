@@ -32,7 +32,8 @@ export function PlanStrip({ plan }: { plan: Plan | null }) {
     <div className="border-b border-surface-800 bg-surface-900/95 backdrop-blur">
       <button
         type="button"
-        className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm hover:bg-surface-800/40"
+        // Single-pane layouts hang the header's collapse tab over the right edge.
+        className="flex w-full items-center gap-3 py-2 pl-4 pr-12 text-left text-sm hover:bg-surface-800/40 md:pr-4"
         onClick={() => setExpanded((v) => !v)}
       >
         <ListChecks className="h-3.5 w-3.5 shrink-0 text-text-dim" />

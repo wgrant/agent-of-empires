@@ -24,8 +24,8 @@ export function PaletteTriggerPill({ onClick, showDesktop = true, showMobile = t
             <circle cx="11" cy="11" r="7" />
             <line x1="21" y1="21" x2="16.65" y2="16.65" />
           </StrokeIcon>
-          <span className="flex-1 text-left text-[13px]">Search anything…</span>
-          <kbd className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-surface-800 border border-surface-700 text-text-muted">
+          <span className="min-w-0 flex-1 truncate text-left text-[13px]">Search anything…</span>
+          <kbd className="shrink-0 font-mono text-[10px] px-1.5 py-0.5 rounded bg-surface-800 border border-surface-700 text-text-muted">
             {modKey}K
           </kbd>
         </button>
