@@ -14,6 +14,7 @@ import { useSessionThinkingDisplay } from "../../hooks/useSessionThinkingDisplay
 import { useWebSettings } from "../../hooks/useWebSettings";
 import { useDashboardConnectionDiagnostics } from "../../lib/connectionState";
 import { lastClearIndex } from "../../lib/acpHistoryWindow";
+import type { ActivityRow } from "../../lib/acpTypes";
 import { approvalAsker, listAgents } from "../../lib/agentView";
 import { derivePromptOutbox } from "../../lib/acpPromptOutbox";
 import { AgentProfileProvider } from "../../lib/agentProfileContext";
@@ -154,6 +155,12 @@ export function StructuredView(props: Props) {
 
 /** Bottom padding reserving the soft keyboard where the layout viewport does
  *  not shrink for it (iOS regular Safari); 0 elsewhere. */
+/** When the main agent's running compaction began, or null. */
+function runningCompactionStart(rows: readonly ActivityRow[]): string | null {
+  const row = rows.findLast((r) => r.kind === "compacted" && !r.subagentId);
+  return row?.compaction?.state === "running" ? row.at : null;
+}
+
 function structuredViewRootStyle(keyboardHeight: number): React.CSSProperties | undefined {
   return keyboardHeight > 0 ? { paddingBottom: keyboardHeight } : undefined;
 }
@@ -455,6 +462,7 @@ function AcpChrome({
                     cancelling={conversationNextStep.cancelling}
                     cancelEscalatesAt={conversationNextStep.cancelEscalatesAt}
                     compacting={conversationNextStep.compacting}
+                    compactionStartedAt={runningCompactionStart(state.activity)}
                     lastActivityRef={ctx.lastActivityRef}
                     onForceEndTurn={ctx.forceEndTurn}
                   />

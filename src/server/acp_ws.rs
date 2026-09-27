@@ -354,6 +354,7 @@ async fn drain_replay_into_socket(
         snapshot_seq,
         &replay.transcript_rows,
         &replay.transcript_removed,
+        replay.last_event_at,
     )
     .await;
     sent
@@ -388,6 +389,8 @@ struct ConnectReplay {
     to_forward: Vec<(u64, Event)>,
     transcript_rows: Vec<crate::acp::transcript::TranscriptRow>,
     transcript_removed: Vec<String>,
+    /// When the session's latest event was recorded, so a client times stalls from it.
+    last_event_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 fn fold_connect_history(
@@ -398,6 +401,7 @@ fn fold_connect_history(
     let mut to_forward = Vec::new();
     let mut changed_ids = std::collections::HashSet::new();
     let mut removed_ids = std::collections::HashSet::new();
+    let mut last_event_at = None;
     for StoredEvent {
         seq,
         event,
@@ -406,6 +410,7 @@ fn fold_connect_history(
     {
         let _ = folds.reduced.apply_event(event.clone());
         folds.last_applied_seq = seq;
+        last_event_at = Some(recorded_at);
         let deltas = folds.transcript.apply_event_at(seq, &event, recorded_at);
         if seq > since {
             for delta in deltas {
@@ -440,6 +445,7 @@ fn fold_connect_history(
         to_forward,
         transcript_rows,
         transcript_removed,
+        last_event_at,
     }
 }
 
@@ -525,6 +531,7 @@ async fn send_transcript_snapshot(
     seq: u64,
     rows: &[crate::acp::transcript::TranscriptRow],
     removed: &[String],
+    last_event_at: Option<chrono::DateTime<chrono::Utc>>,
 ) -> bool {
     let frame = serde_json::json!({
         "kind": "transcript_snapshot",
@@ -532,6 +539,7 @@ async fn send_transcript_snapshot(
         "seq": seq,
         "rows": rows,
         "removed": removed,
+        "last_event_at": last_event_at,
     });
     match serde_json::to_string(&frame) {
         Ok(payload) => socket.send(Message::Text(payload.into())).await.is_ok(),
@@ -749,7 +757,7 @@ mod tests {
             .map(|(seq, event)| StoredEvent {
                 seq,
                 event,
-                recorded_at: chrono::DateTime::UNIX_EPOCH,
+                recorded_at: chrono::DateTime::from_timestamp(seq as i64, 0).unwrap(),
             })
             .collect()
     }
@@ -826,6 +834,8 @@ mod tests {
         assert!(replay.to_forward.is_empty(), "nothing new to forward");
         assert!(replay.transcript_rows.is_empty());
         assert_eq!(folds.last_applied_seq, 4);
+        // Even with nothing new, the client learns when the session last did anything.
+        assert_eq!(replay.last_event_at, chrono::DateTime::from_timestamp(4, 0));
         assert!(
             !folds.transcript.rows().is_empty(),
             "transcript retains context for streamed suffixes"
