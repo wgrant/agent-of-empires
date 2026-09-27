@@ -149,11 +149,14 @@ export function UsageHint({
   quota = null,
   lastModel = null,
   lastTurnUsage = null,
+  compact = false,
 }: {
   usage: AcpState["sessionUsage"];
   quota?: AcpState["quota"];
   lastModel?: AcpState["lastModel"];
   lastTurnUsage?: AcpState["lastTurnUsage"];
+  /** Sized for the collapsed composer strip. */
+  compact?: boolean;
 }) {
   const now = useMinuteClock();
   const windows = compactQuotaWindows(quota, now);
@@ -175,11 +178,12 @@ export function UsageHint({
     .filter(Boolean)
     .join(quota || turnLines.length > 0 ? "\n" : " ");
   return (
-    <span className="min-w-0">
+    // Flex, so the text centres in its row rather than sitting on a baseline.
+    <span className="flex min-w-0 items-center">
       <Tooltip text={explanation} multiline>
         <span
           data-testid="composer-usage"
-          className="inline-flex items-center gap-1 text-[11px] tabular-nums text-text-dim"
+          className={`inline-flex items-center gap-1 ${compact ? "text-[10px]" : "text-[11px]"} tabular-nums text-text-dim`}
           aria-label={explanation}
         >
           {context && (
