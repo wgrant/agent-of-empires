@@ -21,6 +21,7 @@ interface SpinnerOpts {
   cancelEscalatesAt?: string | null;
   compacting?: boolean;
   compactionStartedSecsAgo?: number;
+  awaiting?: string[];
 }
 
 function renderSpinner(opts: SpinnerOpts) {
@@ -37,6 +38,10 @@ function renderSpinner(opts: SpinnerOpts) {
           ? null
           : new Date(Date.now() - opts.compactionStartedSecsAgo * 1000).toISOString()
       }
+      awaiting={(opts.awaiting ?? []).map((name) => ({
+        name,
+        startedAt: new Date(Date.now() - 65_000).toISOString(),
+      }))}
       lastActivityRef={ref}
     />,
   );
@@ -66,6 +71,13 @@ describe("WorkingSpinner", () => {
       { stalledSecs: 3, tool: null, compacting: true, compactionStartedSecsAgo: 125 },
       /compaction in progress… 2m 0[56]s/i,
     ],
+    // An in-flight Agent call or forked skill names what it waits on.
+    [
+      "waiting on its agent",
+      { stalledSecs: 60, tool: "Skill", awaiting: ["/code-review"] },
+      /waiting on \/code-review… 1m 0[56]s/i,
+    ],
+    ["waiting on several agents", { stalledSecs: 2, tool: "Agent", awaiting: ["a", "b"] }, /waiting on 2 agents…/i],
     ["cancel during compaction", { stalledSecs: 85, tool: null, compacting: true, cancelling: true }, /stopping…/i],
     [
       "cancel with an escalation deadline",

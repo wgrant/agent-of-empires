@@ -1,7 +1,7 @@
 // The subagents a session delegated to, and each one's own transcript as a
 // thread of its own.
 
-import type { ActivityRow, Approval } from "./acpTypes";
+import type { ActivityRow, Approval, ToolCall } from "./acpTypes";
 
 /** `idle`: a teammate between runs, waiting for a message. */
 export type AgentRunState = "running" | "idle" | "done" | "failed" | "stopped";
@@ -49,6 +49,24 @@ export function listAgents(rows: readonly ActivityRow[]): AgentSummary[] {
             recent: index > lastPrompt,
           },
         ]
+      : [],
+  );
+}
+
+/**
+ * The running agents the lead's in-flight call is waiting on: those it
+ * started, as an Agent call or a forked skill, rather than earlier
+ * background work that runs beside it.
+ */
+export function agentsAwaited(
+  rows: readonly ActivityRow[],
+  tool: ToolCall | null,
+): { name: string; startedAt: string }[] {
+  const since = tool ? Date.parse(tool.started_at) : NaN;
+  if (Number.isNaN(since)) return [];
+  return rows.flatMap((row) =>
+    row.kind === "subagent" && row.subagent && !row.subagentId && !row.subagent.state && Date.parse(row.at) >= since
+      ? [{ name: row.subagent.name, startedAt: row.at }]
       : [],
   );
 }

@@ -15,7 +15,7 @@ import { useWebSettings } from "../../hooks/useWebSettings";
 import { useDashboardConnectionDiagnostics } from "../../lib/connectionState";
 import { lastClearIndex } from "../../lib/acpHistoryWindow";
 import type { ActivityRow } from "../../lib/acpTypes";
-import { approvalAsker, listAgents, resolveViewedAgent } from "../../lib/agentView";
+import { agentsAwaited, approvalAsker, listAgents, resolveViewedAgent } from "../../lib/agentView";
 import { derivePromptOutbox } from "../../lib/acpPromptOutbox";
 import { AgentProfileProvider } from "../../lib/agentProfileContext";
 import { conversationFontSizeRem } from "../../lib/conversationFontSize";
@@ -463,6 +463,7 @@ function AcpChrome({
                     cancelEscalatesAt={conversationNextStep.cancelEscalatesAt}
                     compacting={conversationNextStep.compacting}
                     compactionStartedAt={runningCompactionStart(state.activity)}
+                    awaiting={agentsAwaited(state.activity, state.inFlightTool)}
                     lastActivityRef={ctx.lastActivityRef}
                   />
                 </div>
