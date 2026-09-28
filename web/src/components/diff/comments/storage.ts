@@ -94,6 +94,13 @@ export function isWellFormed(c: unknown): c is DiffComment {
     typeof o.endLine === "number" &&
     typeof o.body === "string" &&
     typeof o.capturedSnippet === "string" &&
-    typeof o.createdAt === "string"
+    typeof o.createdAt === "string" &&
+    (o.range === undefined || isRange(o.range))
   );
+}
+
+function isRange(value: unknown): boolean {
+  if (!value || typeof value !== "object") return false;
+  const r = value as Record<string, unknown>;
+  return typeof r.base === "string" && typeof r.head === "string";
 }

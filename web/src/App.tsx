@@ -10,7 +10,12 @@ import {
   type ReactNode,
 } from "react";
 import { Puzzle } from "lucide-react";
-import { useLocation, useMatch, useNavigate, useSearchParams } from "react-router-dom";
+import {
+  useLocation,
+  useMatch,
+  useNavigate,
+  useSearchParams,
+} from "react-router-dom";
 import { IDLE_DECAY_WINDOW_MS } from "./lib/session";
 import { diffSelectionStale } from "./lib/diffSelection";
 import { useSessions } from "./hooks/useSessions";
@@ -31,9 +36,16 @@ import { useOrgGroups } from "./hooks/useOrgGroups";
 import { PluginUiProvider, usePluginUiEntries } from "./lib/pluginUiContext";
 import { buildSortValueMap, pluginSortSpecs } from "./lib/pluginUi";
 import type { PluginSortContext, SidebarSortMode } from "./lib/sidebarSort";
-import { nextAttentionSessionId, sessionNeedsAttention, workspaceIsTrashed } from "./lib/sidebarSort";
+import {
+  nextAttentionSessionId,
+  sessionNeedsAttention,
+  workspaceIsTrashed,
+} from "./lib/sidebarSort";
 import { useSidebarAxis, useSidebarSortMode } from "./hooks/useSidebarPrefs";
-import { repoGroupToSidebarGroup, type SidebarGroup } from "./lib/sidebarGroups";
+import {
+  repoGroupToSidebarGroup,
+  type SidebarGroup,
+} from "./lib/sidebarGroups";
 import { useProjects } from "./hooks/useProjects";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { useResolvedTheme } from "./hooks/useResolvedTheme";
@@ -42,9 +54,16 @@ import { getAttentionBadgeColors } from "./lib/attentionBadgeColors";
 import { useWebSettings } from "./hooks/useWebSettings";
 import { useDiffFiles } from "./hooks/useDiffFiles";
 import { useDiffComments } from "./hooks/useDiffComments";
-import { clearStoredComments, sweepOrphanComments } from "./components/diff/comments/storage";
+import {
+  clearStoredComments,
+  sweepOrphanComments,
+} from "./components/diff/comments/storage";
 import { SendCommentsDialog } from "./components/diff/comments/SendCommentsDialog";
-import { useCommandActions, buildConversationActions, type SessionStateAction } from "./hooks/useCommandActions";
+import {
+  useCommandActions,
+  buildConversationActions,
+  type SessionStateAction,
+} from "./hooks/useCommandActions";
 import { usePluginCommands } from "./hooks/usePluginCommands";
 import { useSettingsCommands } from "./hooks/useSettingsCommands";
 import { useDrawerSwipe, type DrawerSwipeAction } from "./hooks/useDrawerSwipe";
@@ -52,8 +71,20 @@ import { useIsCoarsePointer } from "./hooks/useIsCoarsePointer";
 import { useMobileViewportLock } from "./hooks/useMobileViewportLock";
 import { useIsWideViewport } from "./hooks/useIsWideViewport";
 import type { RightPanelView } from "./lib/rightPanelView";
-import { usePaneLayout, dockTabs, dockGroups, dockOf, isActiveTab, isDockCollapsed } from "./lib/paneLayout";
-import { isPluginPaneId, resolvePaneIcon, usePluginPanes, type PluginPane } from "./lib/pluginPanes";
+import {
+  usePaneLayout,
+  dockTabs,
+  dockGroups,
+  dockOf,
+  isActiveTab,
+  isDockCollapsed,
+} from "./lib/paneLayout";
+import {
+  isPluginPaneId,
+  resolvePaneIcon,
+  usePluginPanes,
+  type PluginPane,
+} from "./lib/pluginPanes";
 import { PluginPaneBody } from "./components/plugin/PluginPane";
 import { TOUR_ANCHORS, tourAnchor } from "./lib/tourSteps";
 import {
@@ -95,15 +126,49 @@ import {
 import type { DeleteSessionOptions, ServerAbout } from "./lib/api";
 import { getClientCapabilities } from "./lib/clientCapabilities";
 import { normalizeProjectPathKey } from "./lib/registeredProjects";
-import { IdleDecayWindowContext, parseIdleDecayWindowMs } from "./lib/idleDecay";
-import { parseUnreadIndicatorEnabled, UnreadIndicatorContext, useUnreadIndicatorEnabled } from "./lib/unreadIndicator";
-import { parseSessionRowTagMode, SessionRowTagContext, type SessionRowTagMode } from "./lib/sessionRowTag";
-import { parseSessionColorsEnabled, SessionColorsContext } from "./lib/sessionColors";
+import {
+  IdleDecayWindowContext,
+  parseIdleDecayWindowMs,
+} from "./lib/idleDecay";
+import {
+  parseUnreadIndicatorEnabled,
+  UnreadIndicatorContext,
+  useUnreadIndicatorEnabled,
+} from "./lib/unreadIndicator";
+import {
+  parseSessionRowTagMode,
+  SessionRowTagContext,
+  type SessionRowTagMode,
+} from "./lib/sessionRowTag";
+import {
+  parseSessionColorsEnabled,
+  SessionColorsContext,
+} from "./lib/sessionColors";
 import { onSettingsChanged } from "./lib/settingsEvents";
-import { parseSystemHealthEnabled, SystemHealthEnabledContext } from "./lib/systemHealth";
+import {
+  parseSystemHealthEnabled,
+  SystemHealthEnabledContext,
+} from "./lib/systemHealth";
 import { toastBus, reportError } from "./lib/toastBus";
 import { startPendingCreates } from "./lib/pendingCreates";
-import { isAbsolutePath, resolveToRepoRelative, type FileRef } from "./lib/fileRef";
+import {
+  viewFor,
+  viewMatches,
+  viewsParam,
+  withView,
+  withoutView,
+  type DiffTarget,
+  type DiffView,
+} from "./lib/diffViews";
+import {
+  DiffViewsContext,
+  type DiffViewsApi,
+} from "./components/diff/DiffViewsContext";
+import {
+  isAbsolutePath,
+  resolveToRepoRelative,
+  type FileRef,
+} from "./lib/fileRef";
 import { NAVIGATE_EVENT, OPEN_SESSION_EVENT } from "./lib/sessionRoute";
 import {
   clearPendingTerminalFocus,
@@ -125,7 +190,10 @@ import { DeleteSessionDialog } from "./components/DeleteSessionDialog";
 import { StopSessionDialog } from "./components/StopSessionDialog";
 import { SwitchViewDialog } from "./components/SwitchViewDialog";
 import { TopBar } from "./components/TopBar";
-import { AppShellSkeleton, MainPaneSkeleton } from "./components/AppShellSkeleton";
+import {
+  AppShellSkeleton,
+  MainPaneSkeleton,
+} from "./components/AppShellSkeleton";
 import { ContentSplit } from "./components/ContentSplit";
 import { TerminalSessionStack } from "./components/TerminalSessionStack";
 // Lazy-load the acp surface so non-acp users never download
@@ -149,10 +217,19 @@ import { FilesPane } from "./components/FilesPane";
 import { FileContentViewer } from "./components/diff/FileContentViewer";
 import { FileImageViewer } from "./components/diff/FileImageViewer";
 import { PairedShellPane } from "./components/PairedTerminal";
-import { BUILTIN_PANES, isTerminalTabId, terminalIndexOf, terminalTabId, type DockLocation } from "./lib/panes";
+import {
+  BUILTIN_PANES,
+  isTerminalTabId,
+  terminalIndexOf,
+  terminalTabId,
+  type DockLocation,
+} from "./lib/panes";
 import { MobileRightPanelPicker } from "./components/MobileRightPanelPicker";
 import { MobileMainPane } from "./components/MobileMainPane";
-import { ChromeCollapseHandle, CollapsibleRegion } from "./components/CollapsibleChrome";
+import {
+  ChromeCollapseHandle,
+  CollapsibleRegion,
+} from "./components/CollapsibleChrome";
 import { DiffFileViewer } from "./components/diff/DiffFileViewer";
 import { SettingsView } from "./components/SettingsView";
 import { ProjectFormModal } from "./components/ProjectFormModal";
@@ -168,7 +245,11 @@ import type { ProjectInfo, RepoGroup, SessionResponse } from "./lib/types";
 import { Dashboard } from "./components/Dashboard";
 import { LoginPage } from "./components/LoginPage";
 import { TokenEntryPage } from "./components/TokenEntryPage";
-import { LOGIN_REQUIRED_EVENT, TOKEN_EXPIRED_EVENT, resetTokenExpired } from "./lib/fetchInterceptor";
+import {
+  LOGIN_REQUIRED_EVENT,
+  TOKEN_EXPIRED_EVENT,
+  resetTokenExpired,
+} from "./lib/fetchInterceptor";
 import { AboutModal } from "./components/AboutModal";
 import { TelemetryConsentModal } from "./components/TelemetryConsentModal";
 import { TipsModal } from "./components/TipsModal";
@@ -195,19 +276,24 @@ export default function App() {
   const [loginRequired, setLoginRequired] = useState<boolean | null>(null);
   const [loginAuthenticated, setLoginAuthenticated] = useState(true);
   const [tokenExpired, setTokenExpired] = useState(false);
-  const [idleDecayWindowMs, setIdleDecayWindowMs] = useState(IDLE_DECAY_WINDOW_MS);
+  const [idleDecayWindowMs, setIdleDecayWindowMs] =
+    useState(IDLE_DECAY_WINDOW_MS);
   const [unreadIndicatorEnabled, setUnreadIndicatorEnabled] = useState(true);
-  const [sessionRowTagMode, setSessionRowTagMode] = useState<SessionRowTagMode>("branch");
+  const [sessionRowTagMode, setSessionRowTagMode] =
+    useState<SessionRowTagMode>("branch");
   const [sessionColorsEnabled, setSessionColorsEnabled] = useState(true);
   const [systemHealthEnabled, setSystemHealthEnabled] = useState(false);
 
-  const applyAppSettings = useCallback((settings: Record<string, unknown> | null | undefined) => {
-    setIdleDecayWindowMs(parseIdleDecayWindowMs(settings));
-    setUnreadIndicatorEnabled(parseUnreadIndicatorEnabled(settings));
-    setSessionRowTagMode(parseSessionRowTagMode(settings));
-    setSessionColorsEnabled(parseSessionColorsEnabled(settings));
-    setSystemHealthEnabled(parseSystemHealthEnabled(settings));
-  }, []);
+  const applyAppSettings = useCallback(
+    (settings: Record<string, unknown> | null | undefined) => {
+      setIdleDecayWindowMs(parseIdleDecayWindowMs(settings));
+      setUnreadIndicatorEnabled(parseUnreadIndicatorEnabled(settings));
+      setSessionRowTagMode(parseSessionRowTagMode(settings));
+      setSessionColorsEnabled(parseSessionColorsEnabled(settings));
+      setSystemHealthEnabled(parseSystemHealthEnabled(settings));
+    },
+    [],
+  );
 
   // A save can land while an earlier read is in flight; only the latest applies.
   const settingsReadSeq = useRef(0);
@@ -217,12 +303,16 @@ export default function App() {
     if (seq === settingsReadSeq.current) applyAppSettings(settings);
   }, [applyAppSettings]);
 
-  useEffect(() => onSettingsChanged(() => void refreshAppSettings()), [refreshAppSettings]);
+  useEffect(
+    () => onSettingsChanged(() => void refreshAppSettings()),
+    [refreshAppSettings],
+  );
 
   useEffect(() => {
     const onTokenExpired = () => setTokenExpired(true);
     window.addEventListener(TOKEN_EXPIRED_EVENT, onTokenExpired);
-    return () => window.removeEventListener(TOKEN_EXPIRED_EVENT, onTokenExpired);
+    return () =>
+      window.removeEventListener(TOKEN_EXPIRED_EVENT, onTokenExpired);
   }, []);
 
   // Clearing tokenExpired here matters: the render order below shows
@@ -235,7 +325,8 @@ export default function App() {
       setLoginAuthenticated(false);
     };
     window.addEventListener(LOGIN_REQUIRED_EVENT, onLoginRequired);
-    return () => window.removeEventListener(LOGIN_REQUIRED_EVENT, onLoginRequired);
+    return () =>
+      window.removeEventListener(LOGIN_REQUIRED_EVENT, onLoginRequired);
   }, []);
 
   // Settings are read once the login gate says they can be: on a
@@ -303,7 +394,11 @@ export default function App() {
                 the plugin UI snapshot (usePluginPanes), so the provider can't live
                 inside its own return. */}
               <PluginUiProvider>
-                <AppContent loginRequired={loginRequired} onLogout={handleLogout} resolvedTheme={resolvedTheme} />
+                <AppContent
+                  loginRequired={loginRequired}
+                  onLogout={handleLogout}
+                  resolvedTheme={resolvedTheme}
+                />
               </PluginUiProvider>
               <ElevationPrompt />
             </SystemHealthEnabledContext.Provider>
@@ -375,7 +470,9 @@ function AppContent({
     setSessionStatus,
     applySession,
   } = useSessions();
-  const [pendingAgentOperations, setPendingAgentOperations] = useState<Record<string, PendingAgentOperation>>({});
+  const [pendingAgentOperations, setPendingAgentOperations] = useState<
+    Record<string, PendingAgentOperation>
+  >({});
   const effectivePendingAgentOperations = useMemo(() => {
     const next = { ...pendingAgentOperations };
     for (const session of sessions) {
@@ -383,9 +480,11 @@ function AppContent({
       if (!operation) continue;
       const completed =
         operation.kind === "stop"
-          ? session.status === "Stopped" && session.acp_worker_state !== "running"
+          ? session.status === "Stopped" &&
+            session.acp_worker_state !== "running"
           : session.view === "structured"
-            ? session.acp_worker_state === "running" || session.status === "Error"
+            ? session.acp_worker_state === "running" ||
+              session.status === "Error"
             : !["Starting", "Stopped"].includes(session.status);
       if (completed) delete next[session.id];
     }
@@ -400,7 +499,8 @@ function AppContent({
         injectSession(session);
         toastBus.handler?.info(`"${session.title}" is ready`);
       },
-      onFailed: (message) => toastBus.handler?.error(`Session was not created: ${message}`),
+      onFailed: (message) =>
+        toastBus.handler?.error(`Session was not created: ${message}`),
       onUnknown: (message) => toastBus.handler?.error(message),
       onUnsaved: () =>
         toastBus.handler?.error(
@@ -413,12 +513,24 @@ function AppContent({
   // sidebar's per-`group_path` slice views. A workspace is in Trash only when
   // every one of its sessions is trashed, and Restore/Delete then cover all of
   // them. See #2533.
-  const trashedWorkspaces = useMemo(() => workspaces.filter(workspaceIsTrashed), [workspaces]);
+  const trashedWorkspaces = useMemo(
+    () => workspaces.filter(workspaceIsTrashed),
+    [workspaces],
+  );
 
-  const { unreadCount, waitingCount } = useAttentionCounts(sessions, activeSessionId);
+  const { unreadCount, waitingCount } = useAttentionCounts(
+    sessions,
+    activeSessionId,
+  );
   const runningBackground = useRunningBackgroundCount(activeSessionId);
-  const paneBadges = useMemo(() => ({ agents: runningBackground }), [runningBackground]);
-  const attentionBadgeColors = useMemo(() => getAttentionBadgeColors(resolvedTheme), [resolvedTheme]);
+  const paneBadges = useMemo(
+    () => ({ agents: runningBackground }),
+    [runningBackground],
+  );
+  const attentionBadgeColors = useMemo(
+    () => getAttentionBadgeColors(resolvedTheme),
+    [resolvedTheme],
+  );
 
   // Remember the active session and restore it on a PWA relaunch (#2103).
   useLastSessionRestore({ activeSessionId, sessions, sessionsLoaded });
@@ -461,12 +573,17 @@ function AppContent({
   // built-in sort; if the entry reappears on a later poll the selection
   // resumes. Selecting a built-in mode clears it via `selectSidebarSortMode`.
   const pluginUiEntries = usePluginUiEntries();
-  const [pluginSortRef, setPluginSortRef] = useState<{ pluginId: string; entryId: string } | null>(null);
+  const [pluginSortRef, setPluginSortRef] = useState<{
+    pluginId: string;
+    entryId: string;
+  } | null>(null);
   const activePluginSort = useMemo(() => {
     if (!pluginSortRef) return null;
     return (
       pluginSortSpecs(pluginUiEntries).find(
-        (s) => s.pluginId === pluginSortRef.pluginId && s.entryId === pluginSortRef.entryId,
+        (s) =>
+          s.pluginId === pluginSortRef.pluginId &&
+          s.entryId === pluginSortRef.entryId,
       ) ?? null
     );
   }, [pluginUiEntries, pluginSortRef]);
@@ -475,7 +592,11 @@ function AppContent({
       activePluginSort
         ? {
             direction: activePluginSort.direction,
-            values: buildSortValueMap(pluginUiEntries, activePluginSort.pluginId, activePluginSort.column),
+            values: buildSortValueMap(
+              pluginUiEntries,
+              activePluginSort.pluginId,
+              activePluginSort.column,
+            ),
           }
         : undefined,
     [activePluginSort, pluginUiEntries],
@@ -495,17 +616,24 @@ function AppContent({
     toggleRepoCollapsed,
     updateRepoAppearance,
     reorderRepoGroups,
-  } = useRepoGroups(workspaces, workspaceOrdering, sidebarSortMode, projects, pluginSort);
-  const { groups: sessionGroups, toggleGroupCollapsed } = useSessionGroups(workspaces, sidebarSortMode, pluginSort);
+  } = useRepoGroups(
+    workspaces,
+    workspaceOrdering,
+    sidebarSortMode,
+    projects,
+    pluginSort,
+  );
+  const { groups: sessionGroups, toggleGroupCollapsed } = useSessionGroups(
+    workspaces,
+    sidebarSortMode,
+    pluginSort,
+  );
   // The nested `repo+group` axis reuses the already-built repo groups for
   // its top level (so repo collapse, appearance, and ordering are shared
   // with the repo axis) and splits each repo by `group_path` underneath.
   // See #1720.
-  const { groups: nestedGroups, toggleSubgroupCollapsed } = useNestedSidebarGroups(
-    repoGroups,
-    sidebarSortMode,
-    pluginSort,
-  );
+  const { groups: nestedGroups, toggleSubgroupCollapsed } =
+    useNestedSidebarGroups(repoGroups, sidebarSortMode, pluginSort);
   // The org axis (#3283) partitions the same repo groups by remote owner;
   // it needs no sort/plugin-sort input of its own since it reuses each
   // repo's already-ordered workspace list verbatim, just like the nested
@@ -521,10 +649,14 @@ function AppContent({
   // that shape. Collapse routing follows the active axis so the two
   // axes keep independent collapse state. See #1234.
   const sidebarGroups = useMemo(
-    () => (sidebarAxis === "group" ? sessionGroups : repoGroups.map(repoGroupToSidebarGroup)),
+    () =>
+      sidebarAxis === "group"
+        ? sessionGroups
+        : repoGroups.map(repoGroupToSidebarGroup),
     [sidebarAxis, sessionGroups, repoGroups],
   );
-  const toggleSidebarGroup = sidebarAxis === "group" ? toggleGroupCollapsed : toggleRepoCollapsed;
+  const toggleSidebarGroup =
+    sidebarAxis === "group" ? toggleGroupCollapsed : toggleRepoCollapsed;
 
   // Drag-end handler for the sidebar. Optimistically applies the new
   // order locally so the row snaps into place, then persists to the
@@ -599,7 +731,9 @@ function AppContent({
   // Manual activity-bar opens and already-open panes are unaffected.
   useEffect(() => {
     syncPlugins(
-      webSettings.autoOpenPluginPanes ? pluginPanes.map((p) => ({ id: p.id, defaultDock: p.defaultDock })) : [],
+      webSettings.autoOpenPluginPanes
+        ? pluginPanes.map((p) => ({ id: p.id, defaultDock: p.defaultDock }))
+        : [],
     );
   }, [pluginPanes, syncPlugins, webSettings.autoOpenPluginPanes]);
 
@@ -618,7 +752,13 @@ function AppContent({
       if (!res) return;
       setPluginIdentityById(
         Object.fromEntries(
-          res.plugins.map((p) => [p.id, { icon: p.icon ?? undefined, iconAssetUrl: p.icon_asset_url ?? undefined }]),
+          res.plugins.map((p) => [
+            p.id,
+            {
+              icon: p.icon ?? undefined,
+              iconAssetUrl: p.icon_asset_url ?? undefined,
+            },
+          ]),
         ),
       );
     });
@@ -632,12 +772,19 @@ function AppContent({
         const icon = resolvePaneIcon(plugin.icon, identity?.icon) ?? Puzzle;
         // A plugin's real logo outranks any lucide glyph, including a
         // per-pane runtime icon a worker chose before icon_asset existed.
-        return { title: plugin.title, icon, iconAssetUrl: identity?.iconAssetUrl };
+        return {
+          title: plugin.title,
+          icon,
+          iconAssetUrl: identity?.iconAssetUrl,
+        };
       }
       if (isTerminalTabId(id)) {
         const idx = terminalIndexOf(id);
         const term = BUILTIN_PANES.find((p) => p.id === "terminal")!;
-        return { title: idx === 0 ? term.title : `${term.title} ${idx + 1}`, icon: term.icon };
+        return {
+          title: idx === 0 ? term.title : `${term.title} ${idx + 1}`,
+          icon: term.icon,
+        };
       }
       const d = BUILTIN_PANES.find((p) => p.id === id)!;
       return { title: d.title, icon: d.icon };
@@ -659,16 +806,21 @@ function AppContent({
       dockGroups(paneLayout, dock)
         .map((g, group) => {
           const tabs = g.tabs.filter(tabAvailable);
-          const active = g.active && tabs.includes(g.active) ? g.active : (tabs[0] ?? null);
+          const active =
+            g.active && tabs.includes(g.active) ? g.active : (tabs[0] ?? null);
           return { group, tabs, active };
         })
         .filter((g) => g.tabs.length > 0),
     [paneLayout, tabAvailable],
   );
 
-  const availableRightGroups = useMemo(() => renderGroups("right"), [renderGroups]);
+  const availableRightGroups = useMemo(
+    () => renderGroups("right"),
+    [renderGroups],
+  );
   const rightDockExplicitlyCollapsed = isDockCollapsed(paneLayout, "right");
-  const rightDockCollapsed = rightDockExplicitlyCollapsed || availableRightGroups.length === 0;
+  const rightDockCollapsed =
+    rightDockExplicitlyCollapsed || availableRightGroups.length === 0;
   const rightGroups = useMemo(
     () => (rightDockExplicitlyCollapsed ? [] : availableRightGroups),
     [rightDockExplicitlyCollapsed, availableRightGroups],
@@ -682,7 +834,9 @@ function AppContent({
     [rightGroups, bottomGroups],
   );
   const terminalOpen = (["right", "bottom"] as DockLocation[]).some(
-    (d) => !isDockCollapsed(paneLayout, d) && dockTabs(paneLayout, d).some(isTerminalTabId),
+    (d) =>
+      !isDockCollapsed(paneLayout, d) &&
+      dockTabs(paneLayout, d).some(isTerminalTabId),
   );
 
   // Activity-bar entries are pane KINDS (diff, terminal, each plugin), not
@@ -695,9 +849,15 @@ function AppContent({
   const togglePaneAny = useCallback(
     (kind: string) => {
       const defaultDock: DockLocation =
-        pluginPaneById.get(kind)?.defaultDock ?? BUILTIN_PANES.find((p) => p.id === kind)?.defaultDock ?? "right";
+        pluginPaneById.get(kind)?.defaultDock ??
+        BUILTIN_PANES.find((p) => p.id === kind)?.defaultDock ??
+        "right";
       if (isPluginPaneId(kind)) togglePlugin(kind, defaultDock);
-      else toggleKind(kind as "diff" | "terminal" | "agents" | "files", defaultDock);
+      else
+        toggleKind(
+          kind as "diff" | "terminal" | "agents" | "files",
+          defaultDock,
+        );
     },
     [toggleKind, togglePlugin, pluginPaneById],
   );
@@ -731,7 +891,10 @@ function AppContent({
     },
     [closeTab, activeSessionId],
   );
-  const movePaneAny = useCallback((id: string, dock: DockLocation) => moveTab(id, dock), [moveTab]);
+  const movePaneAny = useCallback(
+    (id: string, dock: DockLocation) => moveTab(id, dock),
+    [moveTab],
+  );
   // The dnd controller works in visible-tab space; map a drop index back to the
   // target group's full persisted tab list, since a hidden (unloaded) plugin tab
   // still holds a slot the visible index does not count. A split target carries
@@ -739,11 +902,21 @@ function AppContent({
   const placeVisibleTab = useCallback(
     (id: string, target: DropTarget) => {
       if (target.newGroup) {
-        placeTab(id, { dock: target.dock, group: target.group, newGroup: true });
+        placeTab(id, {
+          dock: target.dock,
+          group: target.group,
+          newGroup: true,
+        });
         return;
       }
-      const fullBase = (dockGroups(paneLayout, target.dock)[target.group]?.tabs ?? []).filter((tab) => tab !== id);
-      const index = visibleToFullIndex(fullBase, target.index ?? fullBase.length, tabAvailable);
+      const fullBase = (
+        dockGroups(paneLayout, target.dock)[target.group]?.tabs ?? []
+      ).filter((tab) => tab !== id);
+      const index = visibleToFullIndex(
+        fullBase,
+        target.index ?? fullBase.length,
+        tabAvailable,
+      );
       placeTab(id, { dock: target.dock, group: target.group, index });
     },
     [paneLayout, placeTab, tabAvailable],
@@ -798,13 +971,19 @@ function AppContent({
   // yet" look the same; the tips auto-pop waits on this so it can't slip in
   // before a pending consent modal.
   const [telemetryConsentKnown, setTelemetryConsentKnown] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 768);
+  const [sidebarOpen, setSidebarOpen] = useState(
+    () => window.innerWidth >= 768,
+  );
   const keyboardProxyRef = useRef<HTMLTextAreaElement>(null);
-  const [keyboardProxy, setKeyboardProxy] = useState<HTMLTextAreaElement | null>(null);
-  const setKeyboardProxyRef = useCallback((element: HTMLTextAreaElement | null) => {
-    keyboardProxyRef.current = element;
-    setKeyboardProxy(element);
-  }, []);
+  const [keyboardProxy, setKeyboardProxy] =
+    useState<HTMLTextAreaElement | null>(null);
+  const setKeyboardProxyRef = useCallback(
+    (element: HTMLTextAreaElement | null) => {
+      keyboardProxyRef.current = element;
+      setKeyboardProxy(element);
+    },
+    [],
+  );
 
   const [serverAbout, setServerAbout] = useState<ServerAbout | null>(null);
   // CityHall client mode collapses the dashboard to a locked-down end-user
@@ -814,14 +993,21 @@ function AppContent({
 
   const activeWorkspace = useMemo(() => {
     if (!activeSessionId) return undefined;
-    return workspaces.find((w) => w.sessions.some((s) => s.id === activeSessionId));
+    return workspaces.find((w) =>
+      w.sessions.some((s) => s.id === activeSessionId),
+    );
   }, [workspaces, activeSessionId]);
-  const activeSession = activeWorkspace?.sessions.find((s) => s.id === activeSessionId);
+  const activeSession = activeWorkspace?.sessions.find(
+    (s) => s.id === activeSessionId,
+  );
   const activeProjectName = useMemo(() => {
     if (!activeWorkspace) return null;
     return (
-      repoGroups.find((group) => group.workspaces.some((workspace) => workspace.id === activeWorkspace.id))
-        ?.displayName ?? null
+      repoGroups.find((group) =>
+        group.workspaces.some(
+          (workspace) => workspace.id === activeWorkspace.id,
+        ),
+      )?.displayName ?? null
     );
   }, [activeWorkspace, repoGroups]);
   const allPaneIds: string[] = [
@@ -844,7 +1030,25 @@ function AppContent({
 
   // Fetch the diff when the panel is actually showing: on desktop when the
   // split is expanded, on mobile when the diff view is the active pane.
-  const diffPanelActive = isMdUp ? dockOf(paneLayout, "diff") !== null : rightPanelView === "diff";
+  const diffPanelActive = isMdUp
+    ? dockOf(paneLayout, "diff") !== null
+    : rightPanelView === "diff";
+  // This browser's diff views, per session: never saved as session state.
+  const [diffViewsBySession, setDiffViewsBySession] = useState<
+    Record<string, DiffView[]>
+  >({});
+  const diffViews =
+    (activeSessionId && diffViewsBySession[activeSessionId]) || NO_DIFF_VIEWS;
+  const updateDiffViews = useCallback(
+    (update: (views: DiffView[]) => DiffView[]) => {
+      if (!activeSessionId) return;
+      setDiffViewsBySession((prev) => ({
+        ...prev,
+        [activeSessionId]: update(prev[activeSessionId] ?? []),
+      }));
+    },
+    [activeSessionId],
+  );
   const {
     files: diffFiles,
     perRepoBases,
@@ -852,7 +1056,7 @@ function AppContent({
     loading: diffFilesLoading,
     revision,
     refresh: refreshDiffFiles,
-  } = useDiffFiles(activeSessionId, diffPanelActive);
+  } = useDiffFiles(activeSessionId, diffPanelActive, viewsParam(diffViews));
 
   // Diff-viewer comments (#928). Acp-only and session-scoped. The
   // banner lives in the diff pane while the inline UI lives inside
@@ -860,12 +1064,16 @@ function AppContent({
   const diffComments = useDiffComments(activeSessionId);
   const commentsEnabled = activeSession?.view === "structured";
   // The diff viewer returns to whatever the session shows in the main pane.
-  const diffBackLabel = activeSession?.view === "structured" ? "Transcript" : "Terminal";
+  const diffBackLabel =
+    activeSession?.view === "structured" ? "Transcript" : "Terminal";
   // Sending does not require a live worker: the diff-comments handler runs the
   // same auto-wake as a plain composer prompt, so a snoozed or idle-dormant
   // session respawns its worker on send. Archived and trashed sessions never
   // start on a prompt (#4116); they must be unarchived or restored first.
-  const commentSendEnabled = commentsEnabled && !activeSession?.trashed_at && !activeSession?.archived_at;
+  const commentSendEnabled =
+    commentsEnabled &&
+    !activeSession?.trashed_at &&
+    !activeSession?.archived_at;
   // Every disabled state names its cause and what the user can do about it: a
   // tooltip that only says "unavailable" leaves them staring at a dead button.
   const commentSendDisabledReason = !commentsEnabled
@@ -879,7 +1087,11 @@ function AppContent({
   useEffect(() => {
     if (!commentSendEnabled) return;
     const onKey = (e: KeyboardEvent) => {
-      if (!((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "s")) {
+      if (!(
+        (e.metaKey || e.ctrlKey) &&
+        e.shiftKey &&
+        e.key.toLowerCase() === "s"
+      )) {
         return;
       }
       if (isInsideEditable(e.target)) return;
@@ -919,7 +1131,10 @@ function AppContent({
   // Inline derivation for diffFiles validation: clear a stale diff-list
   // selection. The staleness rule (cited exemption, path+repo match) lives in
   // diffSelectionStale so it can be unit-tested. See #1810.
-  if (activeSessionId && diffSelectionStale(selectedFile, diffFilesLoading, diffFiles)) {
+  if (
+    activeSessionId &&
+    diffSelectionStale(selectedFile, diffFilesLoading, diffFiles)
+  ) {
     setSelectedFile(null);
   }
 
@@ -934,8 +1149,14 @@ function AppContent({
   // back to the agent view so the user is never stranded on a blank pane.
   // Mirrors the paired guard above; render-phase derivation per the block at
   // the top.
-  const isGatedBuiltinView = rightPanelView === "diff" || rightPanelView === "files" || rightPanelView === "agents";
-  if ((isGatedBuiltinView || isPluginPaneId(rightPanelView)) && !mobilePaneIds.includes(rightPanelView)) {
+  const isGatedBuiltinView =
+    rightPanelView === "diff" ||
+    rightPanelView === "files" ||
+    rightPanelView === "agents";
+  if (
+    (isGatedBuiltinView || isPluginPaneId(rightPanelView)) &&
+    !mobilePaneIds.includes(rightPanelView)
+  ) {
     setRightPanelView("agent");
   }
 
@@ -944,7 +1165,9 @@ function AppContent({
   // but a resize nudge re-runs the xterm fit so the grid matches exactly.
   useEffect(() => {
     if (!singlePane) return;
-    const id = requestAnimationFrame(() => window.dispatchEvent(new Event("resize")));
+    const id = requestAnimationFrame(() =>
+      window.dispatchEvent(new Event("resize")),
+    );
     return () => cancelAnimationFrame(id);
   }, [singlePane, rightPanelView]);
 
@@ -956,24 +1179,37 @@ function AppContent({
   const closeKeyboardProxy = () => {
     if (window.innerWidth < 768 && navigator.maxTouchPoints > 0) {
       keyboardProxyRef.current?.blur();
-      if (document.activeElement instanceof HTMLTextAreaElement) document.activeElement.blur();
+      if (document.activeElement instanceof HTMLTextAreaElement)
+        document.activeElement.blur();
     }
   };
 
   // Preserve the gesture-authorized proxy, but never carry its edits across
   // sessions or mobile surfaces. Reselecting the same target keeps its receiver.
   const keyboardProxySessionIdRef = useRef(activeSessionId);
-  const keyboardProxyViewRef = useRef<RightPanelView>(singlePane ? rightPanelView : "agent");
-  const transitionKeyboardProxy = useCallback((nextSessionId: string | null, nextView: RightPanelView) => {
-    if (keyboardProxySessionIdRef.current === nextSessionId && keyboardProxyViewRef.current === nextView) return;
-    keyboardProxySessionIdRef.current = nextSessionId;
-    keyboardProxyViewRef.current = nextView;
-    clearMobileKeyboardProxyInput();
-  }, []);
+  const keyboardProxyViewRef = useRef<RightPanelView>(
+    singlePane ? rightPanelView : "agent",
+  );
+  const transitionKeyboardProxy = useCallback(
+    (nextSessionId: string | null, nextView: RightPanelView) => {
+      if (
+        keyboardProxySessionIdRef.current === nextSessionId &&
+        keyboardProxyViewRef.current === nextView
+      )
+        return;
+      keyboardProxySessionIdRef.current = nextSessionId;
+      keyboardProxyViewRef.current = nextView;
+      clearMobileKeyboardProxyInput();
+    },
+    [],
+  );
 
   // Cover history and programmatic switches before the next input event.
   useLayoutEffect(() => {
-    transitionKeyboardProxy(activeSessionId, singlePane ? rightPanelView : "agent");
+    transitionKeyboardProxy(
+      activeSessionId,
+      singlePane ? rightPanelView : "agent",
+    );
   }, [activeSessionId, singlePane, rightPanelView, transitionKeyboardProxy]);
 
   useEffect(() => {
@@ -988,16 +1224,24 @@ function AppContent({
   // requestSessionInputFocus for the dispatch/latch and coarse-pointer rules.
   const isCoarse = useIsCoarsePointer();
   const focusAgentInput = useCallback(
-    (session: SessionResponse | undefined) => requestSessionInputFocus(session, isCoarse),
+    (session: SessionResponse | undefined) =>
+      requestSessionInputFocus(session, isCoarse),
     [isCoarse],
   );
 
   const handleSelectSession = useCallback(
     (sessionId: string, path?: string) => {
-      const ws = workspaces.find((w) => w.sessions.some((s) => s.id === sessionId));
+      const ws = workspaces.find((w) =>
+        w.sessions.some((s) => s.id === sessionId),
+      );
       if (ws) {
         const picked = ws.sessions.find((s) => s.id === sessionId);
-        transitionKeyboardProxy(sessionId, sessionId === activeSessionId && singlePane ? rightPanelView : "agent");
+        transitionKeyboardProxy(
+          sessionId,
+          sessionId === activeSessionId && singlePane
+            ? rightPanelView
+            : "agent",
+        );
         navigate(path ?? `/session/${encodeURIComponent(sessionId)}`);
         const keepComposerCollapsed = isCoarse && picked?.view === "structured";
         if (keepComposerCollapsed) {
@@ -1039,12 +1283,20 @@ function AppContent({
     ],
   );
 
-  const handleSelectWorkspace = (workspaceId: string, sessionId: string | null) => {
+  const handleSelectWorkspace = (
+    workspaceId: string,
+    sessionId: string | null,
+  ) => {
     const ws = workspaces.find((w) => w.id === workspaceId);
     if (ws) {
       const picked = ws.sessions.find((s) => s.id === sessionId);
       if (picked) {
-        transitionKeyboardProxy(picked.id, picked.id === activeSessionId && singlePane ? rightPanelView : "agent");
+        transitionKeyboardProxy(
+          picked.id,
+          picked.id === activeSessionId && singlePane
+            ? rightPanelView
+            : "agent",
+        );
         navigate(`/session/${encodeURIComponent(picked.id)}`);
         const keepComposerCollapsed = isCoarse && picked.view === "structured";
         if (keepComposerCollapsed) {
@@ -1074,7 +1326,8 @@ function AppContent({
   // the user taps it; navigate to the session that triggered the push.
   useEffect(() => {
     const onOpen = (e: Event) => {
-      const detail = (e as CustomEvent).detail as { sessionId?: string; path?: string } | undefined;
+      const detail = (e as CustomEvent).detail as
+        { sessionId?: string; path?: string } | undefined;
       if (detail?.sessionId) {
         handleSelectSession(detail.sessionId, detail.path);
       }
@@ -1097,10 +1350,19 @@ function AppContent({
     return () => window.removeEventListener(NAVIGATE_EVENT, onNavigate);
   }, [navigate]);
 
-  const [wizardPrefill, setWizardPrefill] = useState<WizardPrefill | undefined>(undefined);
-  const [deletingSessionIds, setDeletingSessionIds] = useState<string[] | null>(null);
-  const [stoppingSessionId, setStoppingSessionId] = useState<string | null>(null);
-  const [switchViewTarget, setSwitchViewTarget] = useState<{ sessionId: string; toStructured: boolean } | null>(null);
+  const [wizardPrefill, setWizardPrefill] = useState<WizardPrefill | undefined>(
+    undefined,
+  );
+  const [deletingSessionIds, setDeletingSessionIds] = useState<string[] | null>(
+    null,
+  );
+  const [stoppingSessionId, setStoppingSessionId] = useState<string | null>(
+    null,
+  );
+  const [switchViewTarget, setSwitchViewTarget] = useState<{
+    sessionId: string;
+    toStructured: boolean;
+  } | null>(null);
   // `serverAbout === null` conflates "not fetched yet" with "fetch failed", so
   // the tour gates auto-launch on an explicit loaded flag instead.
   const [serverAboutLoaded, setServerAboutLoaded] = useState(false);
@@ -1175,9 +1437,13 @@ function AppContent({
       }),
     [deletingSessionIds, sessions],
   );
-  const liveDeletingSessions = deletingSessions.filter((session) => !session.trashed_at);
+  const liveDeletingSessions = deletingSessions.filter(
+    (session) => !session.trashed_at,
+  );
   const deletingSession = deletingSessions[0] ?? null;
-  const deletingDefaultToTrash = liveDeletingSessions.some((session) => session.cleanup_defaults.delete_to_trash);
+  const deletingDefaultToTrash = liveDeletingSessions.some(
+    (session) => session.cleanup_defaults.delete_to_trash,
+  );
   const deletingCleanupDefaults = deletingSession
     ? {
         delete_to_trash: deletingDefaultToTrash,
@@ -1185,11 +1451,16 @@ function AppContent({
       }
     : null;
   const deletingWorktreeSharedWith = useMemo(
-    () => sessionsSharingWorktree(deletingSessions, sessions).map((session) => session.title),
+    () =>
+      sessionsSharingWorktree(deletingSessions, sessions).map(
+        (session) => session.title,
+      ),
     [deletingSessions, sessions],
   );
   const deletingBranchName =
-    deletingSessions.find((session) => session.branch)?.branch ?? deletingSession?.branch ?? null;
+    deletingSessions.find((session) => session.branch)?.branch ??
+    deletingSession?.branch ??
+    null;
 
   const handleDeleteSession = useCallback((sessionIds: string[]) => {
     setDeletingSessionIds(sessionIds);
@@ -1266,7 +1537,9 @@ function AppContent({
       emptyingTrashRef.current = false;
     }
     toastBus.handler?.[anyFailed ? "error" : "info"](
-      anyFailed ? "Some trashed sessions could not be deleted" : "Emptied trash",
+      anyFailed
+        ? "Some trashed sessions could not be deleted"
+        : "Emptied trash",
     );
   }, [trashedWorkspaces, activeSessionId, setSessionStatus, navigate]);
 
@@ -1298,11 +1571,14 @@ function AppContent({
   // Restores every session in the workspace (a workspace only lands in Trash
   // when all of its sessions are trashed), not just the first.
   const handleRestoreSession = useCallback(
-    (sessionIds: string[]) => restoreSessions(sessionIds, { applySession, notify: toastBus.handler }),
+    (sessionIds: string[]) =>
+      restoreSessions(sessionIds, { applySession, notify: toastBus.handler }),
     [applySession],
   );
 
-  const stoppingSession = stoppingSessionId ? (sessions.find((s) => s.id === stoppingSessionId) ?? null) : null;
+  const stoppingSession = stoppingSessionId
+    ? (sessions.find((s) => s.id === stoppingSessionId) ?? null)
+    : null;
 
   const handleStopSession = useCallback((sessionId: string) => {
     setStoppingSessionId(sessionId);
@@ -1343,12 +1619,17 @@ function AppContent({
   }, [applySession, stoppingSession, setSessionStatus]);
 
   const switchViewSession = switchViewTarget
-    ? (workspaces.flatMap((w) => w.sessions).find((s) => s.id === switchViewTarget.sessionId) ?? null)
+    ? (workspaces
+        .flatMap((w) => w.sessions)
+        .find((s) => s.id === switchViewTarget.sessionId) ?? null)
     : null;
 
-  const handleSwitchView = useCallback((sessionId: string, toStructured: boolean) => {
-    setSwitchViewTarget({ sessionId, toStructured });
-  }, []);
+  const handleSwitchView = useCallback(
+    (sessionId: string, toStructured: boolean) => {
+      setSwitchViewTarget({ sessionId, toStructured });
+    },
+    [],
+  );
 
   const handleConfirmSwitchView = useCallback(async () => {
     if (!switchViewTarget) return;
@@ -1366,11 +1647,15 @@ function AppContent({
       const disabled = await acpDisable(sessionId);
       setSwitchViewTarget(null);
       if (!disabled.ok) {
-        toastBus.handler?.error(disabled.message ?? "Failed to switch to terminal");
+        toastBus.handler?.error(
+          disabled.message ?? "Failed to switch to terminal",
+        );
         return;
       }
     }
-    toastBus.handler?.info(`Switched to ${toStructured ? "structured view" : "terminal"}`);
+    toastBus.handler?.info(
+      `Switched to ${toStructured ? "structured view" : "terminal"}`,
+    );
   }, [switchViewTarget]);
 
   const handleStartSession = useCallback(
@@ -1417,12 +1702,16 @@ function AppContent({
     (repoPath: string) => {
       const projectSessions = sessions
         .filter((s) => (s.main_repo_path || s.project_path) === repoPath)
-        .sort((a, b) => (b.last_accessed_at ?? "").localeCompare(a.last_accessed_at ?? ""));
+        .sort((a, b) =>
+          (b.last_accessed_at ?? "").localeCompare(a.last_accessed_at ?? ""),
+        );
       const latest = projectSessions[0];
 
       // Quick-create skips ProjectStep's selection, which is what normally reports the override.
       const key = normalizeProjectPathKey(repoPath);
-      const registered = projects.find((p) => normalizeProjectPathKey(p.path) === key);
+      const registered = projects.find(
+        (p) => normalizeProjectPathKey(p.path) === key,
+      );
 
       setWizardPrefill({
         path: repoPath,
@@ -1445,13 +1734,21 @@ function AppContent({
   const handlePinProject = useCallback(
     async (repoPath: string) => {
       const key = normalizeProjectPathKey(repoPath);
-      const existing = projects.filter((p) => normalizeProjectPathKey(p.path) === key);
+      const existing = projects.filter(
+        (p) => normalizeProjectPathKey(p.path) === key,
+      );
       let failed: { error?: string } | undefined;
       if (existing.length > 0) {
-        const results = await Promise.all(existing.map((p) => setProjectPinned(p.name, p.scope, true)));
+        const results = await Promise.all(
+          existing.map((p) => setProjectPinned(p.name, p.scope, true)),
+        );
         failed = results.find((r) => !r.ok);
       } else {
-        const res = await createProject({ path: repoPath, scope: "global", pinned: true });
+        const res = await createProject({
+          path: repoPath,
+          scope: "global",
+          pinned: true,
+        });
         if (!res.ok) failed = res;
       }
       if (failed) {
@@ -1470,7 +1767,9 @@ function AppContent({
   const handleUnpinProject = useCallback(
     async (group: SidebarGroup) => {
       const pinned = group.registeredProjects.filter((p) => p.pinned);
-      const results = await Promise.all(pinned.map((p) => setProjectPinned(p.name, p.scope, false)));
+      const results = await Promise.all(
+        pinned.map((p) => setProjectPinned(p.name, p.scope, false)),
+      );
       const failed = results.find((r) => !r.ok);
       if (failed) {
         toastBus.handler?.error(failed.error ?? "Failed to unpin project");
@@ -1483,9 +1782,17 @@ function AppContent({
   // Add / edit a saved project from the sidebar Projects section. The modal is
   // open for `add` (no editProject) or `edit` (a specific registration); both
   // refresh the registry on save. See #2212.
-  const [projectForm, setProjectForm] = useState<{ editProject: ProjectInfo | null } | null>(null);
-  const handleAddProject = useCallback(() => setProjectForm({ editProject: null }), []);
-  const handleEditProject = useCallback((project: ProjectInfo) => setProjectForm({ editProject: project }), []);
+  const [projectForm, setProjectForm] = useState<{
+    editProject: ProjectInfo | null;
+  } | null>(null);
+  const handleAddProject = useCallback(
+    () => setProjectForm({ editProject: null }),
+    [],
+  );
+  const handleEditProject = useCallback(
+    (project: ProjectInfo) => setProjectForm({ editProject: project }),
+    [],
+  );
 
   // The synthetic Scratch group has no repo path to register a project entry under, so it gets
   // a dedicated settings modal instead of ProjectFormModal.
@@ -1503,7 +1810,10 @@ function AppContent({
         return;
       }
       if (!group.repoPath) return;
-      const res = await createProject({ path: group.repoPath, scope: "global" });
+      const res = await createProject({
+        path: group.repoPath,
+        scope: "global",
+      });
       if (!res.ok || !res.project) {
         toastBus.handler?.error(res.error ?? "Failed to register project");
         return;
@@ -1518,8 +1828,11 @@ function AppContent({
   // refresh. Confirms first since it is not undoable. See #2212.
   const handleRemoveProject = useCallback(
     async (group: RepoGroup) => {
-      if (!confirm(`Remove project '${group.displayName}' from the sidebar?`)) return;
-      const results = await Promise.all(group.registeredProjects.map((p) => deleteProject(p.name, p.scope)));
+      if (!confirm(`Remove project '${group.displayName}' from the sidebar?`))
+        return;
+      const results = await Promise.all(
+        group.registeredProjects.map((p) => deleteProject(p.name, p.scope)),
+      );
       const failed = results.find((r) => !r.ok);
       if (failed) {
         toastBus.handler?.error(failed.error ?? "Failed to remove project");
@@ -1556,7 +1869,13 @@ function AppContent({
     } else {
       setDockCollapsed("right", true);
     }
-  }, [isMdUp, rightDockCollapsed, setDockCollapsed, availableRightGroups.length, openTab]);
+  }, [
+    isMdUp,
+    rightDockCollapsed,
+    setDockCollapsed,
+    availableRightGroups.length,
+    openTab,
+  ]);
 
   const handlePickView = useCallback(
     (view: RightPanelView) => {
@@ -1567,9 +1886,12 @@ function AppContent({
     [activeSessionId, transitionKeyboardProxy],
   );
 
-  const handleSelectFile = useCallback((path: string, repoName?: string, line?: number) => {
-    setSelectedFile({ path, repoName, line });
-  }, []);
+  const handleSelectFile = useCallback(
+    (path: string, repoName?: string, line?: number) => {
+      setSelectedFile({ path, repoName, line });
+    },
+    [],
+  );
 
   // Open a local file reference cited in an acp transcript (Codex
   // `path:line` markdown links). Resolve the absolute path back to a
@@ -1604,7 +1926,9 @@ function AppContent({
         });
         return;
       }
-      toastBus.handler?.error(`Could not open ${ref.path}: not inside this session's repo`);
+      toastBus.handler?.error(
+        `Could not open ${ref.path}: not inside this session's repo`,
+      );
     },
     [activeSession],
   );
@@ -1634,7 +1958,10 @@ function AppContent({
   // Profiles moved into Settings as a tab; redirect the retired standalone
   // route so old bookmarks and links still land somewhere valid.
   useEffect(() => {
-    if (profilesMatch) navigate(`/settings/profiles${window.location.search}`, { replace: true });
+    if (profilesMatch)
+      navigate(`/settings/profiles${window.location.search}`, {
+        replace: true,
+      });
   }, [profilesMatch, navigate]);
 
   const handleCloseSettings = useCallback(() => {
@@ -1672,6 +1999,56 @@ function AppContent({
     },
     handleDrawerSwipe,
   );
+  // A plugin pane row's diff target names a repo of this session, or the
+  // first for a workspace; null when the session has no such repo.
+  const diffRepoNames = useMemo(
+    () => activeSession?.workspace_repos.map((r) => r.name) ?? [],
+    [activeSession],
+  );
+  const targetRepo = useCallback(
+    (target: DiffTarget): string | undefined | null => {
+      if (diffRepoNames.length === 0)
+        return target.repo === undefined ? undefined : null;
+      if (target.repo === undefined) return diffRepoNames[0];
+      return diffRepoNames.includes(target.repo) ? target.repo : null;
+    },
+    [diffRepoNames],
+  );
+  const diffViewsApi = useMemo<DiffViewsApi | null>(() => {
+    if (!activeSessionId) return null;
+    return {
+      sessionId: activeSessionId,
+      views: diffViews,
+      clearView: (repo) => updateDiffViews((views) => withoutView(views, repo)),
+      openTarget: (target) => {
+        const repo = targetRepo(target);
+        if (repo === null) {
+          toastBus.handler?.error(
+            `This session has no repo named ${target.repo ?? ""}`,
+          );
+          return false;
+        }
+        updateDiffViews((views) =>
+          withView(views, { repo, base: target.base, head: target.head }),
+        );
+        setSelectedFile(null);
+        if (isMdUp) openTab("diff", "right");
+        else setRightPanelView("diff");
+        return true;
+      },
+      isShowing: (target) => {
+        const repo = targetRepo(target);
+        return repo !== null && viewMatches(viewFor(diffViews, repo), target);
+      },
+    };
+  }, [
+    activeSessionId,
+    diffViews,
+    updateDiffViews,
+    targetRepo,
+    isMdUp,
+    openTab,
+  ]);
 
   // Read-only mode hides mutation UI. Guard creation at the handler so every
   // caller (keyboard shortcut, command palette) is a no-op rather than opening
@@ -1703,7 +2080,9 @@ function AppContent({
     // user is NOT in the paired terminal, send them there; only flip back
     // to agent when they're already in paired.
     const active = document.activeElement;
-    const pairedPanels = document.querySelectorAll<HTMLElement>('[data-term="paired"]');
+    const pairedPanels = document.querySelectorAll<HTMLElement>(
+      '[data-term="paired"]',
+    );
     let inPaired = false;
     if (active) {
       for (const p of pairedPanels) {
@@ -1736,7 +2115,10 @@ function AppContent({
       const terminalTabs = (["right", "bottom"] as DockLocation[])
         .flatMap((d) => dockTabs(paneLayout, d))
         .filter(isTerminalTabId);
-      const termTab = terminalTabs.find((id) => isActiveTab(paneLayout, id)) ?? terminalTabs[0] ?? terminalTabId(0);
+      const termTab =
+        terminalTabs.find((id) => isActiveTab(paneLayout, id)) ??
+        terminalTabs[0] ??
+        terminalTabId(0);
       const termDock = dockOf(paneLayout, termTab);
       if (termDock && isActiveTab(paneLayout, termTab)) {
         // Already the active tab (mounted): move focus synchronously so rapid
@@ -1760,7 +2142,14 @@ function AppContent({
       return;
     }
     dispatchFocusTerminal(target);
-  }, [activeSessionId, singlePane, paneLayout, openTab, activateTab, selectedFilePath]);
+  }, [
+    activeSessionId,
+    singlePane,
+    paneLayout,
+    openTab,
+    activateTab,
+    selectedFilePath,
+  ]);
 
   // Flattened, display-ordered session ids plus the subset needing attention,
   // sourced from the same sidebar model the user sees so jump-to-next follows
@@ -1780,7 +2169,11 @@ function AppContent({
   }, [sidebarGroups]);
 
   const handleJumpToAttention = useCallback(() => {
-    const next = nextAttentionSessionId(attentionJump.orderedIds, attentionJump.attention, activeSessionId);
+    const next = nextAttentionSessionId(
+      attentionJump.orderedIds,
+      attentionJump.attention,
+      activeSessionId,
+    );
     if (next) handleSelectSession(next);
   }, [attentionJump, activeSessionId, handleSelectSession]);
 
@@ -1818,7 +2211,8 @@ function AppContent({
           setSelectedFile(null);
         },
         onHelp: () => setShowHelp((h) => !h),
-        onSettings: () => (showSettings ? handleCloseSettings() : navigate("/settings")),
+        onSettings: () =>
+          showSettings ? handleCloseSettings() : navigate("/settings"),
         onPalette: () => {
           setPaletteQuery("");
           setShowPalette((p) => !p);
@@ -1854,7 +2248,10 @@ function AppContent({
         setSnoozeTargetId(id);
         return true;
       }
-      const run: Record<Exclude<SessionStateAction, "snooze">, () => Promise<SessionResponse | null>> = {
+      const run: Record<
+        Exclude<SessionStateAction, "snooze">,
+        () => Promise<SessionResponse | null>
+      > = {
         pin: () => setSessionPin(id, true),
         unpin: () => setSessionPin(id, false),
         archive: () => setSessionArchive(id, true),
@@ -1893,27 +2290,31 @@ function AppContent({
     onLogout,
   });
 
-  const openSettingsTab = useCallback((tab: string) => navigate(`/settings/${tab}`), [navigate]);
+  const openSettingsTab = useCallback(
+    (tab: string) => navigate(`/settings/${tab}`),
+    [navigate],
+  );
   const settingsCommands = useSettingsCommands({
     open: showPalette,
     readOnly: !!serverAbout?.read_only,
     onOpenSettingsTab: openSettingsTab,
   });
-  const { actions: pluginCommandActions, overlay: pluginLinkPicker } = usePluginCommands(
-    pluginUiEntries,
-    activeSessionId,
-  );
+  const { actions: pluginCommandActions, overlay: pluginLinkPicker } =
+    usePluginCommands(pluginUiEntries, activeSessionId);
 
   // Conversation-content search for the palette (#2515). paletteQuery is
   // declared above (near showPalette) so the keyboard handlers can clear it
   // on close/toggle; consumed here.
-  const { results: conversationHits, loading: conversationSearching } = useConversationSearch(paletteQuery);
+  const { results: conversationHits, loading: conversationSearching } =
+    useConversationSearch(paletteQuery);
   const conversationActions = useMemo(
     () =>
-      buildConversationActions(conversationHits, sessions, activeSessionId).map(({ sessionId, ...rest }) => ({
-        ...rest,
-        perform: () => handleSelectSession(sessionId),
-      })),
+      buildConversationActions(conversationHits, sessions, activeSessionId).map(
+        ({ sessionId, ...rest }) => ({
+          ...rest,
+          perform: () => handleSelectSession(sessionId),
+        }),
+      ),
     [conversationHits, sessions, activeSessionId, handleSelectSession],
   );
 
@@ -1926,17 +2327,26 @@ function AppContent({
           onSelectTab={(t) => {
             const p = searchParams.get("profile");
             // Marks a tab opened from the mobile section list, so its Back pops to it.
-            navigate(`/settings/${t}${p ? `?profile=${encodeURIComponent(p)}` : ""}`, {
-              state: { fromSettingsList: settingsTab === null },
-            });
+            navigate(
+              `/settings/${t}${p ? `?profile=${encodeURIComponent(p)}` : ""}`,
+              {
+                state: { fromSettingsList: settingsTab === null },
+              },
+            );
           }}
           onShowList={() => {
-            if ((location.state as { fromSettingsList?: boolean } | null)?.fromSettingsList) {
+            if (
+              (location.state as { fromSettingsList?: boolean } | null)
+                ?.fromSettingsList
+            ) {
               navigate(-1);
               return;
             }
             const p = searchParams.get("profile");
-            navigate(`/settings${p ? `?profile=${encodeURIComponent(p)}` : ""}`, { replace: true });
+            navigate(
+              `/settings${p ? `?profile=${encodeURIComponent(p)}` : ""}`,
+              { replace: true },
+            );
           }}
           onServerAboutRefresh={refreshServerAbout}
           profile={searchParams.get("profile")}
@@ -1995,17 +2405,28 @@ function AppContent({
           pairedMounted={pairedMounted}
           activeSession={activeSession ?? null}
           activeSessionId={activeSessionId}
-          pendingAgentOperation={activeSessionId ? (effectivePendingAgentOperations[activeSessionId] ?? null) : null}
+          pendingAgentOperation={
+            activeSessionId
+              ? (effectivePendingAgentOperations[activeSessionId] ?? null)
+              : null
+          }
           onRestore={
             activeSession.trashed_at
-              ? () => handleRestoreSession(trashedWorkspaceRestoreIds(workspaces, activeSession.id))
+              ? () =>
+                  handleRestoreSession(
+                    trashedWorkspaceRestoreIds(workspaces, activeSession.id),
+                  )
               : undefined
           }
           onUnarchive={
-            activeSession.archived_at ? () => handleSessionStateAction(activeSession.id, "unarchive") : undefined
+            activeSession.archived_at
+              ? () => handleSessionStateAction(activeSession.id, "unarchive")
+              : undefined
           }
           onUnsnooze={
-            activeSession.snoozed_until ? () => handleSessionStateAction(activeSession.id, "unsnooze") : undefined
+            activeSession.snoozed_until
+              ? () => handleSessionStateAction(activeSession.id, "unsnooze")
+              : undefined
           }
           sessions={sessions}
           webSettings={webSettings}
@@ -2049,7 +2470,12 @@ function AppContent({
         // Remount on session switch so the selected file (and any in-flight
         // read) resets instead of requesting the old path from the new
         // session. See #3088 review.
-        return <FilesPane key={activeSessionId ?? "none"} sessionId={activeSessionId} />;
+        return (
+          <FilesPane
+            key={activeSessionId ?? "none"}
+            sessionId={activeSessionId}
+          />
+        );
       }
       if (id === "diff") {
         return (
@@ -2083,23 +2509,40 @@ function AppContent({
     };
     return (
       <div className="flex-1 flex flex-col min-h-0">
-        <PaneDndController groupsByDock={groupsByDock} descriptorFor={paneDescriptor} onPlaceTab={placeVisibleTab}>
+        <PaneDndController
+          groupsByDock={groupsByDock}
+          descriptorFor={paneDescriptor}
+          onPlaceTab={placeVisibleTab}
+        >
           <ContentSplit
             collapsed={rightDockCollapsed}
             onToggleCollapse={toggleRightDock}
             left={
               <div className="flex-1 flex flex-col min-h-0 overflow-hidden relative">
-                <div className={selectedFilePath ? "hidden" : "flex-1 flex flex-col min-h-0 overflow-hidden"}>
+                <div
+                  className={
+                    selectedFilePath
+                      ? "hidden"
+                      : "flex-1 flex flex-col min-h-0 overflow-hidden"
+                  }
+                >
                   {activeSession?.view === "structured" ? (
                     <Suspense fallback={<AcpLoadingFallback />}>
                       <StructuredView
                         key={activeSessionId}
                         sessionId={activeSessionId!}
-                        acpWorkerState={activeSession.acp_worker_state ?? "absent"}
-                        rateLimitAutoResume={activeSession.rate_limit_auto_resume}
+                        acpWorkerState={
+                          activeSession.acp_worker_state ?? "absent"
+                        }
+                        rateLimitAutoResume={
+                          activeSession.rate_limit_auto_resume
+                        }
                         sessionStatus={activeSession.status}
                         lastError={activeSession.last_error}
-                        pendingOperation={effectivePendingAgentOperations[activeSession.id] ?? null}
+                        pendingOperation={
+                          effectivePendingAgentOperations[activeSession.id] ??
+                          null
+                        }
                         dormant={activeSession.dormant}
                         tool={activeSession.tool}
                         acpAgent={activeSession.acp_agent ?? null}
@@ -2111,17 +2554,31 @@ function AppContent({
                         trashedAt={activeSession.trashed_at ?? null}
                         onRestore={
                           activeSession.trashed_at
-                            ? () => handleRestoreSession(trashedWorkspaceRestoreIds(workspaces, activeSessionId!))
+                            ? () =>
+                                handleRestoreSession(
+                                  trashedWorkspaceRestoreIds(
+                                    workspaces,
+                                    activeSessionId!,
+                                  ),
+                                )
                             : undefined
                         }
                         onUnarchive={
                           activeSession.archived_at
-                            ? () => handleSessionStateAction(activeSession.id, "unarchive")
+                            ? () =>
+                                handleSessionStateAction(
+                                  activeSession.id,
+                                  "unarchive",
+                                )
                             : undefined
                         }
                         onUnsnooze={
                           activeSession.snoozed_until
-                            ? () => handleSessionStateAction(activeSession.id, "unsnooze")
+                            ? () =>
+                                handleSessionStateAction(
+                                  activeSession.id,
+                                  "unsnooze",
+                                )
                             : undefined
                         }
                         onOpenFileRef={handleOpenFileRef}
@@ -2133,9 +2590,13 @@ function AppContent({
                   ) : (
                     <TerminalSessionStack
                       activeSessionId={activeSessionId!}
-                      sessions={sessions.filter((session) => session.view !== "structured")}
+                      sessions={sessions.filter(
+                        (session) => session.view !== "structured",
+                      )}
                       persistent={webSettings.persistentTerminals}
-                      maxPersistentTerminals={webSettings.maxPersistentTerminals}
+                      maxPersistentTerminals={
+                        webSettings.maxPersistentTerminals
+                      }
                     />
                   )}
                 </div>
@@ -2192,7 +2653,10 @@ function AppContent({
               </div>
             }
             right={
-              <div {...tourAnchor(TOUR_ANCHORS.rightPanel)} className="flex min-h-0 min-w-0 flex-1">
+              <div
+                {...tourAnchor(TOUR_ANCHORS.rightPanel)}
+                className="flex min-h-0 min-w-0 flex-1"
+              >
                 <DockGroups
                   location="right"
                   groups={rightGroups}
@@ -2201,7 +2665,11 @@ function AppContent({
                   onActivate={(id) => activateTab("right", id)}
                   onMove={movePaneAny}
                   onClose={closePaneAny}
-                  onNewTerminal={serverAbout?.read_only ? undefined : () => addTerminal("right")}
+                  onNewTerminal={
+                    serverAbout?.read_only
+                      ? undefined
+                      : () => addTerminal("right")
+                  }
                 />
               </div>
             }
@@ -2214,7 +2682,9 @@ function AppContent({
               onActivate={(id) => activateTab("bottom", id)}
               onMove={movePaneAny}
               onClose={closePaneAny}
-              onNewTerminal={serverAbout?.read_only ? undefined : () => addTerminal("bottom")}
+              onNewTerminal={
+                serverAbout?.read_only ? undefined : () => addTerminal("bottom")
+              }
             />
           )}
         </PaneDndController>
@@ -2264,7 +2734,8 @@ function AppContent({
       wrapToolOutput: serverAbout?.acp_wrap_tool_output ?? false,
       replayEvents: serverAbout?.acp_replay_events ?? 0,
       compactionReminder: serverAbout?.acp_compaction_reminder ?? false,
-      compactionReminderPercent: serverAbout?.acp_compaction_reminder_percent ?? 75,
+      compactionReminderPercent:
+        serverAbout?.acp_compaction_reminder_percent ?? 75,
     }),
     [
       serverAbout?.acp_show_tool_durations,
@@ -2353,7 +2824,8 @@ function AppContent({
     seen: tourSeen,
     seenKnown: tourSeenKnown,
     onSeen: handleTourSeen,
-    onNavigate: (tab) => (tab ? navigate(`/settings/${tab}`) : handleCloseSettings()),
+    onNavigate: (tab) =>
+      tab ? navigate(`/settings/${tab}`) : handleCloseSettings(),
   });
 
   // Auto-pop the tip-of-the-day once per load, after onboarding settles, like
@@ -2431,146 +2903,282 @@ function AppContent({
   return (
     <AcpPrefsProvider value={acpPrefs}>
       <ConnectionDiagnosticsProvider>
-        <div className="h-(--app-height) flex flex-col bg-surface-900 text-text-primary overflow-hidden safe-area-inset">
-        {/* Wrapped unconditionally, not behind the `headerCollapsible`
+        <DiffViewsContext.Provider value={diffViewsApi}>
+          <div className="h-(--app-height) flex flex-col bg-surface-900 text-text-primary overflow-hidden safe-area-inset">
+            {/* Wrapped unconditionally, not behind the `headerCollapsible`
             ternary: swapping the element type at this position would remount
             `TopBar` (and reset its overflow menu) every time the boundary
             flips, e.g. opening settings on a phone. An expanded region is a
             `1fr` grid row around a fixed-height bar, so the wrapper is inert
             for every view that cannot collapse. */}
-        <CollapsibleRegion id="conversation-header" collapsed={headerCollapsible && headerCollapsed}>
-          <TopBar
-            activeWorkspace={activeWorkspace}
-            activeSession={activeSession ?? null}
-            activeProjectName={activeProjectName}
-            onToggleSidebar={handleToggleSidebar}
-            onOpenPalette={() => setShowPalette(true)}
-            onToggleDiff={toggleDiff}
-            paneIds={allPaneIds}
-            paneDescriptor={paneDescriptor}
-            isPaneOpen={isPaneOpen}
-            onTogglePane={togglePaneAny}
-            paneBadges={paneBadges}
-            onOpenHelp={handleOpenHelp}
-            onOpenAbout={handleOpenAbout}
-            onStartTutorial={tour.startTour}
-            unreadCount={unreadCount}
-            waitingCount={waitingCount}
-            attentionBadgeColors={attentionBadgeColors}
-            onLogout={onLogout}
-            loginRequired={loginRequired}
-            isOffline={!!error}
-            isDevBuild={isDebugBuild(serverAbout)}
-            onOpenTips={tips.open}
-            onGoDashboard={handleGoDashboard}
-            sidebarColumnVisible={!showSettings && sidebarOpen}
-            rightColumnVisible={isMdUp && !showSettings && !!activeWorkspace && !!activeSession && !rightDockCollapsed}
-          />
-        </CollapsibleRegion>
+            <CollapsibleRegion
+              id="conversation-header"
+              collapsed={headerCollapsible && headerCollapsed}
+            >
+              <TopBar
+                activeWorkspace={activeWorkspace}
+                activeSession={activeSession ?? null}
+                activeProjectName={activeProjectName}
+                onToggleSidebar={handleToggleSidebar}
+                onOpenPalette={() => setShowPalette(true)}
+                onToggleDiff={toggleDiff}
+                paneIds={allPaneIds}
+                paneDescriptor={paneDescriptor}
+                isPaneOpen={isPaneOpen}
+                onTogglePane={togglePaneAny}
+                paneBadges={paneBadges}
+                onOpenHelp={handleOpenHelp}
+                onOpenAbout={handleOpenAbout}
+                onStartTutorial={tour.startTour}
+                unreadCount={unreadCount}
+                waitingCount={waitingCount}
+                attentionBadgeColors={attentionBadgeColors}
+                onLogout={onLogout}
+                loginRequired={loginRequired}
+                isOffline={!!error}
+                isDevBuild={isDebugBuild(serverAbout)}
+                onOpenTips={tips.open}
+                onGoDashboard={handleGoDashboard}
+                sidebarColumnVisible={!showSettings && sidebarOpen}
+                rightColumnVisible={
+                  isMdUp &&
+                  !showSettings &&
+                  !!activeWorkspace &&
+                  !!activeSession &&
+                  !rightDockCollapsed
+                }
+              />
+            </CollapsibleRegion>
 
-          <UpdateBanner />
-          <DashboardUpdateBanner />
-          <PushHealthBanner />
+            <UpdateBanner />
+            <DashboardUpdateBanner />
+            <PushHealthBanner />
 
-        {/* Below the banners, not directly under the bar: the handle is
+            {/* Below the banners, not directly under the bar: the handle is
             absolutely positioned at the top-right, and hanging it off the bar
             puts it on top of the update banner's dismiss button (same corner),
             which then cannot be tapped at all. */}
-        {headerCollapsible && (
-          <ChromeCollapseHandle
-            edge="top"
-            collapsed={headerCollapsed}
-            onToggle={() => setHeaderCollapsed((v) => !v)}
-            collapseLabel="Collapse conversation header"
-            expandLabel="Expand conversation header"
-            controlsId="conversation-header"
-            testId="header-collapse-toggle"
-          />
-        )}
+            {headerCollapsible && (
+              <ChromeCollapseHandle
+                edge="top"
+                collapsed={headerCollapsed}
+                onToggle={() => setHeaderCollapsed((v) => !v)}
+                collapseLabel="Collapse conversation header"
+                expandLabel="Expand conversation header"
+                controlsId="conversation-header"
+                testId="header-collapse-toggle"
+              />
+            )}
 
-        <div className="flex flex-1 min-h-0">
-          {!showSettings && (
-            <WorkspaceSidebar
-              groups={sidebarGroups}
-              nestedGroups={nestedGroups}
-              orgGroups={orgGroups}
-              trashedWorkspaces={trashedWorkspaces}
-              onToggleSubgroup={toggleSubgroupCollapsed}
-              onToggleOrg={toggleOrgCollapsed}
-              onToggleOrgRepo={toggleOrgRepoCollapsed}
-              onReorderWorkspaces={handleReorderWorkspaces}
-              onReorderGroups={reorderRepoGroups}
-              activeId={activeWorkspace?.id ?? null}
-              open={sidebarOpen}
-              onToggle={() => setSidebarOpen(false)}
-              onSelect={handleSelectWorkspace}
-              onToggleGroup={toggleSidebarGroup}
-              onUpdateRepoAppearance={updateRepoAppearance}
-              onNew={() => {
-                setWizardPrefill(undefined);
-                setShowSessionWizard(true);
+            <div className="flex flex-1 min-h-0">
+              {!showSettings && (
+                <WorkspaceSidebar
+                  groups={sidebarGroups}
+                  nestedGroups={nestedGroups}
+                  orgGroups={orgGroups}
+                  trashedWorkspaces={trashedWorkspaces}
+                  onToggleSubgroup={toggleSubgroupCollapsed}
+                  onToggleOrg={toggleOrgCollapsed}
+                  onToggleOrgRepo={toggleOrgRepoCollapsed}
+                  onReorderWorkspaces={handleReorderWorkspaces}
+                  onReorderGroups={reorderRepoGroups}
+                  activeId={activeWorkspace?.id ?? null}
+                  open={sidebarOpen}
+                  onToggle={() => setSidebarOpen(false)}
+                  onSelect={handleSelectWorkspace}
+                  onToggleGroup={toggleSidebarGroup}
+                  onUpdateRepoAppearance={updateRepoAppearance}
+                  onNew={() => {
+                    setWizardPrefill(undefined);
+                    setShowSessionWizard(true);
+                  }}
+                  onCreateSession={handleCreateSession}
+                  onPinProject={handlePinProject}
+                  onUnpinProject={handleUnpinProject}
+                  onEditProjectSettings={handleEditProjectSettings}
+                  savedProjects={savedProjects}
+                  onAddProject={handleAddProject}
+                  onEditProject={handleEditProject}
+                  onRemoveProject={handleRemoveProject}
+                  onSettings={handleOpenSettings}
+                  onDeleteSession={handleDeleteSession}
+                  onRestoreSession={handleRestoreSession}
+                  onEmptyTrash={handleEmptyTrash}
+                  onStopSession={handleStopSession}
+                  onStartSession={handleStartSession}
+                  onSwitchView={handleSwitchView}
+                  readOnly={serverAbout?.read_only}
+                  canManageProjects={caps.canManageProjects}
+                  sortMode={sidebarSortMode}
+                  onSortModeChange={selectSidebarSortMode}
+                  pluginSortRef={pluginSortRef}
+                  onPluginSortChange={setPluginSortRef}
+                  axis={sidebarAxis}
+                  onAxisChange={setSidebarAxis}
+                />
+              )}
+
+              <div className="flex-1 flex flex-col min-h-0 min-w-0">
+                {renderContent()}
+              </div>
+            </div>
+
+            {showSessionWizard && (
+              <SessionWizard
+                onClose={() => {
+                  setShowSessionWizard(false);
+                  setWizardPrefill(undefined);
+                }}
+                onCreated={(session?: SessionResponse) => {
+                  if (session) {
+                    injectSession(session);
+                    navigate(`/session/${encodeURIComponent(session.id)}`);
+                    if (window.innerWidth < 768) setSidebarOpen(false);
+                  }
+                  setShowSessionWizard(false);
+                  setWizardPrefill(undefined);
+                }}
+                onCreatedInBackground={(session?: SessionResponse) => {
+                  if (!session) return;
+                  injectSession(session);
+                  toastBus.handler?.info(`"${session.title}" is ready`);
+                }}
+                prefill={wizardPrefill}
+                nameOnly={caps.nameOnlyWizard}
+              />
+            )}
+
+            {projectForm && (
+              <ProjectFormModal
+                initial={projectForm.editProject}
+                onClose={() => setProjectForm(null)}
+                onSaved={() => refreshProjects()}
+              />
+            )}
+
+            {scratchSettingsOpen && (
+              <ScratchOverridesModal
+                profile={serverAbout?.profile ?? ""}
+                onClose={() => setScratchSettingsOpen(false)}
+              />
+            )}
+
+            {welcome.showWelcome && (
+              <ThemeIntro onDone={welcome.dismissWelcome} />
+            )}
+
+            {tour.tourElement}
+
+            {showHelp && <HelpOverlay onClose={() => setShowHelp(false)} />}
+
+            {tips.isOpen && (
+              <TipsModal
+                tips={tips.tips}
+                startIndex={tips.startIndex}
+                enabled={tips.enabled}
+                onMarkSeen={tips.markSeen}
+                onSetEnabled={tips.setEnabled}
+                onClose={tips.close}
+              />
+            )}
+
+            {showAbout && (
+              <AboutModal
+                onClose={() => setShowAbout(false)}
+                sessionId={activeSessionId}
+              />
+            )}
+            {telemetryConsentNeeded && (
+              <TelemetryConsentModal onChoose={handleTelemetryConsent} />
+            )}
+
+            {deletingSession && deletingCleanupDefaults && (
+              <DeleteSessionDialog
+                sessionTitle={deletingSession.title}
+                branchName={deletingBranchName}
+                hasManagedWorktree={deletingSessions.some(
+                  (session) => session.has_cleanable_worktree ?? false,
+                )}
+                isSandboxed={deletingSessions.some(
+                  (session) => session.is_sandboxed,
+                )}
+                isScratch={deletingSessions.some((session) => session.scratch)}
+                cleanupDefaults={deletingCleanupDefaults}
+                defaultToTrash={deletingDefaultToTrash}
+                affectedSessions={deletingSessions.map((session) => ({
+                  id: session.id,
+                  title: session.title,
+                  isSandboxed: session.is_sandboxed,
+                }))}
+                worktreeSharedWith={deletingWorktreeSharedWith}
+                onConfirm={handleConfirmDelete}
+                onTrash={handleConfirmTrash}
+                onCancel={() => setDeletingSessionIds(null)}
+              />
+            )}
+
+            {stoppingSession && (
+              <StopSessionDialog
+                sessionTitle={stoppingSession.title}
+                onConfirm={handleConfirmStop}
+                onCancel={() => setStoppingSessionId(null)}
+              />
+            )}
+
+            {switchViewTarget && switchViewSession && (
+              <SwitchViewDialog
+                sessionTitle={switchViewSession.title}
+                toStructured={switchViewTarget.toStructured}
+                keepsContext={switchViewSession.keeps_context ?? false}
+                onConfirm={handleConfirmSwitchView}
+                onCancel={() => setSwitchViewTarget(null)}
+              />
+            )}
+
+            <CommandPalette
+              open={showPalette}
+              onClose={() => {
+                setShowPalette(false);
+                setPaletteQuery("");
               }}
-              onCreateSession={handleCreateSession}
-              onPinProject={handlePinProject}
-              onUnpinProject={handleUnpinProject}
-              onEditProjectSettings={handleEditProjectSettings}
-              savedProjects={savedProjects}
-              onAddProject={handleAddProject}
-              onEditProject={handleEditProject}
-              onRemoveProject={handleRemoveProject}
-              onSettings={handleOpenSettings}
-              onDeleteSession={handleDeleteSession}
-              onRestoreSession={handleRestoreSession}
-              onEmptyTrash={handleEmptyTrash}
-              onStopSession={handleStopSession}
-              onStartSession={handleStartSession}
-              onSwitchView={handleSwitchView}
-              readOnly={serverAbout?.read_only}
-              canManageProjects={caps.canManageProjects}
-              sortMode={sidebarSortMode}
-              onSortModeChange={selectSidebarSortMode}
-              pluginSortRef={pluginSortRef}
-              onPluginSortChange={setPluginSortRef}
-              axis={sidebarAxis}
-              onAxisChange={setSidebarAxis}
+              actions={[
+                ...commandActions,
+                ...conversationActions,
+                ...settingsCommands,
+                ...pluginCommandActions,
+              ]}
+              onSearchChange={setPaletteQuery}
+              searching={conversationSearching}
             />
-          )}
 
-          <div className="flex-1 flex flex-col min-h-0 min-w-0">{renderContent()}</div>
-        </div>
+            {pluginLinkPicker}
 
-        {showSessionWizard && (
-          <SessionWizard
-            onClose={() => {
-              setShowSessionWizard(false);
-              setWizardPrefill(undefined);
-            }}
-            onCreated={(session?: SessionResponse) => {
-              if (session) {
-                injectSession(session);
-                navigate(`/session/${encodeURIComponent(session.id)}`);
-                if (window.innerWidth < 768) setSidebarOpen(false);
-              }
-              setShowSessionWizard(false);
-              setWizardPrefill(undefined);
-            }}
-            onCreatedInBackground={(session?: SessionResponse) => {
-              if (!session) return;
-              injectSession(session);
-              toastBus.handler?.info(`"${session.title}" is ready`);
-            }}
-            prefill={wizardPrefill}
-            nameOnly={caps.nameOnlyWizard}
-          />
-        )}
+            {snoozeTargetId && (
+              <SnoozeModal
+                title="Snooze session"
+                onCancel={() => setSnoozeTargetId(null)}
+                onPick={(minutes) => {
+                  const id = snoozeTargetId;
+                  setSnoozeTargetId(null);
+                  void setSessionSnooze(id, minutes).then((result) => {
+                    if (result) applySession(result);
+                    else reportError("Failed to snooze session");
+                  });
+                }}
+              />
+            )}
 
-        {projectForm && (
-          <ProjectFormModal
-            initial={projectForm.editProject}
-            onClose={() => setProjectForm(null)}
-            onSaved={() => refreshProjects()}
-          />
-        )}
+            {activeWorkspace && activeSession && (
+              <MobileRightPanelPicker
+                open={pickerOpen && singlePane}
+                active={rightPanelView}
+                pluginPanes={pluginPanes}
+                availablePanes={mobilePaneIds}
+                badges={paneBadges}
+                onSelect={handlePickView}
+                onClose={() => setPickerOpen(false)}
+              />
+            )}
 
         {scratchSettingsOpen && (
           <ScratchOverridesModal profile={serverAbout?.profile ?? ""} onClose={() => setScratchSettingsOpen(false)} />
@@ -2696,15 +3304,20 @@ function AppContent({
           spellCheck={false}
         />
         </div>
+        </DiffViewsContext.Provider>
       </ConnectionDiagnosticsProvider>
     </AcpPrefsProvider>
   );
 }
 
+const NO_DIFF_VIEWS: DiffView[] = [];
+
 function AcpLoadingFallback() {
   return (
     <div className="flex h-full items-center justify-center bg-surface-900 text-text-dim">
-      <div className="text-xs font-mono uppercase tracking-wide">Loading acp…</div>
+      <div className="text-xs font-mono uppercase tracking-wide">
+        Loading acp…
+      </div>
     </div>
   );
 }

@@ -554,6 +554,17 @@ pub struct DiffComment {
     pub created_at: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub updated_at: Option<String>,
+    /// The commit range the comment was made on, so its lines name `head`'s
+    /// content rather than the working tree's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub range: Option<DiffCommentRange>,
+}
+
+/// The `base...head` commit range a diff comment was made on.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DiffCommentRange {
+    pub base: String,
+    pub head: String,
 }
 
 /// Terminal park reason once rate-limit auto-resume exhausts its redelivery budget.

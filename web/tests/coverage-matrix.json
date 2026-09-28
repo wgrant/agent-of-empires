@@ -2057,6 +2057,35 @@
       ]
     },
     {
+      "id": "right-panel.diff-range",
+      "kind": "mocked-playwright",
+      "risk": "medium",
+      "specs": ["tests/diff-range.spec.ts"],
+      "components": [
+        "web/src/components/diff/DiffViewsContext.tsx",
+        "web/src/components/diff/DiffFileList.tsx",
+        "web/src/components/plugin/paneBlocks.tsx"
+      ]
+    },
+    {
+      "id": "right-panel.diff-range-units",
+      "kind": "vitest",
+      "risk": "medium",
+      "specs": [
+        "src/lib/diffViews.test.ts",
+        "src/components/plugin/__tests__/PluginSlots.test.tsx",
+        "src/components/diff/__tests__/DiffFileList.test.tsx",
+        "src/components/diff/__tests__/DiffFileViewer.coverage.test.tsx",
+        "src/components/diff/comments/buildPrompt.test.ts"
+      ],
+      "components": [
+        "web/src/components/diff/DiffViewsContext.tsx",
+        "web/src/components/diff/DiffFileViewer.tsx",
+        "web/src/components/diff/FileContextMenu.tsx",
+        "web/src/components/diff/comments/DiffCommentsUserCard.tsx"
+      ]
+    },
+    {
       "id": "right-panel.markdown-viewer",
       "kind": "vitest",
       "risk": "low",

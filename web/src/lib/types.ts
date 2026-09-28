@@ -216,6 +216,10 @@ export interface RepoBase {
   /** Worktree path this repo's diff was computed in. */
   repo_path: string;
   base_override?: string;
+  /** Set when this repo shows the commit range `base_branch...head`. */
+  head?: string;
+  /** Why this repo's diff could not be computed, such as a ref naming no commit. */
+  error?: string;
 }
 
 export interface RichDiffFilesResponse {

@@ -67,11 +67,16 @@ describe("loadComments", () => {
       version: 1,
       comments: [
         mkComment({ id: "good" }),
+        mkComment({ id: "ranged", range: { base: "main", head: "layer" } }),
         { ...mkComment({ id: "bad" }), filePath: 12 },
         { ...mkComment(), side: "left" },
+        { ...mkComment({ id: "bad-range" }), range: { base: "main" } },
       ],
     });
-    expect(loadComments("sess-1")).toEqual({ ...EMPTY_STORAGE, comments: [mkComment({ id: "good" })] });
+    expect(loadComments("sess-1")).toEqual({
+      ...EMPTY_STORAGE,
+      comments: [mkComment({ id: "good" }), mkComment({ id: "ranged", range: { base: "main", head: "layer" } })],
+    });
   });
 });
 

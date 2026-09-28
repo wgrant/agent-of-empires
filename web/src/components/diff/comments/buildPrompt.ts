@@ -95,7 +95,8 @@ function renderComment(c: DiffComment, isMultiRepo: boolean): string {
   const longestTicks = Math.max(0, ...(c.capturedSnippet.match(/`+/g) ?? []).map((m) => m.length));
   const fence = "`".repeat(Math.max(3, longestTicks + 1));
   const codeBlock = `${fence}${c.language ?? ""}\n${c.capturedSnippet}\n${fence}`;
-  return `### ${repo}\`${c.filePath}\` ${range} (${c.side})\n\n${codeBlock}\n\n${c.body.trim()}`;
+  const where = c.range ? `${c.side} side of \`${c.range.base}...${c.range.head}\`` : c.side;
+  return `### ${repo}\`${c.filePath}\` ${range} (${where})\n\n${codeBlock}\n\n${c.body.trim()}`;
 }
 
 export function compareComments(a: DiffComment, b: DiffComment): number {
