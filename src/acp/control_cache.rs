@@ -104,23 +104,24 @@ impl ControlStateCache {
         map.remove(session_id);
     }
 
-    /// The session's control state, running `hydrate` on a miss.
+    /// The session's control state and the last seq folded into it, running
+    /// `hydrate` on a miss.
     pub fn get_or_hydrate(
         &self,
         session_id: &str,
         hydrate: impl FnOnce() -> (AcpState, u64),
-    ) -> AcpState {
+    ) -> (AcpState, u64) {
         let slot = self.slot(session_id);
         let mut guard = lock(&slot);
         if let Some(cached) = guard.as_ref() {
-            return cached.state.clone();
+            return (cached.state.clone(), cached.last_seq);
         }
         let (state, last_seq) = hydrate();
         *guard = Some(Cached {
             state: state.clone(),
             last_seq,
         });
-        state
+        (state, last_seq)
     }
 
     /// Whether the session has a hydrated fold, with no locking beyond the
@@ -155,7 +156,7 @@ mod tests {
         assert!(!cache.is_hydrated("s-1"));
 
         let mut hydrated = 0;
-        let state = cache.get_or_hydrate("s-1", || {
+        let (state, _) = cache.get_or_hydrate("s-1", || {
             hydrated += 1;
             (seed(), 0)
         });
@@ -175,7 +176,7 @@ mod tests {
             (seed(), 0)
         });
         cache.apply_if_cached("s-1", 1, &prompt("go"));
-        let state = cache.get_or_hydrate("s-1", || {
+        let (state, _) = cache.get_or_hydrate("s-1", || {
             hydrate_count();
             (seed(), 0)
         });
@@ -206,7 +207,7 @@ mod tests {
         cache.apply_if_cached("s-1", 2, &approval);
         cache.apply_if_cached("s-1", 2, &approval);
         cache.apply_if_cached("s-1", 3, &stopped("end_turn"));
-        let state = cache.get_or_hydrate("s-1", || {
+        let (state, _) = cache.get_or_hydrate("s-1", || {
             hydrate_count();
             (seed(), 0)
         });
