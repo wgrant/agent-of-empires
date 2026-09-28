@@ -77,13 +77,15 @@ function click(el: Element) {
 }
 
 describe("Markdown wrapper", () => {
-  it("forwards text, smooth, the remark chain, overrides, and the size-variable class", () => {
+  it("forwards text, the remark chain, overrides, and the size-variable class", () => {
     const { container } = render(<Markdown text="hello world" />);
     render(<Markdown text="b" smooth breaks />);
     const [plain, user] = primitiveCalls;
     expect(plain!.text).toBe("hello world");
-    expect(plain!.smooth).toBe(false);
-    expect(user!.smooth).toBe(true);
+    // The wrapper paces streaming text itself, starting from what is there at
+    // mount, so the primitive never retypes it.
+    expect([plain!.smooth, user!.smooth]).toEqual([false, false]);
+    expect(user!.text).toBe("b");
     expect(plain!.remarkPlugins).toEqual([remarkGfm]);
     expect(user!.remarkPlugins).toEqual([remarkGfm, remarkBreaks]);
     expect(Object.keys(plain!.components)).toEqual(
