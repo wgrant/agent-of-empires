@@ -34,6 +34,76 @@ pub struct RepoBase {
     /// the client hides its reset affordance (#3329).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub base_override: Option<String>,
+    /// Set when this entry shows the commit range `base_branch...head`
+    /// rather than the working tree.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub head: Option<String>,
+    /// Why this entry's diff could not be computed, such as a ref that names
+    /// no commit. Its files are then absent rather than silently empty.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+/// What one repo's diff shows for a client instead of its default: another
+/// base against the working tree, or with `head` the commit range
+/// `base...head`, from their merge-base to head. Per request, never saved, so
+/// each client can view its own and the saved base override is untouched.
+#[derive(Debug, Default, Deserialize)]
+pub struct DiffView {
+    /// Workspace member name; omitted for a single-repo session.
+    #[serde(default)]
+    pub repo: Option<String>,
+    #[serde(default)]
+    pub base: Option<String>,
+    #[serde(default)]
+    pub head: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct DiffFilesQuery {
+    /// A JSON array of [`DiffView`], one per repo shown other than by default.
+    #[serde(default)]
+    pub views: Option<String>,
+}
+
+/// Longest ref a view may name.
+const MAX_VIEW_REF_LEN: usize = 256;
+
+/// A view ref, trimmed, if it is one: git resolves it, never a shell, but a
+/// control character or an outsized string is no ref and is refused.
+fn view_ref(value: Option<&str>) -> Result<Option<String>, &'static str> {
+    let Some(value) = value.map(str::trim).filter(|v| !v.is_empty()) else {
+        return Ok(None);
+    };
+    if value.len() > MAX_VIEW_REF_LEN || value.chars().any(char::is_control) {
+        return Err("invalid ref in diff view");
+    }
+    Ok(Some(value.to_string()))
+}
+
+/// Parse and check a files request's views against the session's repos.
+fn parse_views(raw: Option<&str>, repos: &[DiffRepo]) -> Result<Vec<DiffView>, &'static str> {
+    let Some(raw) = raw.filter(|r| !r.is_empty()) else {
+        return Ok(Vec::new());
+    };
+    let views: Vec<DiffView> = serde_json::from_str(raw).map_err(|_| "malformed diff views")?;
+    let mut seen = std::collections::HashSet::new();
+    views
+        .into_iter()
+        .map(|view| {
+            if !repos.iter().any(|r| r.name == view.repo) {
+                return Err("diff view names a repo this session does not have");
+            }
+            if !seen.insert(view.repo.clone()) {
+                return Err("two diff views name the same repo");
+            }
+            Ok(DiffView {
+                repo: view.repo,
+                base: view_ref(view.base.as_deref())?,
+                head: view_ref(view.head.as_deref())?,
+            })
+        })
+        .collect()
 }
 
 #[derive(Serialize)]
@@ -85,22 +155,7 @@ pub(super) fn validate_diff_path(
     requested: &std::path::Path,
     changed_files: &[crate::git::diff::DiffFile],
 ) -> Result<(std::path::PathBuf, bool), (StatusCode, &'static str)> {
-    use std::path::Component;
-
-    if requested.as_os_str().is_empty() {
-        return Err((StatusCode::BAD_REQUEST, "empty path"));
-    }
-    if requested.is_absolute() {
-        return Err((StatusCode::BAD_REQUEST, "absolute path not allowed"));
-    }
-    for comp in requested.components() {
-        match comp {
-            Component::ParentDir | Component::RootDir | Component::Prefix(_) => {
-                return Err((StatusCode::BAD_REQUEST, "path escapes workdir"));
-            }
-            _ => {}
-        }
-    }
+    relative_repo_path(requested).map_err(|msg| (StatusCode::BAD_REQUEST, msg))?;
 
     let is_changed = changed_files.iter().any(|f| f.path == requested);
 
@@ -246,6 +301,7 @@ pub(super) fn resolve_diff_base(
 pub async fn session_diff_files(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
+    axum::extract::Query(query): axum::extract::Query<DiffFilesQuery>,
 ) -> impl IntoResponse {
     if let Some(resp) = crate::server::api::cityhall_block(&state) {
         return resp;
@@ -253,6 +309,10 @@ pub async fn session_diff_files(
     let ctx = match resolve_diff_repos(&state, &id).await {
         Ok(c) => c,
         Err(resp) => return resp,
+    };
+    let views = match parse_views(query.views.as_deref(), &ctx.repos) {
+        Ok(views) => views,
+        Err(msg) => return api_error(StatusCode::BAD_REQUEST, "bad_request", msg),
     };
 
     let scan_state = state.clone();
@@ -269,16 +329,33 @@ pub async fn session_diff_files(
 
         for repo in &ctx.repos {
             let path = std::path::Path::new(&repo.path);
-            let base_branch = resolve_diff_base(
-                repo.base_override.as_deref(),
-                repo.recorded_base.as_deref(),
-                config_default.as_deref(),
-                path,
-            );
-            let warning = diff::check_merge_base_status(path, &base_branch);
-            let changed = scan_state
-                .changed_files_cached(path, &base_branch)
-                .unwrap_or_default();
+            let view = views.iter().find(|v| v.repo == repo.name);
+            let base_branch = match view.and_then(|v| v.base.clone()) {
+                Some(base) => base,
+                None => resolve_diff_base(
+                    repo.base_override.as_deref(),
+                    repo.recorded_base.as_deref(),
+                    config_default.as_deref(),
+                    path,
+                ),
+            };
+            let head = view.and_then(|v| v.head.clone());
+            let mut error = None;
+            let (warning, changed) = match &head {
+                None => (
+                    diff::check_merge_base_status(path, &base_branch),
+                    scan_state
+                        .changed_files_cached(path, &base_branch)
+                        .unwrap_or_default(),
+                ),
+                Some(head) => match scan_state.range_files_cached(path, &base_branch, head) {
+                    Ok((resolved, files)) => (resolved.warning, files),
+                    Err(e) => {
+                        error = Some(e.to_string());
+                        (None, Vec::new())
+                    }
+                },
+            };
 
             for f in changed {
                 all_files.push(RichDiffFileInfo {
@@ -295,6 +372,8 @@ pub async fn session_diff_files(
                 base_branch: base_branch.clone(),
                 repo_path: repo.path.clone(),
                 base_override: repo.base_override.clone(),
+                head,
+                error,
             });
             if let Some(w) = warning {
                 match repo.name.as_deref() {
@@ -341,13 +420,138 @@ pub struct FileDiffQuery {
     /// single-repo URL keeps working (#1047).
     #[serde(default)]
     pub repo: Option<String>,
+    /// The file's repo's [`DiffView`] base, if the client views another.
+    #[serde(default)]
+    pub base: Option<String>,
+    /// With it, the file as the range `base...head` changes it.
+    #[serde(default)]
+    pub head: Option<String>,
 }
 
 /// Response for a rejected diff request (bad path, file not changed, etc.).
 enum DiffFileError {
     BadRequest(&'static str),
     NotFound(&'static str),
+    /// A view ref that names no commit, said so plainly for the pane.
+    Unresolved(String),
     Internal(anyhow::Error),
+}
+
+impl From<crate::git::error::GitError> for DiffFileError {
+    fn from(e: crate::git::error::GitError) -> Self {
+        match e {
+            crate::git::error::GitError::RevisionNotFound(_) => Self::Unresolved(e.to_string()),
+            e => Self::Internal(e.into()),
+        }
+    }
+}
+
+/// A file's contents response, with the contents dropped past the size caps.
+fn contents_response(
+    file: RichDiffFileInfo,
+    old_content: String,
+    new_content: String,
+    patch: String,
+    is_binary: bool,
+) -> serde_json::Value {
+    let total_bytes = old_content.len() + new_content.len() + patch.len();
+    let total_lines = old_content.lines().count() + new_content.lines().count();
+    let resp = if total_bytes > MAX_CONTENTS_BYTES || total_lines > MAX_CONTENTS_LINES {
+        RichFileContentsResponse {
+            file,
+            old_content: String::new(),
+            new_content: String::new(),
+            patch: String::new(),
+            is_binary,
+            truncated: true,
+        }
+    } else {
+        RichFileContentsResponse {
+            file,
+            old_content,
+            new_content,
+            patch,
+            is_binary,
+            truncated: false,
+        }
+    };
+    serde_json::to_value(resp).expect("RichFileContentsResponse is always serializable")
+}
+
+/// Refuse a path that is absolute or climbs out of the repo.
+fn relative_repo_path(requested: &std::path::Path) -> Result<(), &'static str> {
+    use std::path::Component;
+    if requested.as_os_str().is_empty() {
+        return Err("empty path");
+    }
+    if requested.is_absolute() {
+        return Err("absolute path not allowed");
+    }
+    if requested.components().any(|c| {
+        matches!(
+            c,
+            Component::ParentDir | Component::RootDir | Component::Prefix(_)
+        )
+    }) {
+        return Err("path escapes workdir");
+    }
+    Ok(())
+}
+
+/// One file as the range `base...head` changes it, or as `head` has it when
+/// the range leaves it alone. Reads only git objects, never the worktree.
+fn range_file_response(
+    state: &AppState,
+    repo_path: &std::path::Path,
+    file_path: &std::path::Path,
+    base: &str,
+    head: &str,
+    repo_name: Option<String>,
+) -> Result<serde_json::Value, DiffFileError> {
+    use crate::git::diff;
+    relative_repo_path(file_path).map_err(DiffFileError::BadRequest)?;
+    let (resolved, files) = state.range_files_cached(repo_path, base, head)?;
+    let Some(changed) = files.iter().find(|f| f.path == file_path) else {
+        let bytes = diff::file_at_commit(repo_path, resolved.range.head, file_path)?
+            .ok_or(DiffFileError::NotFound("file not found"))?;
+        let is_binary = bytes.contains(&0);
+        let file = RichDiffFileInfo {
+            path: file_path.to_string_lossy().into_owned(),
+            old_path: None,
+            status: "unchanged".to_string(),
+            additions: 0,
+            deletions: 0,
+            repo_name,
+        };
+        let content = if is_binary {
+            String::new()
+        } else {
+            String::from_utf8_lossy(&bytes).into_owned()
+        };
+        return Ok(contents_response(
+            file,
+            String::new(),
+            content,
+            String::new(),
+            is_binary,
+        ));
+    };
+    let contents = diff::range_file_contents(repo_path, resolved.range, changed)?;
+    let file = RichDiffFileInfo {
+        path: contents.path.to_string_lossy().into_owned(),
+        old_path: contents.old_path.map(|p| p.to_string_lossy().into_owned()),
+        status: contents.status.label().to_string(),
+        additions: changed.additions,
+        deletions: changed.deletions,
+        repo_name,
+    };
+    Ok(contents_response(
+        file,
+        contents.old_content,
+        contents.new_content,
+        contents.patch,
+        contents.is_binary,
+    ))
 }
 
 pub async fn session_diff_file(
@@ -382,12 +586,28 @@ pub async fn session_diff_file(
                 .diff
                 .default_branch
                 .clone();
-            let base_branch = resolve_diff_base(
-                base_override.as_deref(),
-                recorded_base.as_deref(),
-                config_default.as_deref(),
-                repo_path,
-            );
+            let base_branch =
+                match view_ref(query.base.as_deref()).map_err(DiffFileError::BadRequest)? {
+                    Some(base) => base,
+                    None => resolve_diff_base(
+                        base_override.as_deref(),
+                        recorded_base.as_deref(),
+                        config_default.as_deref(),
+                        repo_path,
+                    ),
+                };
+            if let Some(head) =
+                view_ref(query.head.as_deref()).map_err(DiffFileError::BadRequest)?
+            {
+                return range_file_response(
+                    &scan_state,
+                    repo_path,
+                    file_path,
+                    &base_branch,
+                    &head,
+                    selected_repo_name,
+                );
+            }
 
             // Validate the requested path. Files in the changed set are diffed;
             // an in-repo file with no diff against the base is served through
@@ -426,30 +646,13 @@ pub async fn session_diff_file(
                     deletions: 0,
                     repo_name: selected_repo_name.clone(),
                 };
-                let total_lines = full.content.lines().count();
-                let resp = if full.content.len() > MAX_CONTENTS_BYTES
-                    || total_lines > MAX_CONTENTS_LINES
-                {
-                    RichFileContentsResponse {
-                        file,
-                        old_content: String::new(),
-                        new_content: String::new(),
-                        patch: String::new(),
-                        is_binary: full.is_binary,
-                        truncated: true,
-                    }
-                } else {
-                    RichFileContentsResponse {
-                        file,
-                        old_content: String::new(),
-                        new_content: full.content,
-                        patch: String::new(),
-                        is_binary: full.is_binary,
-                        truncated: false,
-                    }
-                };
-                return Ok(serde_json::to_value(resp)
-                    .expect("RichFileContentsResponse is always serializable"));
+                return Ok(contents_response(
+                    file,
+                    String::new(),
+                    full.content,
+                    String::new(),
+                    full.is_binary,
+                ));
             }
 
             // Hand the client raw old/new text plus a server-computed unified
@@ -472,33 +675,13 @@ pub async fn session_diff_file(
                 deletions,
                 repo_name: selected_repo_name.clone(),
             };
-            let total_bytes =
-                contents.old_content.len() + contents.new_content.len() + contents.patch.len();
-            let total_lines =
-                contents.old_content.lines().count() + contents.new_content.lines().count();
-            let resp = if total_bytes > MAX_CONTENTS_BYTES || total_lines > MAX_CONTENTS_LINES {
-                RichFileContentsResponse {
-                    file,
-                    old_content: String::new(),
-                    new_content: String::new(),
-                    patch: String::new(),
-                    is_binary: contents.is_binary,
-                    truncated: true,
-                }
-            } else {
-                RichFileContentsResponse {
-                    file,
-                    old_content: contents.old_content,
-                    new_content: contents.new_content,
-                    patch: contents.patch,
-                    is_binary: contents.is_binary,
-                    truncated: false,
-                }
-            };
-            Ok(
-                serde_json::to_value(resp)
-                    .expect("RichFileContentsResponse is always serializable"),
-            )
+            Ok(contents_response(
+                file,
+                contents.old_content,
+                contents.new_content,
+                contents.patch,
+                contents.is_binary,
+            ))
         })
         .await;
 
@@ -508,6 +691,9 @@ pub async fn session_diff_file(
             api_error(StatusCode::BAD_REQUEST, "bad_request", msg)
         }
         Ok(Err(DiffFileError::NotFound(msg))) => api_error(StatusCode::NOT_FOUND, "not_found", msg),
+        Ok(Err(DiffFileError::Unresolved(msg))) => {
+            api_error(StatusCode::BAD_REQUEST, "unresolved_ref", &msg)
+        }
         Ok(Err(DiffFileError::Internal(e))) => {
             tracing::error!(target: "http.api.sessions", "File diff failed: {}", e);
             api_error(
@@ -547,6 +733,21 @@ pub async fn session_diff_file_raw(
         Err(resp) => return resp,
     };
 
+    let head = match view_ref(query.head.as_deref()) {
+        Ok(head) => head,
+        Err(msg) => return api_error(StatusCode::BAD_REQUEST, "bad_request", msg),
+    };
+    // A range shows the file as its head commit has it, not the worktree's.
+    if let Some(head) = head {
+        return serve_bytes(query.path, move |requested| {
+            relative_repo_path(requested).map_err(|msg| (StatusCode::BAD_REQUEST, msg))?;
+            crate::git::diff::file_at_revision(std::path::Path::new(&repo.path), &head, requested)
+                .ok()
+                .flatten()
+                .ok_or((StatusCode::NOT_FOUND, "file not found"))
+        })
+        .await;
+    }
     open_file(query.path, move |requested| {
         // Diff paths are repo-relative, and refusing the rest keeps this from
         // probing host paths outside the worktree.
@@ -576,13 +777,25 @@ async fn open_file(
         + Send
         + 'static,
 ) -> axum::response::Response {
-    let result = tokio::task::spawn_blocking(move || {
-        let requested = std::path::Path::new(&requested);
+    serve_bytes(requested, move |requested| {
         let confined = confine(requested)?;
-        let bytes = crate::server::api::file_provenance::read_confined_bytes(
+        crate::server::api::file_provenance::read_confined_bytes(
             &confined,
             super::artifacts::MAX_RAW_FILE_BYTES,
-        )?;
+        )
+    })
+    .await
+}
+
+/// Serve the bytes `read` finds for `requested` off the async runtime, typed by
+/// the name it was requested under.
+async fn serve_bytes(
+    requested: String,
+    read: impl FnOnce(&std::path::Path) -> Result<Vec<u8>, (StatusCode, &'static str)> + Send + 'static,
+) -> axum::response::Response {
+    let result = tokio::task::spawn_blocking(move || {
+        let requested = std::path::Path::new(&requested);
+        let bytes = read(requested)?;
         Ok::<_, (StatusCode, &'static str)>((open_file_mime(requested, &bytes), bytes))
     })
     .await;

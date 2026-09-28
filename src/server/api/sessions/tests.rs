@@ -2847,6 +2847,8 @@ async fn diff_file_rejects_workspace_with_no_repos() {
         Query(FileDiffQuery {
             path: "Cargo.toml".to_string(),
             repo: None,
+            base: None,
+            head: None,
         }),
     )
     .await
@@ -2923,6 +2925,8 @@ mod open_file {
             Query(FileDiffQuery {
                 path: path.to_string(),
                 repo: repo.map(str::to_string),
+                base: None,
+                head: None,
             }),
         )
         .await
@@ -4599,6 +4603,270 @@ async fn a_retry_across_a_restart_is_fenced_before_profile_validation() {
     assert_eq!(status, axum::http::StatusCode::CONFLICT, "{refused}");
     assert_eq!(refused["error"], "create_outcome_unknown");
     assert_eq!(effects(), 1);
+/// A client's diff view: another base, or a commit range, per repo, without
+/// touching the saved override.
+mod diff_views {
+    use super::*;
+    use crate::git::test_support::run_git;
+    use axum::body::to_bytes;
+    use axum::extract::Query;
+
+    /// `layer` forks from `main`, which then moves on; `top` stacks on
+    /// `layer` and is checked out with an uncommitted edit to `c.txt`.
+    fn stacked_repo() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        let git = |args: &[&str]| {
+            let mut all = vec![
+                "-c",
+                "commit.gpgsign=false",
+                "-c",
+                "user.name=T",
+                "-c",
+                "user.email=t@e",
+            ];
+            all.extend_from_slice(args);
+            run_git(dir.path(), &all);
+        };
+        let write = |name: &str, body: &str| std::fs::write(dir.path().join(name), body).unwrap();
+        git(&["init", "-q", "-b", "main"]);
+        write("a.txt", "a\n");
+        git(&["add", "-A"]);
+        git(&["commit", "-qm", "root"]);
+        git(&["checkout", "-qb", "layer"]);
+        write("b.txt", "b\n");
+        git(&["add", "-A"]);
+        git(&["commit", "-qm", "layer"]);
+        git(&["checkout", "-q", "main"]);
+        write("a.txt", "a2\n");
+        git(&["commit", "-qam", "main moves on"]);
+        git(&["checkout", "-qb", "top", "layer"]);
+        write("b.txt", "b\nb2\n");
+        write("c.txt", "c\n");
+        git(&["add", "-A"]);
+        git(&["commit", "-qm", "top"]);
+        write("c.txt", "c\nuncommitted\n");
+        dir
+    }
+
+    fn single(dir: &std::path::Path) -> Arc<crate::server::AppState> {
+        let mut inst = Instance::new("stack", dir.to_str().unwrap());
+        inst.id = "stack".to_string();
+        crate::server::test_support::build_test_app_state(vec![inst])
+    }
+
+    async fn json(resp: axum::response::Response) -> (StatusCode, serde_json::Value) {
+        let status = resp.status();
+        let body = to_bytes(resp.into_body(), 1 << 20).await.unwrap();
+        (status, serde_json::from_slice(&body).unwrap())
+    }
+
+    async fn files(
+        state: &Arc<crate::server::AppState>,
+        views: Option<&str>,
+    ) -> (StatusCode, serde_json::Value) {
+        json(
+            session_diff_files(
+                State(state.clone()),
+                Path("stack".to_string()),
+                Query(DiffFilesQuery {
+                    views: views.map(str::to_string),
+                }),
+            )
+            .await
+            .into_response(),
+        )
+        .await
+    }
+
+    fn paths(body: &serde_json::Value, repo: Option<&str>) -> Vec<String> {
+        body["files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|f| f["repo_name"].as_str() == repo)
+            .map(|f| f["path"].as_str().unwrap().to_string())
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn a_view_picks_the_base_or_a_commit_range() {
+        let dir = stacked_repo();
+        let state = single(dir.path());
+        // (views, files, base shown, head shown)
+        let cases: [(Option<&str>, &[&str], &str, Option<&str>); 4] = [
+            (
+                Some(r#"[{"base":"layer"}]"#),
+                &["b.txt", "c.txt"],
+                "layer",
+                None,
+            ),
+            (
+                Some(r#"[{"base":"main","head":"layer"}]"#),
+                &["b.txt"],
+                "main",
+                Some("layer"),
+            ),
+            (
+                Some(r#"[{"base":"layer","head":"top"}]"#),
+                &["b.txt", "c.txt"],
+                "layer",
+                Some("top"),
+            ),
+            (Some("[]"), &["b.txt", "c.txt"], "main", None),
+        ];
+        for (views, want, base, head) in cases {
+            let (status, body) = files(&state, views).await;
+            assert_eq!(status, StatusCode::OK, "{views:?}");
+            assert_eq!(paths(&body, None), want, "{views:?}");
+            let entry = &body["per_repo_bases"][0];
+            assert_eq!(entry["base_branch"], base, "{views:?}");
+            assert_eq!(entry["head"].as_str(), head, "{views:?}");
+            assert!(entry.get("error").is_none(), "{views:?}");
+        }
+        // No view: the same response as before views existed.
+        let (_, plain) = files(&state, None).await;
+        assert_eq!(plain, files(&state, Some("[]")).await.1);
+        assert!(plain["per_repo_bases"][0].get("head").is_none());
+        // Viewing another base never saves it.
+        assert!(state.instances.read().await[0]
+            .base_branch_override
+            .is_none());
+    }
+
+    #[tokio::test]
+    async fn a_bad_view_is_an_error_not_an_empty_diff() {
+        let dir = stacked_repo();
+        let state = single(dir.path());
+        let (status, body) = files(&state, Some(r#"[{"base":"main","head":"nope"}]"#)).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(paths(&body, None).is_empty());
+        let error = body["per_repo_bases"][0]["error"].as_str().unwrap();
+        assert!(error.contains("'nope'"), "{error}");
+        for views in [
+            r#"[{"repo":"other","head":"top"}]"#,
+            r#"[{"head":"top"},{"head":"layer"}]"#,
+            r#"[{"head":"to\u0000p"}]"#,
+            "not json",
+        ] {
+            assert_eq!(
+                files(&state, Some(views)).await.0,
+                StatusCode::BAD_REQUEST,
+                "{views}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn a_range_file_reads_commits_not_the_worktree() {
+        let dir = stacked_repo();
+        let state = single(dir.path());
+        let file = |path: &str, head: &str| {
+            let state = state.clone();
+            let (path, head) = (path.to_string(), head.to_string());
+            async move {
+                json(
+                    session_diff_file(
+                        State(state),
+                        Path("stack".to_string()),
+                        Query(FileDiffQuery {
+                            path,
+                            repo: None,
+                            base: Some("layer".into()),
+                            head: Some(head),
+                        }),
+                    )
+                    .await
+                    .into_response(),
+                )
+                .await
+            }
+        };
+        let (status, body) = file("c.txt", "top").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            body["new_content"], "c\n",
+            "the commit, not the uncommitted edit"
+        );
+        assert_eq!(body["file"]["status"], "added");
+        let (_, body) = file("b.txt", "top").await;
+        assert_eq!(
+            (body["old_content"].as_str(), body["new_content"].as_str()),
+            (Some("b\n"), Some("b\nb2\n"))
+        );
+        // A file the range leaves alone reads as head has it.
+        let (_, body) = file("a.txt", "top").await;
+        assert_eq!(
+            (
+                body["file"]["status"].as_str(),
+                body["new_content"].as_str()
+            ),
+            (Some("unchanged"), Some("a\n"))
+        );
+        for (path, head, status) in [
+            ("missing.txt", "top", StatusCode::NOT_FOUND),
+            ("../a.txt", "top", StatusCode::BAD_REQUEST),
+            ("c.txt", "nope", StatusCode::BAD_REQUEST),
+        ] {
+            assert_eq!(file(path, head).await.0, status, "{path} at {head}");
+        }
+        assert_eq!(file("c.txt", "nope").await.1["error"], "unresolved_ref");
+
+        let raw = session_diff_file_raw(
+            State(state.clone()),
+            Path("stack".to_string()),
+            Query(FileDiffQuery {
+                path: "c.txt".into(),
+                repo: None,
+                base: None,
+                head: Some("top".into()),
+            }),
+        )
+        .await
+        .into_response();
+        assert_eq!(to_bytes(raw.into_body(), 1 << 20).await.unwrap(), "c\n");
+    }
+
+    /// Each repo of a workspace takes its own view; the rest stay live.
+    #[tokio::test]
+    async fn views_apply_per_repo() {
+        let (one, two) = (stacked_repo(), stacked_repo());
+        let member = |name: &str, dir: &tempfile::TempDir| crate::session::WorkspaceRepo {
+            name: name.to_string(),
+            source_path: dir.path().to_string_lossy().into_owned(),
+            branch: "top".to_string(),
+            worktree_path: dir.path().to_string_lossy().into_owned(),
+            main_repo_path: dir.path().to_string_lossy().into_owned(),
+            managed_by_aoe: false,
+            branch_preexisting: true,
+            base_branch: Some("main".to_string()),
+            base_branch_override: None,
+        };
+        let mut inst = Instance::new("stack", one.path().to_str().unwrap());
+        inst.id = "stack".to_string();
+        inst.workspace_info = Some(crate::session::WorkspaceInfo {
+            branch: "top".to_string(),
+            workspace_dir: one.path().to_string_lossy().into_owned(),
+            repos: vec![member("one", &one), member("two", &two)],
+            created_at: chrono::Utc::now(),
+            cleanup_on_delete: false,
+        });
+        let state = crate::server::test_support::build_test_app_state(vec![inst]);
+        let (status, body) = files(
+            &state,
+            Some(r#"[{"repo":"one","base":"main","head":"layer"}]"#),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(paths(&body, Some("one")), ["b.txt"]);
+        assert_eq!(paths(&body, Some("two")), ["b.txt", "c.txt"]);
+        let heads: Vec<_> = body["per_repo_bases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| (e["repo_name"].as_str().unwrap(), e["head"].as_str()))
+            .collect();
+        assert_eq!(heads, [("one", Some("layer")), ("two", None)]);
+    }
 }
 
 #[tokio::test]

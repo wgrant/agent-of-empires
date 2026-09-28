@@ -684,6 +684,7 @@ pub async fn start_server(config: ServerConfig<'_>) -> anyhow::Result<()> {
         }),
         remote_owner_cache: RwLock::new(std::collections::HashMap::new()),
         changed_files_cache: std::sync::RwLock::new(std::collections::HashMap::new()),
+        range_files_cache: Default::default(),
         status_tx: broadcast::channel(STATUS_CHANNEL_CAPACITY).0,
         acp_events_tx: acp_events_tx.clone(),
         acp_event_store: acp_event_store.clone(),

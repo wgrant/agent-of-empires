@@ -142,6 +142,7 @@ fn build_test_app_state_impl(
             entries: HashMap::new(),
         }),
         changed_files_cache: std::sync::RwLock::new(std::collections::HashMap::new()),
+        range_files_cache: Default::default(),
         remote_owner_cache: RwLock::new(HashMap::new()),
         status_tx: broadcast::channel(STATUS_CHANNEL_CAPACITY).0,
         acp_events_tx,
