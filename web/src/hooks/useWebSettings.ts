@@ -5,6 +5,7 @@ import { DEFAULT_PERSISTENT_TERMINALS, normalizePersistentTerminalLimit } from "
 import { safeGetItem, safeSetItem } from "../lib/safeStorage";
 import { DEFAULT_TOOLBAR_KEYS, normalizeToolbarKeys, type ToolbarKeyId } from "../lib/terminalToolbarKeys";
 import { DEFAULT_THINKING_DISPLAY, parseThinkingDisplay, type ThinkingDisplay } from "../lib/thinkingDisplay";
+import { parseTimeFormat, type TimeFormat } from "../lib/timeFormatSetting";
 
 const STORAGE_KEY = "aoe-web-settings";
 
@@ -31,6 +32,7 @@ export interface WebSettings {
   showArrowJoystick: boolean;
   /** Default for sessions without their own override. */
   thinkingDisplay: ThinkingDisplay;
+  timeFormat: TimeFormat;
 }
 
 function getDefaults(): WebSettings {
@@ -55,6 +57,7 @@ function getDefaults(): WebSettings {
     mobileToolbarKeys: [...DEFAULT_TOOLBAR_KEYS],
     showArrowJoystick: true,
     thinkingDisplay: DEFAULT_THINKING_DISPLAY,
+    timeFormat: "auto",
   };
 }
 
@@ -81,6 +84,7 @@ function normalizeSnapshot(settings: WebSettings): WebSettings {
         ? settings.markdownPreview
         : defaults.markdownPreview,
     thinkingDisplay: parseThinkingDisplay(settings.thinkingDisplay) ?? defaults.thinkingDisplay,
+    timeFormat: parseTimeFormat(settings.timeFormat) ?? defaults.timeFormat,
   };
 }
 

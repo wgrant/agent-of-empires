@@ -16,6 +16,7 @@ import { LifecycleIncidentNotice, type LifecycleNoticeAction } from "./status/Li
 import { ConversationNextStepNotice } from "./status/ConversationNextStepNotice";
 import { StartupErrorBanner } from "./StartupErrorBanner";
 import { rateLimitDetail, RateLimitRecoverySection } from "./SystemNotices";
+import { formatDateTime } from "../../lib/timeFormat";
 
 /** Worker lifecycle and triage banners stacked above the transcript. */
 export function SessionBanners({
@@ -416,7 +417,7 @@ export function SnoozedWorkerStoppedBanner({
   onUnsnooze?: () => Promise<boolean> | void;
 }) {
   const target = new Date(snoozedUntil);
-  const wallClock = Number.isFinite(target.getTime()) ? target.toLocaleString() : snoozedUntil;
+  const wallClock = Number.isFinite(target.getTime()) ? formatDateTime(target) : snoozedUntil;
   const action = useSessionRecoveryAction("Unsnooze", "Waking…", "Could not wake session.", onUnsnooze);
   return (
     <LifecycleIncidentNotice

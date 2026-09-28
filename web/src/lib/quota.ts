@@ -1,6 +1,7 @@
 // Plan quota presentation: labels, the compact footer selection, and reset times.
 
 import type { AgentQuota, QuotaWindow } from "./acpTypes";
+import { formatDateTime } from "./timeFormat";
 
 const HOUR_MINS = 60;
 const DAY_MINS = 24 * HOUR_MINS;
@@ -36,7 +37,7 @@ export function quotaTone(usedPercent: number): string {
 
 function formatClock(at: Date, now: number): string {
   const sameDay = new Date(now).toDateString() === at.toDateString();
-  return at.toLocaleString(undefined, {
+  return formatDateTime(at, {
     ...(sameDay ? {} : { weekday: "short" }),
     hour: "numeric",
     minute: "2-digit",

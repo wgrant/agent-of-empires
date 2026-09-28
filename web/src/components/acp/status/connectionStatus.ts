@@ -2,6 +2,7 @@ import type { AcpState } from "../../../lib/acpTypes";
 import type { ConnectionStatus, TransportDiagnostic } from "../../../hooks/useAcpSession";
 import type { DashboardConnectionDiagnostics } from "../../../lib/connectionState";
 import type { AgentRuntime, SessionOperationalState } from "./sessionDiagnostics";
+import { formatTime } from "../../../lib/timeFormat";
 
 export type ConnectionHopState = "ready" | "working" | "blocked" | "failed" | "unknown";
 export type ConnectionEdgeState = "ready" | "working" | "blocked" | "failed" | "inactive";
@@ -185,7 +186,7 @@ export interface ConnectionStatusInput {
 }
 
 function displayTime(timestamp: number | null): string | null {
-  return timestamp === null ? null : new Date(timestamp).toLocaleTimeString();
+  return timestamp === null ? null : formatTime(new Date(timestamp));
 }
 
 export function connectionStatusPresentation(primary: PrimaryConnectionStatus): ConnectionStatusPresentation {
