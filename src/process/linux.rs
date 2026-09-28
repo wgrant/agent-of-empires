@@ -266,6 +266,28 @@ fn parse_psi_some_avg10(psi: &str) -> Option<f32> {
     None
 }
 
+/// GNOME's clock setting, else the time format of the locale the host runs
+/// in, unless that is the unset C locale.
+pub(super) fn host_hour_cycle() -> Option<&'static str> {
+    let gnome = super::command_output(
+        "gsettings",
+        &["get", "org.gnome.desktop.interface", "clock-format"],
+    );
+    match gnome.as_deref() {
+        Some("'24h'") => return Some("h23"),
+        Some("'12h'") => return Some("h12"),
+        _ => {}
+    }
+    let locale = ["LC_ALL", "LC_TIME", "LANG"]
+        .iter()
+        .find_map(|name| std::env::var(name).ok().filter(|v| !v.is_empty()))?;
+    if matches!(locale.split('.').next(), Some("C" | "POSIX")) {
+        return None;
+    }
+    let format = super::command_output("locale", &["t_fmt"])?;
+    Some(super::hour_cycle_of_time_format(&format))
+}
+
 pub(super) fn boot_id() -> Option<String> {
     std::fs::read_to_string("/proc/sys/kernel/random/boot_id")
         .ok()
