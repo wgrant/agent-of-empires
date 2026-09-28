@@ -399,8 +399,7 @@ fn fold_connect_history(
     folds: &mut ConnectionFolds<'_>,
 ) -> ConnectReplay {
     let mut to_forward = Vec::new();
-    let mut changed_ids = std::collections::HashSet::new();
-    let mut removed_ids = std::collections::HashSet::new();
+    let mut changes = crate::acp::transcript::ChangedRows::default();
     let mut last_event_at = None;
     for StoredEvent {
         seq,
@@ -413,34 +412,11 @@ fn fold_connect_history(
         last_event_at = Some(recorded_at);
         let deltas = folds.transcript.apply_event_at(seq, &event, recorded_at);
         if seq > since {
-            for delta in deltas {
-                match delta {
-                    crate::acp::transcript::TranscriptDelta::Append(row) => {
-                        removed_ids.remove(&row.id);
-                        changed_ids.insert(row.id);
-                    }
-                    crate::acp::transcript::TranscriptDelta::Patch { id, .. } => {
-                        removed_ids.remove(&id);
-                        changed_ids.insert(id);
-                    }
-                    crate::acp::transcript::TranscriptDelta::Remove(id) => {
-                        changed_ids.remove(&id);
-                        removed_ids.insert(id);
-                    }
-                }
-            }
+            changes.record(deltas);
             to_forward.push((seq, event));
         }
     }
-    let transcript_rows = folds
-        .transcript
-        .rows()
-        .iter()
-        .filter(|row| changed_ids.contains(&row.id))
-        .cloned()
-        .collect();
-    let mut transcript_removed: Vec<_> = removed_ids.into_iter().collect();
-    transcript_removed.sort();
+    let (transcript_rows, transcript_removed) = changes.resolve(folds.transcript);
     ConnectReplay {
         to_forward,
         transcript_rows,

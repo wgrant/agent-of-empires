@@ -33,7 +33,7 @@ Trash is the reversible middle state: a delete moves the session there by defaul
 The daemon folds the event stream once per WebSocket connection into two projections, so clients do not re-derive them:
 
 - **Control state**: turn flags, pending approvals and elicitations, usage, plan, modes, slash commands, shipped as `reduced_state` on connect and after every event. `unchanged` names the cold fields the socket already holds, which the daemon omits rather than re-serializing. The connect frame is folded over the whole session even with a `since` cursor, because clients adopt it verbatim.
-- **Transcript rows**: a `transcript_snapshot` on connect plus a `transcript_delta` (`Append` / `Patch` / `Remove`, reconciled by row id) per event, with `GET /api/sessions/{id}/acp/replay?view=rows` for history. Presentation (markdown, tool cards, diffs) stays client-side.
+- **Transcript rows**: a `transcript_snapshot` on connect plus a `transcript_delta` (`Append` / `Patch` / `Remove`, reconciled by row id) per event, with `GET /api/sessions/{id}/acp/replay?view=rows` for history. A rows page carries every row its events appended or patched, as a fold of the whole log holds it, and the ids it removed, so a row created before the page still arrives current. Presentation (markdown, tool cards, diffs) stays client-side.
 
 Raw event frames still stream for what the daemon does not model (worker lifecycle latches, monitor and wakeup badges, the usage cost baseline, rejected prompts). A client reading only the projections passes `?frames=0`, as the native view does. A `notice` row carries a failed startup, a dead turn, a refused mode switch, or an auto-resume; the native view renders it inline while the web shows the same information as a dismissible banner.
 

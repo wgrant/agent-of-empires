@@ -76,6 +76,39 @@ describe("fetchReplay", () => {
     expect(lastSeq.current).toBe(3);
   });
 
+  it("carries a later page's removals through a catch-up", async () => {
+    const sid = "sess-catchup-removed";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const query = new URL(input.toString(), "http://x").searchParams;
+        const first = query.get("since") === "0";
+        const rows = query.get("view") === "rows";
+        return new Response(
+          JSON.stringify({
+            frames: [],
+            rows: rows ? (first ? [prompt(1), prompt(2)] : [prompt(3)]) : undefined,
+            removed: rows && !first ? ["user-seq-2", "start-t9"] : undefined,
+            lost: false,
+            highest_seq: 3,
+            next_cursor: first ? 2 : 3,
+            has_more: first,
+          }),
+          { status: 200 },
+        );
+      }),
+    );
+    const actions: Action[] = [];
+
+    await fetchReplay(sid, { current: 1 }, (action) => actions.push(action), vi.fn());
+
+    expect(actions[0]).toMatchObject({
+      kind: "catchup",
+      rows: [{ id: "user-seq-1" }, { id: "user-seq-3" }],
+      removed: ["user-seq-2", "start-t9"],
+    });
+  });
+
   it("replaces an enormous warm delta with a bounded recent tail", async () => {
     const sid = "sess-stale-cache";
     cacheSet(sid, {

@@ -30,7 +30,7 @@ export type Action =
   | { kind: "frame"; frame: AcpFrame }
   | { kind: "reduced_state"; state: ReducedState; unchanged: string[] }
   | { kind: "frames"; frames: AcpFrame[]; rows?: ActivityRow[]; oldestSeq?: number }
-  | { kind: "catchup"; frames: AcpFrame[]; rows: ActivityRow[]; reset: boolean }
+  | { kind: "catchup"; frames: AcpFrame[]; rows: ActivityRow[]; removed?: string[]; reset: boolean }
   | { kind: "prepend"; rows: ActivityRow[]; oldestSeq: number }
   | { kind: "handshake"; frames: AcpFrame[] }
   | { kind: "transcript_snapshot"; rows: ActivityRow[]; removed: string[] }
@@ -155,6 +155,8 @@ export function reducer(state: AcpState, action: Action): AcpState {
     case "catchup": {
       const base = action.reset ? emptyAcpState() : state;
       let next = action.frames.reduce(applyEvent, base);
+      const removed = new Set(action.removed);
+      if (removed.size > 0) next = { ...next, activity: next.activity.filter((row) => !removed.has(row.id)) };
       if (action.rows.length > 0) next = withServerRows(next, mergeServerRows(next.activity, action.rows));
       return next.lagged ? { ...next, lagged: false } : next;
     }

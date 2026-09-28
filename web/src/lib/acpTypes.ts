@@ -1658,32 +1658,45 @@ function mergeToolStart(prev: ToolCall, incoming: ToolCall): ToolCall {
   };
 }
 
-/** Prepend an older page, merging a `tool_start` split across the page seam into the tail's synthesized placeholder. */
+/**
+ * Prepend an older page. A row the newer rows already hold keeps their copy, moved to where
+ * the older page places it; a `tool_start` split across the seam merges into the tail's
+ * synthesized placeholder.
+ */
 export function mergePrependedActivity(olderRows: ActivityRow[], tailRows: ActivityRow[]): ActivityRow[] {
+  const tailIndexById = new Map<string, number>();
   const startIndexById = new Map<string, number>();
   tailRows.forEach((row, i) => {
+    tailIndexById.set(row.id, i);
     if (row.kind === "tool_start" && row.toolCallId) startIndexById.set(row.toolCallId, i);
   });
-  if (startIndexById.size === 0) return olderRows.concat(tailRows);
 
   let tail = tailRows;
+  const moved = new Set<string>();
   const prepended: ActivityRow[] = [];
   for (const row of olderRows) {
     const idx = row.kind === "tool_start" && row.toolCallId ? startIndexById.get(row.toolCallId) : undefined;
-    if (idx === undefined) {
+    if (idx !== undefined) {
+      const existing = tail[idx];
+      if (existing && existing.kind === "tool_start" && existing.tool && row.tool) {
+        const merged = mergeToolStart(existing.tool, row.tool);
+        // The placeholder carried the completion time, which would zero the duration.
+        if (row.tool.started_at) merged.started_at = row.tool.started_at;
+        tail = tail.slice();
+        tail[idx] = { ...existing, tool: merged, text: merged.name, at: merged.started_at };
+      }
+      continue;
+    }
+    const same = tailIndexById.get(row.id);
+    if (same === undefined) {
       prepended.push(row);
       continue;
     }
-    const existing = tail[idx];
-    if (existing && existing.kind === "tool_start" && existing.tool && row.tool) {
-      const merged = mergeToolStart(existing.tool, row.tool);
-      // The placeholder carried the completion time, which would zero the duration.
-      if (row.tool.started_at) merged.started_at = row.tool.started_at;
-      tail = tail.slice();
-      tail[idx] = { ...existing, tool: merged, text: merged.name, at: merged.started_at };
-    }
+    prepended.push(tail[same]!);
+    moved.add(row.id);
   }
-  return prepended.concat(tail);
+  if (prepended.length === 0) return tail;
+  return prepended.concat(moved.size > 0 ? tail.filter((row) => !moved.has(row.id)) : tail);
 }
 
 /** Optimistic `elicitation_answered` row, dropped when the server's same-id row lands. */

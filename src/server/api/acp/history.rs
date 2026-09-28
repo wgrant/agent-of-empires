@@ -218,32 +218,30 @@ pub async fn acp_context_primer(
     .into_response()
 }
 
-/// Main-agent tool calls a page continues without starting.
-fn unstarted_tool_calls(events: &[crate::acp::event_store::StoredEvent]) -> Vec<String> {
-    use crate::acp::state::Event;
-    let mut started = std::collections::HashSet::new();
-    let mut unstarted = Vec::new();
-    for e in events {
-        let id = match &e.event {
-            Event::ToolCallStarted { tool_call } => {
-                started.insert(tool_call.id.as_str());
-                continue;
-            }
-            Event::ToolCallUpdated { tool_call_id, .. }
-            | Event::ToolCallContent { tool_call_id, .. }
-            | Event::ToolCallCompleted { tool_call_id, .. } => tool_call_id,
-            _ => continue,
-        };
-        if !started.contains(id.as_str()) && !unstarted.contains(id) {
-            unstarted.push(id.clone());
+/// The rows the events in `first..=last` appended, patched or removed, as a
+/// fold of the whole log now holds them. A row created before the page but
+/// changed in it arrives current, and an older page never rolls back a row a
+/// newer one already carried.
+fn page_rows(
+    store: &crate::acp::event_store::EventStore,
+    session_id: &str,
+    first: u64,
+    last: u64,
+) -> (Vec<crate::acp::transcript::TranscriptRow>, Vec<String>) {
+    let mut model = crate::acp::transcript::TranscriptModel::new();
+    let mut changes = crate::acp::transcript::ChangedRows::default();
+    for e in store.replay_recorded_from(session_id, 0) {
+        let deltas = model.apply_event_at(e.seq, &e.event, e.recorded_at);
+        if (first..=last).contains(&e.seq) {
+            changes.record(deltas);
         }
     }
-    unstarted
+    changes.resolve(&model)
 }
 
 /// Paged transcript replay from the durable event store. `before` pages
-/// backward; `view=rows` returns the page folded into transcript rows with
-/// identical paging metadata.
+/// backward; `view=rows` returns the rows the page's events changed, see
+/// [`page_rows`], with identical paging metadata.
 pub async fn acp_replay(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
@@ -268,49 +266,23 @@ pub async fn acp_replay(
         page.last_scanned_seq,
         page.has_more,
     );
-    let (frames, rows) = if q.view.as_deref() == Some("rows") {
-        let mut model = crate::acp::transcript::TranscriptModel::new();
-        let mut changed_ids = std::collections::HashSet::new();
-        if let Some(first) = page.events.first() {
-            let store = &state.acp_event_store;
-            // A page opening mid-call folds the call's real start, not a placeholder.
-            let starts =
-                store.tool_starts_before(&id, first.seq, &unstarted_tool_calls(&page.events));
-            changed_ids.extend(starts.iter().filter_map(|e| match &e.event {
-                crate::acp::state::Event::ToolCallStarted { tool_call } => {
-                    Some(format!("start-{}", tool_call.id))
-                }
-                _ => None,
-            }));
-            let mut context = starts;
-            context.extend(store.replay_stream_context_before(&id, first.seq, &first.event));
-            context.sort_by_key(|e| e.seq);
-            for e in context {
-                model.apply_event_at(e.seq, &e.event, e.recorded_at);
-            }
-        }
-        for e in &page.events {
-            for delta in model.apply_event_at(e.seq, &e.event, e.recorded_at) {
-                match delta {
-                    crate::acp::transcript::TranscriptDelta::Append(row) => {
-                        changed_ids.insert(row.id);
-                    }
-                    crate::acp::transcript::TranscriptDelta::Patch { id, .. } => {
-                        changed_ids.insert(id);
-                    }
-                    crate::acp::transcript::TranscriptDelta::Remove(id) => {
-                        changed_ids.remove(&id);
-                    }
+    let (frames, rows, removed) = if q.view.as_deref() == Some("rows") {
+        match (page.events.first(), page.events.last()) {
+            (Some(first), Some(last)) => {
+                let store = Arc::clone(&state.acp_event_store);
+                let session_id = id.clone();
+                let (first, last) = (first.seq, last.seq);
+                match tokio::task::spawn_blocking(move || {
+                    page_rows(&store, &session_id, first, last)
+                })
+                .await
+                {
+                    Ok((rows, removed)) => (Vec::new(), Some(rows), removed),
+                    Err(e) => return blocking_failed("blocking task failed", e),
                 }
             }
+            _ => (Vec::new(), Some(Vec::new()), Vec::new()),
         }
-        let rows = model
-            .rows()
-            .iter()
-            .filter(|row| changed_ids.contains(&row.id))
-            .cloned()
-            .collect();
-        (Vec::new(), Some(rows))
     } else {
         let frames = page
             .events
@@ -324,7 +296,7 @@ pub async fn acp_replay(
                 }
             })
             .collect();
-        (frames, None)
+        (frames, None, Vec::new())
     };
     // A forward cursor older than the oldest retained event lost history.
     let lost = match (backward, lowest_seq) {
@@ -339,6 +311,7 @@ pub async fn acp_replay(
         next_cursor,
         has_more,
         rows,
+        removed,
     })
     .into_response()
 }
@@ -543,58 +516,382 @@ mod tests {
         assert_eq!(rows[0].id, "msg-2");
         assert_eq!(rows[0].text, "hi there");
     }
-    #[tokio::test]
-    async fn acp_replay_rows_page_opening_mid_call_carries_its_start() {
-        let inst = crate::session::Instance::new("t", "/tmp");
-        let id = inst.id.clone();
-        let state = crate::server::test_support::build_test_app_state(vec![inst]);
-        let events = [
-            Event::ToolCallStarted {
-                tool_call: crate::acp::state::ToolCall {
-                    id: "t1".into(),
-                    name: "cargo test".into(),
-                    kind: "execute".into(),
-                    args_preview: "{}".into(),
-                    started_at: chrono::Utc::now(),
-                    parent_tool_call_id: None,
-                    memory_recall: None,
-                    diffs: Vec::new(),
-                },
+    fn at(secs: i64) -> chrono::DateTime<chrono::Utc> {
+        chrono::DateTime::from_timestamp(secs, 0).unwrap()
+    }
+
+    fn start(id: &str) -> Event {
+        Event::ToolCallStarted {
+            tool_call: crate::acp::state::ToolCall {
+                id: id.into(),
+                name: format!("run {id}"),
+                kind: "execute".into(),
+                args_preview: "{}".into(),
+                started_at: at(1),
+                parent_tool_call_id: None,
+                memory_recall: None,
+                diffs: Vec::new(),
             },
-            Event::ToolCallCompleted {
-                tool_call_id: "t1".into(),
-                is_error: false,
-                content: "ok".into(),
-                output: Vec::new(),
-                completed_at: chrono::Utc::now(),
-                async_subagent: false,
-            },
-        ];
-        for (i, ev) in events.iter().enumerate() {
-            state.acp_event_store.record(&id, i as u64 + 1, ev).unwrap();
         }
+    }
+
+    fn done(id: &str, content: &str) -> Event {
+        Event::ToolCallCompleted {
+            tool_call_id: id.into(),
+            is_error: false,
+            content: content.into(),
+            output: Vec::new(),
+            completed_at: at(2),
+            async_subagent: false,
+        }
+    }
+
+    fn output(id: &str, data: &str) -> Event {
+        Event::ToolCallOutputDelta {
+            tool_call_id: id.into(),
+            data: data.into(),
+            replace: false,
+        }
+    }
+
+    fn hook(status: &str, output: &str) -> Event {
+        Event::HookUpdated {
+            id: "h1".into(),
+            name: "PreToolUse:Bash".into(),
+            event: "PreToolUse".into(),
+            status: status.into(),
+            output: output.into(),
+            exit_code: None,
+        }
+    }
+
+    fn spawned(id: &str) -> Event {
+        Event::SubagentSpawned {
+            id: id.into(),
+            parent: None,
+            name: "teammate".into(),
+            task: format!("task for {id}"),
+            at: at(3),
+            persistent: true,
+        }
+    }
+
+    fn subagent_state(id: &str, state: &str) -> Event {
+        Event::SubagentStateChanged {
+            id: id.into(),
+            state: state.into(),
+            at: at(4),
+        }
+    }
+
+    fn in_subagent(id: &str, event: Event) -> Event {
+        Event::SubagentUpdate {
+            id: id.into(),
+            event: Box::new(event),
+        }
+    }
+
+    fn workflow(id: &str) -> Event {
+        Event::AsyncTaskSpawned {
+            id: id.into(),
+            name: "review".into(),
+            task_type: "workflow".into(),
+            description: Some("Review the change".into()),
+            tool_call_id: None,
+            can_stop: true,
+            at: at(5),
+        }
+    }
+
+    fn workflow_progress(id: &str, step: &str) -> Event {
+        Event::AsyncTaskProgress {
+            id: id.into(),
+            description: Some(step.into()),
+            usage: None,
+            tool_call_id: None,
+            at: at(6),
+        }
+    }
+
+    fn workflow_state(id: &str, state: &str) -> Event {
+        Event::AsyncTaskStateChanged {
+            id: id.into(),
+            state: state.into(),
+            summary: None,
+            tool_call_id: None,
+            at: at(7),
+        }
+    }
+
+    fn summarized(id: &str) -> Event {
+        Event::ToolUseSummarized {
+            summary: "Ran the tests".into(),
+            tool_call_ids: vec![id.into()],
+        }
+    }
+
+    fn prompt(text: &str) -> Event {
+        Event::UserPromptSent {
+            text: text.into(),
+            attachments: Vec::new(),
+            prompt_id: None,
+            synthesized: false,
+        }
+    }
+
+    fn stopped() -> Event {
+        Event::Stopped {
+            reason: "prompt_complete".into(),
+        }
+    }
+
+    fn chunk(text: &str) -> Event {
+        Event::AgentMessageChunk { text: text.into() }
+    }
+
+    fn asked(tool_call_id: &str) -> Event {
+        Event::ElicitationRequested {
+            elicitation: crate::acp::elicitations::Elicitation {
+                nonce: crate::acp::approvals::Nonce("e-1".into()),
+                message: "Pick one".into(),
+                title: None,
+                description: None,
+                tool_call_id: Some(tool_call_id.into()),
+                questions: Vec::new(),
+                requested_at: at(8),
+                resolved: None,
+            },
+        }
+    }
+
+    /// Every row a whole-log fold holds through `through`, keyed by id.
+    fn cold_rows(
+        store: &crate::acp::event_store::EventStore,
+        id: &str,
+        through: u64,
+    ) -> std::collections::BTreeMap<String, crate::acp::transcript::TranscriptRow> {
+        cold_model_rows(store, id, through)
+            .into_iter()
+            .map(|row| (row.id.clone(), row))
+            .collect()
+    }
+
+    /// A whole-log fold's rows through `through`, in order.
+    fn cold_model_rows(
+        store: &crate::acp::event_store::EventStore,
+        id: &str,
+        through: u64,
+    ) -> Vec<crate::acp::transcript::TranscriptRow> {
+        let mut model = crate::acp::transcript::TranscriptModel::new();
+        for e in store.replay_recorded_from(id, 0) {
+            if e.seq <= through {
+                model.apply_event_at(e.seq, &e.event, e.recorded_at);
+            }
+        }
+        model.rows().to_vec()
+    }
+
+    async fn rows_since(state: &Arc<AppState>, id: &str, since: u64) -> ReplayResponse {
         let q = ReplayQuery {
-            since: 0,
-            limit: Some(1),
-            before: Some(3),
+            since,
+            limit: None,
+            before: None,
             view: Some("rows".into()),
         };
-        let resp = acp_replay(State(state), Path(id), axum::extract::Query(q))
-            .await
-            .into_response();
+        let resp = acp_replay(
+            State(Arc::clone(state)),
+            Path(id.to_string()),
+            axum::extract::Query(q),
+        )
+        .await
+        .into_response();
         let bytes = axum::body::to_bytes(resp.into_body(), 1 << 20)
             .await
             .unwrap();
-        let rows = serde_json::from_slice::<ReplayResponse>(&bytes)
-            .unwrap()
-            .rows
-            .expect("rows present");
-        let start = rows.iter().find(|r| r.id == "start-t1").expect("start row");
-        let tool = start.tool.as_ref().unwrap();
-        assert_eq!(
-            (tool.name.as_str(), tool.kind.as_str()),
-            ("cargo test", "execute")
-        );
-        assert!(rows.iter().any(|r| r.id == "done-t1"));
+        serde_json::from_slice(&bytes).unwrap()
+    }
+
+    /// A page that patches a row created before it returns that row as a
+    /// cold load shows it.
+    #[tokio::test]
+    async fn acp_replay_rows_page_returns_rows_it_patches_from_before_it() {
+        let cases: Vec<(&str, Vec<Event>, Vec<Event>, Vec<&str>)> = vec![
+            (
+                "teammate ends",
+                vec![spawned("a1")],
+                vec![subagent_state("a1", "completed")],
+                vec!["subagent-a1"],
+            ),
+            (
+                "teammate woken",
+                vec![spawned("a1"), subagent_state("a1", "completed")],
+                vec![spawned("a1:generation:2")],
+                vec!["subagent-a1", "woken-a1:generation:2"],
+            ),
+            (
+                "teammate ends with a call open",
+                vec![spawned("a1"), in_subagent("a1", start("t1"))],
+                vec![subagent_state("a1", "cancelled")],
+                vec!["subagent-a1", "stopped-t1-3"],
+            ),
+            (
+                "workflow progresses",
+                vec![workflow("w1")],
+                vec![workflow_progress("w1", "Reading files")],
+                vec!["subagent-w1"],
+            ),
+            (
+                "workflow ends",
+                vec![workflow("w1"), workflow_progress("w1", "Reading files")],
+                vec![workflow_state("w1", "completed")],
+                vec!["subagent-w1"],
+            ),
+            (
+                "earlier call summarized",
+                vec![start("t1"), done("t1", "ok")],
+                vec![summarized("t1")],
+                vec!["start-t1"],
+            ),
+            (
+                "call completes with output streamed before the page",
+                vec![start("t1"), output("t1", "line one\n")],
+                vec![done("t1", "")],
+                vec!["start-t1", "done-t1"],
+            ),
+            (
+                "hook finishes",
+                vec![prompt("go"), hook("running", "")],
+                vec![hook("error", "blocked")],
+                vec!["hook-h1"],
+            ),
+            (
+                "turn end cuts a running hook short",
+                vec![prompt("go"), hook("running", "")],
+                vec![stopped()],
+                vec!["hook-h1"],
+            ),
+            (
+                "reply continues",
+                vec![prompt("go"), chunk("Hel")],
+                vec![chunk("lo")],
+                vec!["msg-2"],
+            ),
+        ];
+        for (name, origin, patch, want) in cases {
+            let inst = crate::session::Instance::new("t", "/tmp");
+            let id = inst.id.clone();
+            let state = crate::server::test_support::build_test_app_state(vec![inst]);
+            for (i, event) in origin.iter().chain(&patch).enumerate() {
+                state
+                    .acp_event_store
+                    .record(&id, i as u64 + 1, event)
+                    .unwrap();
+            }
+            let page = rows_since(&state, &id, origin.len() as u64).await;
+            let cold = cold_rows(&state.acp_event_store, &id, u64::MAX);
+            let rows = page.rows.expect("rows present");
+            for want in want {
+                let row = rows.iter().find(|row| row.id == want);
+                assert_eq!(row, cold.get(want), "{name}: {want}");
+            }
+        }
+    }
+
+    /// Catching up with forward pages from any cursor, at any page size,
+    /// leaves a client with exactly the rows of a cold load.
+    #[test]
+    fn rows_pages_from_any_cursor_rebuild_the_cold_transcript() {
+        let (_tmp, store) = {
+            let tmp = tempfile::tempdir().unwrap();
+            let store =
+                crate::acp::event_store::EventStore::open(&tmp.path().join("events.db"), 10_000)
+                    .unwrap();
+            (tmp, store)
+        };
+        let id = "s-1";
+        let stream = [
+            prompt("go"),
+            chunk("Look"),
+            chunk("ing."),
+            hook("running", ""),
+            start("t1"),
+            output("t1", "one\n"),
+            hook("error", "blocked"),
+            output("t1", "two\n"),
+            done("t1", ""),
+            summarized("t1"),
+            start("t2"),
+            asked("t2"),
+            spawned("a1"),
+            in_subagent("a1", chunk("sub ")),
+            in_subagent("a1", start("t3")),
+            in_subagent("a1", chunk("work")),
+            workflow("w1"),
+            workflow_progress("w1", "Reading files"),
+            subagent_state("a1", "completed"),
+            workflow_progress("w1", "Writing report"),
+            chunk("Done"),
+            stopped(),
+            spawned("a1:generation:2"),
+            in_subagent("a1:generation:2", chunk("again")),
+            workflow_state("w1", "completed"),
+            subagent_state("a1:generation:2", "completed"),
+            prompt("next"),
+            start("t4"),
+            stopped(),
+        ];
+        for (i, event) in stream.iter().enumerate() {
+            store.record(id, i as u64 + 1, event).unwrap();
+        }
+        let seqs: Vec<u64> = store
+            .replay_from(id, 0)
+            .iter()
+            .map(|(seq, _)| *seq)
+            .collect();
+        let cold = cold_rows(&store, id, u64::MAX);
+        let cold_order = cold_model_rows(&store, id, u64::MAX);
+        let page_rows_of = |page: &crate::acp::event_store::ReplayPage| match (
+            page.events.first(),
+            page.events.last(),
+        ) {
+            (Some(first), Some(last)) => page_rows(&store, id, first.seq, last.seq),
+            _ => Default::default(),
+        };
+        for limit in [1, 2, 5] {
+            // Forward from every cursor a client can hold.
+            for cursor in std::iter::once(0).chain(seqs.iter().copied()) {
+                let mut rows = cold_model_rows(&store, id, cursor);
+                let mut since = cursor;
+                loop {
+                    let page = store.replay_page(id, since, Some(limit));
+                    let (changed, removed) = page_rows_of(&page);
+                    for row in changed {
+                        crate::acp::transcript::upsert_transcript_row(&mut rows, row);
+                    }
+                    rows.retain(|row| !removed.contains(&row.id));
+                    match page.last_scanned_seq {
+                        Some(next) if page.has_more => since = next,
+                        _ => break,
+                    }
+                }
+                assert_eq!(rows, cold_order, "forward from {cursor}, limit {limit}");
+            }
+            // Backward from the tail: every row a page carries is current, and
+            // together the pages hold every row.
+            let mut seen = std::collections::BTreeMap::new();
+            let mut before = u64::MAX;
+            loop {
+                let page = store.replay_page_before(id, before, Some(limit));
+                for row in page_rows_of(&page).0 {
+                    assert_eq!(Some(&row), cold.get(&row.id), "backward, limit {limit}");
+                    seen.insert(row.id.clone(), row);
+                }
+                match page.last_scanned_seq {
+                    Some(next) if page.has_more && next < before => before = next,
+                    _ => break,
+                }
+            }
+            assert_eq!(seen, cold, "backward, limit {limit}");
+        }
     }
 }
