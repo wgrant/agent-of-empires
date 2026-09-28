@@ -4,8 +4,8 @@
 mod range;
 
 pub use range::{
-    file_at_commit, file_at_revision, is_checked_out, range_changed_files, range_file_contents,
-    resolve_range, CommitRange, ResolvedRange,
+    file_at_commit, file_at_revision, range_changed_files, range_file_contents, resolve_range,
+    CommitRange, ResolvedRange,
 };
 
 use std::collections::HashMap;
@@ -568,7 +568,7 @@ fn get_blob_bytes(repo: &git2::Repository, tree: &git2::Tree, path: &Path) -> Op
 }
 
 /// Null-byte heuristic for binary content.
-fn is_binary_bytes(content: &[u8]) -> bool {
+pub(crate) fn is_binary_bytes(content: &[u8]) -> bool {
     content.iter().take(8000).any(|&b| b == 0)
 }
 
