@@ -742,6 +742,13 @@
       "components": ["web/src/components/PushHealthBanner.tsx"]
     },
     {
+      "id": "settings.security-login-persistence",
+      "kind": "vitest",
+      "risk": "medium",
+      "specs": ["src/components/__tests__/SecuritySettings.test.tsx"],
+      "components": ["web/src/components/SecuritySettings.tsx"]
+    },
+    {
       "id": "settings.security-readonly",
       "kind": "vitest",
       "risk": "low",
@@ -2205,10 +2212,7 @@
       "id": "settings.time-format",
       "kind": "vitest",
       "risk": "low",
-      "specs": [
-        "src/components/settings/__tests__/TimeFormatSetting.test.tsx",
-        "src/lib/timeFormat.test.ts"
-      ],
+      "specs": ["src/components/settings/__tests__/TimeFormatSetting.test.tsx", "src/lib/timeFormat.test.ts"],
       "components": [
         "web/src/components/settings/TimeFormatSetting.tsx",
         "web/src/components/SettingsView.tsx",

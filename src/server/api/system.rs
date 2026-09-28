@@ -1584,6 +1584,8 @@ pub struct ServerAbout {
     /// The host's clock preference, `"h12"` or `"h23"`, for the web UI's
     /// automatic time format.
     pub hour_cycle: Option<&'static str>,
+    /// Why passphrase logins cannot survive a restart, if they cannot.
+    pub login_persistence_problem: Option<String>,
 }
 
 pub async fn get_about(State(state): State<Arc<AppState>>) -> Json<ServerAbout> {
@@ -1632,6 +1634,10 @@ pub async fn get_about(State(state): State<Arc<AppState>>) -> Json<ServerAbout> 
         sleep_inhibit,
         create_boot_id: state.create_progress.boot_id().to_string(),
         hour_cycle,
+        login_persistence_problem: state
+            .login_manager
+            .persistence_problem()
+            .map(str::to_string),
     })
 }
 

@@ -936,6 +936,8 @@ export interface ServerAbout {
   create_boot_id?: string;
   /** The host's clock preference, which an automatic time format follows. */
   hour_cycle?: "h12" | "h23" | null;
+  /** Why passphrase logins cannot survive a restart, if they cannot. */
+  login_persistence_problem?: string | null;
 }
 
 export async function fetchAbout(): Promise<ServerAbout | null> {
