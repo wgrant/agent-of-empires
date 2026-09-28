@@ -1581,6 +1581,9 @@ pub struct ServerAbout {
     /// This daemon run's id, which the web client sends back as a create's
     /// `retry_origin` so a restarted daemon never re-runs an attempt it cannot see.
     pub create_boot_id: String,
+    /// The host's clock preference, `"h12"` or `"h23"`, for the web UI's
+    /// automatic time format.
+    pub hour_cycle: Option<&'static str>,
 }
 
 pub async fn get_about(State(state): State<Arc<AppState>>) -> Json<ServerAbout> {
@@ -1602,6 +1605,11 @@ pub async fn get_about(State(state): State<Arc<AppState>>) -> Json<ServerAbout> 
         snapshot & crate::server::SLEEP_INHIBIT_SNAPSHOT_SLOT_PRESENT != 0,
         crate::process::sleep_inhibit_backend_available(),
     );
+    // Asked once, by running the host's settings tools.
+    let hour_cycle = tokio::task::spawn_blocking(crate::process::host_hour_cycle)
+        .await
+        .ok()
+        .flatten();
     Json(ServerAbout {
         version: env!("CARGO_PKG_VERSION").to_string(),
         auth_required,
@@ -1623,6 +1631,7 @@ pub async fn get_about(State(state): State<Arc<AppState>>) -> Json<ServerAbout> 
         web_build_id: crate::server::web_build_id(),
         sleep_inhibit,
         create_boot_id: state.create_progress.boot_id().to_string(),
+        hour_cycle,
     })
 }
 

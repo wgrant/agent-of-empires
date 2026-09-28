@@ -7,6 +7,20 @@ use std::process::Command;
 pub(super) use super::unix::{
     configure_process_group, kill_process_group, terminate_process_group,
 };
+/// The Language & Region 24-hour switch, which macOS stores as a forced ICU
+/// hour cycle when it departs from the region's own.
+pub(super) fn host_hour_cycle() -> Option<&'static str> {
+    let forced =
+        |key| super::command_output("defaults", &["read", "-g", key]).as_deref() == Some("1");
+    if forced("AppleICUForce24HourTime") {
+        Some("h23")
+    } else if forced("AppleICUForce12HourTime") {
+        Some("h12")
+    } else {
+        None
+    }
+}
+
 pub(super) fn rename_exclusive(
     source_dir: &std::os::fd::OwnedFd,
     source: &std::ffi::OsStr,

@@ -319,6 +319,53 @@ pub fn boot_id() -> Option<String> {
     }
 }
 
+/// The host user's clock preference, `"h12"` or `"h23"`, when the desktop or
+/// locale states one. Browsers never expose an OS 24-hour setting, so the web
+/// UI falls back to this.
+pub fn host_hour_cycle() -> Option<&'static str> {
+    static CYCLE: std::sync::OnceLock<Option<&'static str>> = std::sync::OnceLock::new();
+    *CYCLE.get_or_init(|| {
+        #[cfg(target_os = "linux")]
+        {
+            linux::host_hour_cycle()
+        }
+        #[cfg(target_os = "macos")]
+        {
+            macos::host_hour_cycle()
+        }
+        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+        {
+            None
+        }
+    })
+}
+
+/// A command's trimmed stdout, if it ran and succeeded within a second.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn command_output(program: &str, args: &[&str]) -> Option<String> {
+    let mut cmd = Command::new(program);
+    cmd.args(args);
+    let output = run_with_timeout(&mut cmd, Duration::from_secs(1)).ok()??;
+    output
+        .status
+        .success()
+        .then(|| String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+/// A strftime time format's hour cycle: 12-hour if it has an hour or period
+/// that only a 12-hour clock uses.
+#[cfg(any(target_os = "linux", target_os = "macos", test))]
+fn hour_cycle_of_time_format(format: &str) -> &'static str {
+    if ["%I", "%l", "%r", "%p", "%P"]
+        .iter()
+        .any(|spec| format.contains(spec))
+    {
+        "h12"
+    } else {
+        "h23"
+    }
+}
+
 /// Whether a locally launched container can run on this host's own kernel, so
 /// the boot_id/inode mount proof in the sandbox content migration can be
 /// established. Only a Linux host runs containers on its own kernel; macOS and
@@ -570,6 +617,19 @@ fn signal_process_tree(pid: u32, signal: Signal) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn time_formats_name_their_hour_cycle() {
+        for (format, cycle) in [
+            ("%T", "h23"),
+            ("%H:%M:%S", "h23"),
+            ("%r", "h12"),
+            ("%I:%M:%S %p", "h12"),
+            ("%l:%M %P", "h12"),
+        ] {
+            assert_eq!(hour_cycle_of_time_format(format), cycle, "{format}");
+        }
+    }
+
     use super::*;
 
     #[test]
