@@ -33,10 +33,18 @@ export function commentViewLabel(comment: DiffComment): string {
   return "new side, working tree";
 }
 
-/** Whether a range comment's `head` has moved since it was made, so its line
- *  numbers may name other lines. A comment without a recorded commit, or a view
- *  whose commit is not known yet, cannot tell. */
-export function headMoved(comment: DiffComment, headCommit: string | undefined): boolean {
-  const made = comment.range?.headCommit;
-  return made !== undefined && headCommit !== undefined && made !== headCommit;
+/** The commits a range view's file came from. */
+export interface ViewCommits {
+  head: string;
+  from: string;
+}
+
+/** Whether the side a range comment is on came from another commit than when
+ *  it was made: `head` for the new side, the merge-base for the old. Its line
+ *  numbers may then name other lines. A comment without a recorded commit, or
+ *  a view whose commits are not known yet, cannot tell. */
+export function rangeMoved(comment: DiffComment, now: ViewCommits | undefined): boolean {
+  const made = comment.side === "new" ? comment.range?.headCommit : comment.range?.fromCommit;
+  const current = comment.side === "new" ? now?.head : now?.from;
+  return made !== undefined && current !== undefined && made !== current;
 }

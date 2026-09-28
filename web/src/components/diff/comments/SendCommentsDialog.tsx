@@ -55,7 +55,11 @@ export function SendCommentsDialog({
     };
   }, []);
 
-  const preview = useMemo(() => buildCommentsMarkdown(comments, { isMultiRepo }), [comments, isMultiRepo]);
+  const labelViews = hiddenCount > 0;
+  const preview = useMemo(
+    () => buildCommentsMarkdown(comments, { isMultiRepo, labelViews }),
+    [comments, isMultiRepo, labelViews],
+  );
 
   const sendBlocked = busy || comments.length === 0 || !sendEnabled;
   // One tooltip covers every disabled reason so it never explains the wrong one.
@@ -74,6 +78,7 @@ export function SendCommentsDialog({
     setError(null);
     const built = buildDiffCommentsPrompt(comments, introDraft, outroDraft, {
       isMultiRepo,
+      labelViews,
     });
     try {
       const res = await fetch(
@@ -106,7 +111,7 @@ export function SendCommentsDialog({
         setBusy(false);
       }
     }
-  }, [busy, comments, introDraft, outroDraft, isMultiRepo, sendEnabled, sessionId, delivery, onSent]);
+  }, [busy, comments, introDraft, outroDraft, isMultiRepo, labelViews, sendEnabled, sessionId, delivery, onSent]);
 
   // Document-level so textareas do not swallow the hotkeys; Esc is ignored mid-send.
   useEffect(() => {

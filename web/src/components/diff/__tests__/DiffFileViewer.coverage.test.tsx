@@ -18,19 +18,25 @@ vi.mock("../FullFileViewer", () => ({
 const mock = vi.hoisted(() => ({
   contents: undefined as RichFileContentsResponse | undefined,
   loading: false,
+  current: true,
   error: null as string | null,
   anchored: [] as Array<{ status: "active" | "stale"; comment: Record<string, unknown> }>,
   anchorInput: [] as Array<{ id: string }>,
+  fileView: undefined as unknown,
   snippet: "captured" as string | null,
 }));
 
 vi.mock("../../../hooks/useFileContents", () => ({
-  useFileContents: () => ({
-    contents: mock.contents,
-    loading: mock.loading,
-    error: mock.error,
-    refresh: vi.fn(),
-  }),
+  useFileContents: (...args: unknown[]) => {
+    mock.fileView = args[4];
+    return {
+      contents: mock.contents,
+      current: mock.current,
+      loading: mock.loading,
+      error: mock.error,
+      refresh: vi.fn(),
+    };
+  },
 }));
 
 vi.mock("../../../hooks/useShikiTheme", () => ({
@@ -147,6 +153,7 @@ beforeEach(() => {
   window.localStorage.clear();
   mock.contents = baseContents;
   mock.loading = false;
+  mock.current = true;
   mock.error = null;
   mock.anchored = [];
   mock.snippet = "captured";
@@ -324,6 +331,53 @@ describe("DiffFileViewer comments", () => {
     const made = (store.addComment as ReturnType<typeof vi.fn>).mock.calls[0]![0];
     expect(made).not.toHaveProperty("base");
     expect(made).not.toHaveProperty("range");
+  });
+
+  it("opens a citation on the working tree whatever range the list shows", () => {
+    const store = {
+      ...commentsStore(),
+      comments: [
+        { id: "live", filePath: "a.ts", side: "new", startLine: 1, endLine: 1 },
+        {
+          id: "ranged",
+          filePath: "a.ts",
+          side: "new",
+          startLine: 1,
+          endLine: 1,
+          range: { base: "main", head: "layer" },
+        },
+      ],
+    } as unknown as UseDiffCommentsResult;
+    const api: DiffViewsApi = {
+      sessionId: "s1",
+      views: [{ base: "main", head: "layer" }],
+      clearView: vi.fn(),
+      openTarget: vi.fn(() => true),
+      isShowing: () => true,
+    };
+    render(
+      <DiffViewsContext.Provider value={api}>
+        <DiffFileViewer
+          sessionId="s1"
+          filePath="a.ts"
+          targetLine={3}
+          workingTree
+          commentsEnabled
+          commentsStore={store}
+        />
+      </DiffViewsContext.Provider>,
+    );
+    expect(mock.fileView).toBeUndefined();
+    expect(mock.anchorInput.map((c) => c.id)).toEqual(["live"]);
+  });
+
+  it("takes no comments on contents still showing the previous view", () => {
+    mock.current = false;
+    mock.loading = true;
+    mock.anchored = [{ status: "active", comment: { id: "c9", side: "new", endLine: 3 } }];
+    render(<DiffFileViewer sessionId="s1" filePath="a.ts" commentsEnabled commentsStore={commentsStore()} />);
+    expect(screen.queryByText("card:c9")).toBeNull();
+    expect(screen.getByTestId("pierre-diff").getAttribute("data-selection")).toBe("false");
   });
 
   it("leaves line selection off when comments are disabled and find is closed", () => {

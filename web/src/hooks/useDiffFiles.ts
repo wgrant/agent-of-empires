@@ -58,6 +58,15 @@ export function useDiffFiles(
     setLoading(false);
   }, [sessionId, views, enabledRef]);
 
+  // Another view's files must not show under this one's header, where a click
+  // would open them in a range they may not be in.
+  const [trackedViews, setTrackedViews] = useState(views);
+  if (views !== trackedViews) {
+    setTrackedViews(views);
+    setFiles([]);
+    setLoading(sessionId !== null);
+  }
+
   const [trackedSessionId, setTrackedSessionId] = useState(sessionId);
   if (sessionId !== trackedSessionId) {
     setTrackedSessionId(sessionId);

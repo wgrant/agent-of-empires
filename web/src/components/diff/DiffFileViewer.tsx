@@ -8,7 +8,7 @@ import { useWebSettings } from "../../hooks/useWebSettings";
 import { useShikiTheme } from "../../hooks/useShikiTheme";
 import type { UseDiffCommentsResult } from "../../hooks/useDiffComments";
 import { anchorCommentsToContents } from "./comments/anchorToContents";
-import { commentInView, headMoved } from "./comments/views";
+import { commentInView, rangeMoved } from "./comments/views";
 import { extractSnippetFromContents } from "./comments/extractSnippetFromContents";
 import { extensionToLanguage } from "./comments/language";
 import { CommentCard } from "./comments/CommentCard";
@@ -47,6 +47,9 @@ interface Props {
    *  Prefer its diff when available, but fall back to the provenance-confined
    *  full-file viewer when Git cannot supply one. */
   fallbackToFileViewer?: boolean;
+  /** Show the working tree whatever view the diff list shows, as a transcript
+   *  citation needs: the agent cites the files it works on, not a range. */
+  workingTree?: boolean;
 }
 
 interface DraftRange {
@@ -77,11 +80,13 @@ export function DiffFileViewer({
   commentsEnabled = false,
   commentsStore,
   fallbackToFileViewer = false,
+  workingTree = false,
 }: Props) {
-  const view = viewFor(useDiffViews()?.views ?? [], repoName);
+  const listView = viewFor(useDiffViews()?.views ?? [], repoName);
+  const view = workingTree ? undefined : listView;
   const viewBase = view?.base;
   const viewHead = view?.head;
-  const { contents, loading, error } = useFileContents(sessionId, filePath, repoName, revision, view);
+  const { contents, current, loading, error } = useFileContents(sessionId, filePath, repoName, revision, view);
   const rangeCommits = contents?.range_commits;
   const { theme } = useShikiTheme();
   const { settings } = useWebSettings();
@@ -132,7 +137,9 @@ export function DiffFileViewer({
     extensionToLanguage(resolvedPath) === "markdown" && !contents?.is_binary && !contents?.truncated;
   const showRendered = markdownAvailable && settings.markdownPreview === "rendered";
 
-  const commentsActive = commentsEnabled && !!commentsStore;
+  // Contents still showing another file or view take no comments: their
+  // lines and commits are not this one's.
+  const commentsActive = commentsEnabled && !!commentsStore && current;
   // Each view anchors only its own comments; the rest still count and send.
   const comments = useMemo(
     () =>
@@ -141,10 +148,15 @@ export function DiffFileViewer({
       ),
     [commentsStore, viewBase, viewHead],
   );
-  const headCommit = rangeCommits?.head;
+  const commitHead = rangeCommits?.head;
+  const commitFrom = rangeCommits?.from;
+  const viewCommits = useMemo(
+    () => (commitHead && commitFrom ? { head: commitHead, from: commitFrom } : undefined),
+    [commitHead, commitFrom],
+  );
   const anchored = useMemo(
-    () => anchorCommentsToContents(comments, filePath, repoName, oldContent, newContent, headCommit),
-    [comments, filePath, repoName, oldContent, newContent, headCommit],
+    () => (current ? anchorCommentsToContents(comments, filePath, repoName, oldContent, newContent, viewCommits) : []),
+    [current, comments, filePath, repoName, oldContent, newContent, viewCommits],
   );
   const staleComments = useMemo(() => anchored.filter((a) => a.status === "stale"), [anchored]);
 
@@ -369,7 +381,7 @@ export function DiffFileViewer({
             <div className="text-[11px] font-mono text-status-error mb-2">
               {staleComments.length} stale comment
               {staleComments.length === 1 ? "" : "s"} (
-              {staleComments.some((a) => headMoved(a.comment, headCommit))
+              {staleComments.some((a) => rangeMoved(a.comment, viewCommits))
                 ? "made on an earlier commit of this range, or its lines are gone"
                 : "line range no longer in current diff"}
               )
