@@ -2452,6 +2452,7 @@ function AppContent({
           commentSendEnabled={commentSendEnabled}
           commentSendDisabledReason={commentSendDisabledReason}
           diffComments={diffComments}
+          commentsHiddenCount={commentsHiddenCount}
           commentsIsMultiRepo={commentsIsMultiRepo}
           sendDialogOpen={sendDialogOpen}
           onOpenSendDialog={() => setSendDialogOpen(true)}
@@ -2632,6 +2633,7 @@ function AppContent({
                             commentsEnabled={commentsEnabled}
                             commentsStore={diffComments}
                             fallbackToFileViewer
+                            workingTree
                           />
                         )
                       }

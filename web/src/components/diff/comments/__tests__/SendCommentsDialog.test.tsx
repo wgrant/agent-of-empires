@@ -197,6 +197,12 @@ describe("SendCommentsDialog views", () => {
     expect(container.textContent).toContain("0123456");
   });
 
+  it("names the working tree when an open range hides default-view comments", () => {
+    const { container } = setup({ comments: [comment(), comment({ id: "c2", side: "old" })], hiddenCount: 2 });
+    expect(container.textContent).toContain("new side, working tree");
+    expect(container.textContent).toContain("old side, against the session's base");
+  });
+
   it("stays quiet when every comment is in the open view", () => {
     const { container } = setup();
     expect(container.querySelector('[data-testid="send-comments-other-views"]')).toBeNull();

@@ -42,15 +42,29 @@ describe("anchorCommentsToContents", () => {
   });
 });
 
-describe("a range comment whose head moved", () => {
-  const range = (headCommit?: string) => ({ base: "main", head: "layer", ...(headCommit ? { headCommit } : {}) });
-  it.each<[string, string | undefined, string | undefined, "active" | "stale"]>([
-    ["head still names its commit", "aaa", "aaa", "active"],
-    ["head now names another commit, though the lines still fit", "aaa", "bbb", "stale"],
-    ["made before commits were recorded", undefined, "bbb", "active"],
-    ["the view's commit is not known yet", "aaa", undefined, "active"],
-  ])("is %s", (_, made, now, status) => {
-    const out = anchorCommentsToContents([comment({ range: range(made) })], "a.ts", undefined, OLD, NEW, now);
+describe("a range comment whose commits moved", () => {
+  const range = { base: "main", head: "layer", headCommit: "h1", fromCommit: "f1" };
+  const legacy = { base: "main", head: "layer" };
+  it.each<[string, Partial<DiffComment>, { head: string; from: string } | undefined, "active" | "stale"]>([
+    ["a new-side comment on the same commits", { range }, { head: "h1", from: "f1" }, "active"],
+    ["a new-side comment after head moved", { range }, { head: "h2", from: "f1" }, "stale"],
+    ["a new-side comment when only the merge-base moved", { range }, { head: "h1", from: "f2" }, "active"],
+    [
+      "an old-side comment after the merge-base moved",
+      { range, side: "old", startLine: 1, endLine: 1 },
+      { head: "h1", from: "f2" },
+      "stale",
+    ],
+    [
+      "an old-side comment when only head moved",
+      { range, side: "old", startLine: 1, endLine: 1 },
+      { head: "h2", from: "f1" },
+      "active",
+    ],
+    ["a comment made before commits were recorded", { range: legacy }, { head: "h2", from: "f2" }, "active"],
+    ["a comment in a view whose commits are not known yet", { range }, undefined, "active"],
+  ])("is %s", (_, over, now, status) => {
+    const out = anchorCommentsToContents([comment(over)], "a.ts", undefined, OLD, NEW, now);
     expect(out.map((a) => a.status)).toEqual([status]);
   });
 });

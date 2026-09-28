@@ -52,6 +52,8 @@ interface Props {
   commentSendEnabled: boolean;
   commentSendDisabledReason: string;
   diffComments: ReturnType<typeof useDiffComments>;
+  /** Comments made in a view other than the one open now. */
+  commentsHiddenCount: number;
   commentsIsMultiRepo: boolean;
   sendDialogOpen: boolean;
   onOpenSendDialog: () => void;
@@ -98,6 +100,7 @@ export function MobileMainPane({
   commentSendEnabled,
   commentSendDisabledReason,
   diffComments,
+  commentsHiddenCount,
   commentsIsMultiRepo,
   sendDialogOpen,
   onOpenSendDialog,
@@ -213,6 +216,7 @@ export function MobileMainPane({
                         commentsEnabled={commentsEnabled}
                         commentsStore={diffComments}
                         fallbackToFileViewer
+                        workingTree
                       />
                     )
                   }
@@ -235,6 +239,7 @@ export function MobileMainPane({
                 {commentsEnabled && diffComments.count > 0 && (
                   <CommentsBanner
                     count={diffComments.count}
+                    hidden={commentsHiddenCount}
                     sendEnabled={commentSendEnabled}
                     sendDisabledReason={commentSendDisabledReason}
                     onSend={onOpenSendDialog}
