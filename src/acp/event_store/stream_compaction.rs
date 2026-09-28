@@ -5,7 +5,7 @@ use super::EventStore;
 use crate::acp::state::Event;
 use crate::events;
 
-const EVENT_COMPACTION_VERSION: i64 = 4;
+const EVENT_COMPACTION_VERSION: i64 = 5;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ChunkKind {
@@ -193,12 +193,13 @@ pub(super) fn compact_completed_stream_runs(
     stopped_seq: u64,
 ) -> Result<usize> {
     let table = store.schema.events_table();
+    // From the previous turn's end, so an agent-initiated turn that a prompt
+    // interrupted before it stopped is sealed along with that prompt's turn.
     let boundary: Option<i64> = conn
         .query_row(
             &format!(
                 "SELECT MAX(seq) FROM {table}
-                 WHERE session_id = ?1 AND seq < ?2
-                   AND discriminant IN ('UserPromptSent', 'UserDiffCommentsPrompt', 'Stopped')"
+                 WHERE session_id = ?1 AND seq < ?2 AND discriminant = 'Stopped'"
             ),
             params![session_id, stopped_seq as i64],
             |row| row.get(0),
@@ -376,7 +377,8 @@ const TEXT_RUN_TRANSPARENT: &[&str] = &[
 ];
 
 /// Merges each finished turn's split text runs across the whole log, as the
-/// transcript joins them live. A turn with no `Stopped` may still be streaming.
+/// transcript joins them live. Only runs after a session's last `Stopped` may
+/// still be streaming.
 fn seal_history_text_runs(conn: &Connection, schema: &events::Schema) -> Result<usize> {
     let table = schema.events_table();
     let session_ids = {
@@ -431,11 +433,6 @@ fn seal_history_text_runs(conn: &Connection, schema: &events::Schema) -> Result<
                 }
                 if discriminant == "Stopped" {
                     sealed.append(&mut runs.runs);
-                } else if matches!(
-                    discriminant.as_str(),
-                    "UserPromptSent" | "UserDiffCommentsPrompt" | "SessionCleared"
-                ) {
-                    runs.runs.clear();
                 }
             }
             sealed
@@ -478,8 +475,9 @@ pub(super) fn run_legacy_compaction(conn: &Connection, schema: &events::Schema) 
     } else {
         0
     };
-    // Replies and thoughts split by events that no longer end a run.
-    let rejoined_text_rows = if (1..4).contains(&version) {
+    // Replies and thoughts split by events that no longer end a run, or left
+    // in agent-initiated turns that a prompt interrupted.
+    let rejoined_text_rows = if (1..5).contains(&version) {
         seal_history_text_runs(conn, schema)?
     } else {
         0
@@ -501,6 +499,16 @@ pub(super) fn run_legacy_compaction(conn: &Connection, schema: &events::Schema) 
         params![EVENT_COMPACTION_VERSION],
     )
     .context("store event compaction version")?;
+    // Now, not at the next turn's end, where it would stall live sessions.
+    if report.tool_content_rows
+        + report.stream_chunk_rows
+        + terminal_output_rows
+        + raw_tool_result_rows
+        + rejoined_text_rows
+        > 0
+    {
+        events::reclaim_free_pages(conn)?;
+    }
     tracing::debug!(
         target: "acp.event_store",
         tool_content_rows = report.tool_content_rows,
@@ -657,7 +665,12 @@ mod tests {
     #[test]
     fn stopped_turn_seals_consecutive_message_and_thought_runs() {
         let (_tmp, store) = open_store(1000);
+        let stopped = || Event::Stopped {
+            reason: "prompt_complete".into(),
+        };
+        // An agent-initiated turn that a prompt interrupts has no `Stopped`.
         let events = [
+            stopped(),
             agent_chunk("Hel"),
             Event::SubagentUpdate {
                 id: "a1".into(),
@@ -672,10 +685,10 @@ mod tests {
             Event::AgentThoughtChunk {
                 text: "ning".into(),
             },
+            user_prompt("go on"),
             agent_chunk("Done"),
-            Event::Stopped {
-                reason: "prompt_complete".into(),
-            },
+            agent_chunk("!"),
+            stopped(),
         ];
         for (index, event) in events.iter().enumerate() {
             store.record("s-1", index as u64 + 1, event).unwrap();
@@ -684,17 +697,20 @@ mod tests {
         let replay = store.replay_from("s-1", 0);
         assert_eq!(
             replay.iter().map(|(seq, _)| *seq).collect::<Vec<_>>(),
-            vec![2, 4, 6, 7, 8]
+            vec![1, 3, 5, 7, 8, 10, 11]
         );
         assert!(matches!(
-            &replay[1].1,
-            Event::AgentMessageSnapshot { block_start_seq: 1, text } if text == "Hello"
+            &replay[2].1,
+            Event::AgentMessageSnapshot { block_start_seq: 2, text } if text == "Hello"
         ));
         assert!(matches!(
-            &replay[2].1,
-            Event::AgentThoughtSnapshot { block_start_seq: 5, text } if text == "planning"
+            &replay[3].1,
+            Event::AgentThoughtSnapshot { block_start_seq: 6, text } if text == "planning"
         ));
-        assert!(matches!(&replay[3].1, Event::AgentMessageChunk { text } if text == "Done"));
+        assert!(matches!(
+            &replay[5].1,
+            Event::AgentMessageSnapshot { block_start_seq: 9, text } if text == "Done!"
+        ));
     }
 
     #[test]
@@ -796,9 +812,10 @@ mod tests {
         }
     }
 
-    /// v4 rejoins history split by a token count the finished turn deleted.
+    /// The upgrade rejoins replies split by a token count the finished turn
+    /// deleted, and seals an agent-initiated turn that a prompt interrupted.
     #[test]
-    fn upgrade_rejoins_replies_split_by_deleted_events() {
+    fn upgrade_rejoins_split_and_interrupted_replies() {
         let (_tmp, store) = open_store(1000);
         let history = [
             (1, user_prompt("go")),
@@ -817,6 +834,15 @@ mod tests {
                     reason: "prompt_complete".into(),
                 },
             ),
+            (9, agent_chunk("Tests ")),
+            (10, agent_chunk("pass.")),
+            (11, user_prompt("next")),
+            (
+                12,
+                Event::Stopped {
+                    reason: "prompt_complete".into(),
+                },
+            ),
         ];
         let conn = store.conn.lock().unwrap();
         for (seq, event) in &history {
@@ -824,7 +850,7 @@ mod tests {
             events::insert_event(&conn, &store.schema, "s-1", *seq, &json, *seq as i64).unwrap();
         }
         conn.execute(
-            "UPDATE acp_event_store_meta SET value = 3 WHERE key = 'compaction_version'",
+            "UPDATE acp_event_store_meta SET value = 4 WHERE key = 'compaction_version'",
             [],
         )
         .unwrap();
@@ -833,11 +859,15 @@ mod tests {
         let replay = store.replay_from("s-1", 0);
         assert_eq!(
             replay.iter().map(|(seq, _)| *seq).collect::<Vec<_>>(),
-            vec![1, 7, 8]
+            vec![1, 7, 8, 10, 11, 12]
         );
         assert!(matches!(
             &replay[1].1,
             Event::AgentMessageSnapshot { block_start_seq: 2, text } if text == "Once this ships, remove the line."
+        ));
+        assert!(matches!(
+            &replay[3].1,
+            Event::AgentMessageSnapshot { block_start_seq: 9, text } if text == "Tests pass."
         ));
     }
 
