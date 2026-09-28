@@ -152,6 +152,23 @@ impl<S: BroadcastSink> Drain<S> {
         let mut end = StreamEnd::default();
         let mut established = false;
         while let Some(event) = inbound.recv().await {
+            // Killing a runner for a restart the daemon asked for, such as a
+            // drained build-stale respawn, ends its connection too: that is a
+            // restart, not a failure to start.
+            let event = match event {
+                Event::AgentStartupError { .. }
+                    if established
+                        && crate::process::worker_registry::peek_restart_marker(
+                            &self.session_id,
+                        )
+                        .is_some() =>
+                {
+                    Event::Stopped {
+                        reason: "restart_pending".into(),
+                    }
+                }
+                event => event,
+            };
             match &event {
                 Event::Stopped { reason } => match reason.as_str() {
                     "agent_unresponsive" | "prompt_orphaned" | "user_forced" => {
@@ -987,6 +1004,53 @@ mod tests {
                 .count();
             assert_eq!(crash_messages, usize::from(expect_crash_message), "{id}");
         }
+    }
+
+    /// A drained stale-build respawn kills the runner under a restart marker;
+    /// the dropped connection shows as that restart, not a startup error.
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn a_requested_restart_is_not_reported_as_a_startup_error() {
+        let (_home, _temp) = isolate_home();
+        let id = "s-planned-restart";
+        let sink = VecSink::new();
+        let sup = Supervisor::new(sink.clone());
+        let (inbound_tx, inbound_rx) = mpsc::channel::<Event>(16);
+        let lease = sup.test_install_stdio(id).await;
+        crate::process::worker_registry::mark_restart_pending(id, lease.epoch());
+        let drain = sup.start_drain_task(id.into(), lease, inbound_rx, None);
+        for event in [
+            Event::AcpSessionAssigned {
+                acp_session_id: "acp-1".into(),
+            },
+            Event::AgentStartupError {
+                message: "ACP connection failed: agent transport closed".into(),
+            },
+        ] {
+            inbound_tx.send(event).await.unwrap();
+        }
+        drop(inbound_tx);
+        tokio::time::timeout(Duration::from_secs(2), drain)
+            .await
+            .expect("drain task exits after inbound close")
+            .unwrap();
+        let published: Vec<Event> = sink
+            .frames
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(_, _, ev)| ev.clone())
+            .collect();
+        assert!(
+            published
+                .iter()
+                .any(|ev| matches!(ev, Event::Stopped { reason } if reason == "restart_pending")),
+            "{published:?}"
+        );
+        assert!(
+            !published.iter().any(|ev| matches!(ev, Event::AgentStartupError { message } if message.contains("transport closed"))),
+            "{published:?}"
+        );
     }
 
     #[tokio::test]
