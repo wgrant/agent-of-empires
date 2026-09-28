@@ -29,6 +29,7 @@ function comment(overrides?: Partial<DiffComment>): DiffComment {
 
 function setup(overrides?: {
   comments?: DiffComment[];
+  hiddenCount?: number;
   isMultiRepo?: boolean;
   sendEnabled?: boolean;
   sendDisabledReason?: string;
@@ -45,6 +46,7 @@ function setup(overrides?: {
     <SendCommentsDialog
       sessionId="sess 1"
       comments={overrides?.comments ?? [comment()]}
+      hiddenCount={overrides?.hiddenCount}
       isMultiRepo={overrides?.isMultiRepo ?? false}
       sendEnabled={overrides?.sendEnabled ?? true}
       sendDisabledReason={overrides?.sendDisabledReason ?? "session is trashed"}
@@ -178,5 +180,25 @@ describe("SendCommentsDialog", () => {
     expect(onClose).not.toHaveBeenCalled();
     resolveFetch({ ok: true });
     await waitFor(() => expect(onSent).toHaveBeenCalledTimes(1));
+  });
+});
+
+describe("SendCommentsDialog views", () => {
+  it("says how many comments come from another view and names each one's view", () => {
+    const { container } = setup({
+      comments: [comment(), comment({ id: "c2", range: { base: "main", head: "layer", headCommit: "0123456789" } })],
+      hiddenCount: 1,
+    });
+    expect(container.querySelector('[data-testid="send-comments-other-views"]')?.textContent).toContain(
+      "1 from another view",
+    );
+    expect(container.textContent).toContain("new side, working tree");
+    expect(container.textContent).toContain("main...layer");
+    expect(container.textContent).toContain("0123456");
+  });
+
+  it("stays quiet when every comment is in the open view", () => {
+    const { container } = setup();
+    expect(container.querySelector('[data-testid="send-comments-other-views"]')).toBeNull();
   });
 });
