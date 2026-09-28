@@ -5,7 +5,7 @@ use super::EventStore;
 use crate::acp::state::Event;
 use crate::events;
 
-const EVENT_COMPACTION_VERSION: i64 = 3;
+const EVENT_COMPACTION_VERSION: i64 = 4;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ChunkKind {
@@ -16,10 +16,12 @@ enum ChunkKind {
 struct ChunkRun {
     session_id: String,
     kind: ChunkKind,
+    /// The run's first and last stored rows.
     start_seq: u64,
     end_seq: u64,
-    text: String,
-    chunks: usize,
+    /// Each chunk, or snapshot of a block, as (block start, text).
+    pieces: Vec<(u64, String)>,
+    rows: usize,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -30,38 +32,108 @@ struct CompactionReport {
 
 impl ChunkRun {
     fn snapshot(&self) -> Event {
+        let block_start_seq = self
+            .pieces
+            .first()
+            .map_or(self.start_seq, |(start, _)| *start);
+        let text = self.pieces.iter().map(|(_, text)| text.as_str()).collect();
         match self.kind {
             ChunkKind::Message => Event::AgentMessageSnapshot {
-                block_start_seq: self.start_seq,
-                text: self.text.clone(),
+                block_start_seq,
+                text,
             },
             ChunkKind::Thought => Event::AgentThoughtSnapshot {
-                block_start_seq: self.start_seq,
-                text: self.text.clone(),
+                block_start_seq,
+                text,
             },
         }
     }
 
-    fn source_discriminant(&self) -> &'static str {
+    /// The chunk and snapshot discriminants of the run's kind.
+    fn source_discriminants(&self) -> [&'static str; 2] {
         match self.kind {
-            ChunkKind::Message => "AgentMessageChunk",
-            ChunkKind::Thought => "AgentThoughtChunk",
+            ChunkKind::Message => ["AgentMessageChunk", "AgentMessageSnapshot"],
+            ChunkKind::Thought => ["AgentThoughtChunk", "AgentThoughtSnapshot"],
         }
     }
 
     fn snapshot_discriminant(&self) -> &'static str {
-        match self.kind {
-            ChunkKind::Message => "AgentMessageSnapshot",
-            ChunkKind::Thought => "AgentThoughtSnapshot",
-        }
+        self.source_discriminants()[1]
     }
 }
 
-fn stream_chunk(event: &Event) -> Option<(ChunkKind, &str)> {
+/// A streamed text row: its kind, the block a snapshot restates, and its text.
+fn stream_text(event: &Event) -> Option<(ChunkKind, Option<u64>, &str)> {
     match event {
-        Event::AgentMessageChunk { text } => Some((ChunkKind::Message, text)),
-        Event::AgentThoughtChunk { text } => Some((ChunkKind::Thought, text)),
+        Event::AgentMessageChunk { text } => Some((ChunkKind::Message, None, text)),
+        Event::AgentThoughtChunk { text } => Some((ChunkKind::Thought, None, text)),
+        Event::AgentMessageSnapshot {
+            block_start_seq,
+            text,
+        } => Some((ChunkKind::Message, Some(*block_start_seq), text)),
+        Event::AgentThoughtSnapshot {
+            block_start_seq,
+            text,
+        } => Some((ChunkKind::Thought, Some(*block_start_seq), text)),
         _ => None,
+    }
+}
+
+/// Groups a session's stored rows into the runs the transcript shows as one
+/// reply or thought, as `TranscriptModel` does live.
+struct TextRuns {
+    session_id: String,
+    runs: Vec<ChunkRun>,
+    current: Option<ChunkRun>,
+}
+
+impl TextRuns {
+    fn new(session_id: &str) -> Self {
+        Self {
+            session_id: session_id.to_owned(),
+            runs: Vec::new(),
+            current: None,
+        }
+    }
+
+    fn observe(&mut self, seq: u64, event: &Event) {
+        let Some((kind, block_start, text)) = stream_text(event) else {
+            if !event.leaves_text_run_open() {
+                self.close();
+            }
+            return;
+        };
+        if self.current.as_ref().is_some_and(|run| run.kind != kind) {
+            self.close();
+        }
+        let run = self.current.get_or_insert_with(|| ChunkRun {
+            session_id: self.session_id.clone(),
+            kind,
+            start_seq: seq,
+            end_seq: seq,
+            pieces: Vec::new(),
+            rows: 0,
+        });
+        // A snapshot restates its block from its start.
+        if let Some(start) = block_start {
+            run.pieces.retain(|(piece, _)| *piece < start);
+        }
+        run.pieces
+            .push((block_start.unwrap_or(seq), text.to_owned()));
+        run.end_seq = seq;
+        run.rows += 1;
+    }
+
+    /// An unreadable row ends the run, since nothing shows what it held.
+    fn close(&mut self) {
+        if let Some(run) = self.current.take().filter(|run| run.rows > 1) {
+            self.runs.push(run);
+        }
+    }
+
+    fn finish(mut self) -> Vec<ChunkRun> {
+        self.close();
+        self.runs
     }
 }
 
@@ -92,16 +164,19 @@ fn apply_chunk_runs(
                 run.end_seq as i64
             ],
         )?;
+        let [chunk, snapshot] = run.source_discriminants();
         removed += transaction.execute(
             &format!(
                 "DELETE FROM {table}
-                 WHERE session_id = ?1 AND seq >= ?2 AND seq < ?3 AND discriminant = ?4"
+                 WHERE session_id = ?1 AND seq >= ?2 AND seq < ?3
+                   AND discriminant IN (?4, ?5)"
             ),
             params![
                 run.session_id,
                 run.start_seq as i64,
                 run.end_seq as i64,
-                run.source_discriminant()
+                chunk,
+                snapshot
             ],
         )?;
     }
@@ -139,54 +214,19 @@ pub(super) fn compact_completed_stream_runs(
     let rows = stmt.query_map(params![session_id, start_seq, stopped_seq as i64], |row| {
         Ok((row.get::<_, i64>(0)? as u64, row.get::<_, String>(1)?))
     })?;
-    let mut runs = Vec::new();
-    let mut current: Option<ChunkRun> = None;
+    let mut runs = TextRuns::new(session_id);
     let mut outputs = OutputRuns::default();
     for row in rows {
         let (seq, json) = row?;
-        let event = match serde_json::from_str::<Event>(&json) {
+        match serde_json::from_str::<Event>(&json) {
             Ok(event) => {
                 outputs.observe(seq, &event);
-                event
+                runs.observe(seq, &event);
             }
-            Err(_) => {
-                if let Some(run) = current.take().filter(|run| run.chunks > 1) {
-                    runs.push(run);
-                }
-                continue;
-            }
-        };
-        // A subagent's events interleave with the main agent's text without ending it.
-        if matches!(event, Event::SubagentUpdate { .. }) || event.is_ambient() {
-            continue;
-        }
-        let Some((kind, text)) = stream_chunk(&event) else {
-            if let Some(run) = current.take().filter(|run| run.chunks > 1) {
-                runs.push(run);
-            }
-            continue;
-        };
-        if let Some(run) = current.as_mut().filter(|run| run.kind == kind) {
-            run.end_seq = seq;
-            run.text.push_str(text);
-            run.chunks += 1;
-        } else {
-            if let Some(run) = current.take().filter(|run| run.chunks > 1) {
-                runs.push(run);
-            }
-            current = Some(ChunkRun {
-                session_id: session_id.to_owned(),
-                kind,
-                start_seq: seq,
-                end_seq: seq,
-                text: text.to_owned(),
-                chunks: 1,
-            });
+            Err(_) => runs.close(),
         }
     }
-    if let Some(run) = current.filter(|run| run.chunks > 1) {
-        runs.push(run);
-    }
+    let runs = runs.finish();
     drop(stmt);
 
     Ok(apply_chunk_runs(conn, &store.schema, runs)?
@@ -316,6 +356,29 @@ fn compact_legacy_history(conn: &Connection, schema: &events::Schema) -> Result<
         )
         .context("compact historical tool content snapshots")?;
 
+    let stream_chunk_rows = seal_history_text_runs(conn, schema)?;
+    Ok(CompactionReport {
+        tool_content_rows,
+        stream_chunk_rows,
+    })
+}
+
+/// Stored events that `Event::leaves_text_run_open` can pass over; the
+/// history scan reads only these and the text rows themselves.
+const TEXT_RUN_TRANSPARENT: &[&str] = &[
+    "TurnOutputTokens",
+    "PromptSuggested",
+    "ToolUseSummarized",
+    "UsageUpdated",
+    "RawAgentUpdate",
+    "SubagentUpdate",
+    "HookUpdated",
+];
+
+/// Merges each finished turn's split text runs across the whole log, as the
+/// transcript joins them live. A turn with no `Stopped` may still be streaming.
+fn seal_history_text_runs(conn: &Connection, schema: &events::Schema) -> Result<usize> {
+    let table = schema.events_table();
     let session_ids = {
         let mut stmt = conn
             .prepare(&format!("SELECT DISTINCT session_id FROM {table}"))
@@ -326,14 +389,24 @@ fn compact_legacy_history(conn: &Connection, schema: &events::Schema) -> Result<
         rows.collect::<rusqlite::Result<Vec<_>>>()
             .context("read historical sessions")?
     };
-    let mut stream_chunk_rows = 0;
+    let readable = [
+        "AgentMessageChunk",
+        "AgentThoughtChunk",
+        "AgentMessageSnapshot",
+        "AgentThoughtSnapshot",
+    ]
+    .iter()
+    .chain(TEXT_RUN_TRANSPARENT)
+    .map(|d| format!("'{d}'"))
+    .collect::<Vec<_>>()
+    .join(", ");
+    let mut merged = 0;
     for session_id in session_ids {
         let sealed = {
             let mut stmt = conn
                 .prepare(&format!(
                     "SELECT seq, discriminant,
-                            CASE WHEN discriminant IN ('AgentMessageChunk', 'AgentThoughtChunk')
-                                 THEN event_json ELSE NULL END
+                            CASE WHEN discriminant IN ({readable}) THEN event_json ELSE NULL END
                      FROM {table}
                      WHERE session_id = ?1
                      ORDER BY seq"
@@ -348,60 +421,28 @@ fn compact_legacy_history(conn: &Connection, schema: &events::Schema) -> Result<
                     ))
                 })
                 .context("scan historical streams")?;
-            let mut current: Option<ChunkRun> = None;
-            let mut pending = Vec::new();
+            let mut runs = TextRuns::new(&session_id);
             let mut sealed = Vec::new();
             for row in rows {
                 let (seq, discriminant, json) = row.context("read historical stream row")?;
-                let parsed_chunk = json
-                    .as_deref()
-                    .and_then(|json| serde_json::from_str::<Event>(json).ok())
-                    .and_then(|event| {
-                        stream_chunk(&event).map(|(kind, text)| (kind, text.to_owned()))
-                    });
-                if let Some((kind, text)) = parsed_chunk {
-                    match current.as_mut() {
-                        Some(run) if run.kind == kind => {
-                            run.end_seq = seq;
-                            run.text.push_str(&text);
-                            run.chunks += 1;
-                        }
-                        _ => {
-                            if let Some(run) = current.take().filter(|run| run.chunks > 1) {
-                                pending.push(run);
-                            }
-                            current = Some(ChunkRun {
-                                session_id: session_id.clone(),
-                                kind,
-                                start_seq: seq,
-                                end_seq: seq,
-                                text,
-                                chunks: 1,
-                            });
-                        }
-                    }
-                    continue;
-                }
-                if let Some(run) = current.take().filter(|run| run.chunks > 1) {
-                    pending.push(run);
+                match json.and_then(|json| serde_json::from_str::<Event>(&json).ok()) {
+                    Some(event) => runs.observe(seq, &event),
+                    None => runs.close(),
                 }
                 if discriminant == "Stopped" {
-                    sealed.append(&mut pending);
+                    sealed.append(&mut runs.runs);
                 } else if matches!(
                     discriminant.as_str(),
                     "UserPromptSent" | "UserDiffCommentsPrompt" | "SessionCleared"
                 ) {
-                    pending.clear();
+                    runs.runs.clear();
                 }
             }
             sealed
         };
-        stream_chunk_rows += apply_chunk_runs(conn, schema, sealed)?;
+        merged += apply_chunk_runs(conn, schema, sealed)?;
     }
-    Ok(CompactionReport {
-        tool_content_rows,
-        stream_chunk_rows,
-    })
+    Ok(merged)
 }
 
 pub(super) fn run_legacy_compaction(conn: &Connection, schema: &events::Schema) -> Result<()> {
@@ -437,6 +478,12 @@ pub(super) fn run_legacy_compaction(conn: &Connection, schema: &events::Schema) 
     } else {
         0
     };
+    // Replies and thoughts split by events that no longer end a run.
+    let rejoined_text_rows = if (1..4).contains(&version) {
+        seal_history_text_runs(conn, schema)?
+    } else {
+        0
+    };
     // Claude's raw tool results, read at ingest and otherwise stored twice.
     let raw_tool_result_rows = conn
         .execute(
@@ -460,6 +507,7 @@ pub(super) fn run_legacy_compaction(conn: &Connection, schema: &events::Schema) 
         stream_chunk_rows = report.stream_chunk_rows,
         terminal_output_rows,
         raw_tool_result_rows,
+        rejoined_text_rows,
         "compacted historical structured view events"
     );
     Ok(())
@@ -689,6 +737,146 @@ mod tests {
             Event::SubagentUpdate { event, .. }
                 if matches!(event.as_ref(), Event::ToolCallOutputDelta { data, .. } if data == "sub\ndone\n")
         ));
+    }
+
+    /// A turn's reply sealed at its end stays one snapshot across events that
+    /// show nothing, and splits at a hook card.
+    #[test]
+    fn sealing_ends_a_run_only_at_something_shown() {
+        let hook = |status: &str, output: &str| Event::HookUpdated {
+            id: "h".into(),
+            name: "Stop".into(),
+            event: "Stop".into(),
+            status: status.into(),
+            output: output.into(),
+            exit_code: None,
+        };
+        let cases: Vec<(Vec<Event>, Vec<&str>)> = vec![
+            (
+                vec![
+                    agent_chunk("rem"),
+                    Event::TurnOutputTokens { tokens: 9 },
+                    agent_chunk("o"),
+                    hook("success", ""),
+                    agent_chunk("ve"),
+                ],
+                vec!["remove"],
+            ),
+            (
+                vec![
+                    agent_chunk("be"),
+                    agent_chunk("fore"),
+                    hook("error", "failed"),
+                    agent_chunk("af"),
+                    agent_chunk("ter"),
+                ],
+                vec!["before", "after"],
+            ),
+        ];
+        for (events, want) in cases {
+            let (_tmp, store) = open_store(1000);
+            let turn = std::iter::once(user_prompt("go"))
+                .chain(events.clone())
+                .chain([Event::Stopped {
+                    reason: "prompt_complete".into(),
+                }]);
+            for (index, event) in turn.enumerate() {
+                store.record("s-1", index as u64 + 1, &event).unwrap();
+            }
+            let texts: Vec<String> = store
+                .replay_from("s-1", 0)
+                .into_iter()
+                .filter_map(|(_, e)| match e {
+                    Event::AgentMessageSnapshot { text, .. }
+                    | Event::AgentMessageChunk { text } => Some(text),
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(texts, want, "{events:?}");
+        }
+    }
+
+    /// v4 rejoins history split by a token count the finished turn deleted.
+    #[test]
+    fn upgrade_rejoins_replies_split_by_deleted_events() {
+        let (_tmp, store) = open_store(1000);
+        let history = [
+            (1, user_prompt("go")),
+            (
+                5,
+                Event::AgentMessageSnapshot {
+                    block_start_seq: 2,
+                    text: "Once this ships, rem".into(),
+                },
+            ),
+            // Seq 6 held the deleted token count.
+            (7, agent_chunk("ove the line.")),
+            (
+                8,
+                Event::Stopped {
+                    reason: "prompt_complete".into(),
+                },
+            ),
+        ];
+        let conn = store.conn.lock().unwrap();
+        for (seq, event) in &history {
+            let json = serde_json::to_string(event).unwrap();
+            events::insert_event(&conn, &store.schema, "s-1", *seq, &json, *seq as i64).unwrap();
+        }
+        conn.execute(
+            "UPDATE acp_event_store_meta SET value = 3 WHERE key = 'compaction_version'",
+            [],
+        )
+        .unwrap();
+        run_legacy_compaction(&conn, &store.schema).unwrap();
+        drop(conn);
+        let replay = store.replay_from("s-1", 0);
+        assert_eq!(
+            replay.iter().map(|(seq, _)| *seq).collect::<Vec<_>>(),
+            vec![1, 7, 8]
+        );
+        assert!(matches!(
+            &replay[1].1,
+            Event::AgentMessageSnapshot { block_start_seq: 2, text } if text == "Once this ships, remove the line."
+        ));
+    }
+
+    /// The history scan reads only the stored events the predicate can pass over.
+    #[test]
+    fn history_scan_reads_every_event_that_leaves_a_run_open() {
+        let events = [
+            Event::TurnOutputTokens { tokens: 1 },
+            Event::PromptSuggested { text: "x".into() },
+            Event::ToolUseSummarized {
+                summary: "x".into(),
+                tool_call_ids: Vec::new(),
+            },
+            Event::RawAgentUpdate {
+                payload: serde_json::Value::Null,
+            },
+            Event::SubagentUpdate {
+                id: "a".into(),
+                event: Box::new(agent_chunk("x")),
+            },
+            Event::HookUpdated {
+                id: "h".into(),
+                name: "Stop".into(),
+                event: "Stop".into(),
+                status: "running".into(),
+                output: String::new(),
+                exit_code: None,
+            },
+        ];
+        for event in events {
+            assert!(event.leaves_text_run_open());
+            let json = serde_json::to_value(&event).unwrap();
+            let discriminant = json.as_object().unwrap().keys().next().unwrap().clone();
+            assert!(
+                TEXT_RUN_TRANSPARENT.contains(&discriminant.as_str()),
+                "{discriminant}"
+            );
+        }
+        assert!(TEXT_RUN_TRANSPARENT.contains(&"UsageUpdated"));
     }
 
     #[test]
