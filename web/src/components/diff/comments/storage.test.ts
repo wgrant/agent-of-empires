@@ -71,12 +71,28 @@ describe("loadComments", () => {
         { ...mkComment({ id: "bad" }), filePath: 12 },
         { ...mkComment(), side: "left" },
         { ...mkComment({ id: "bad-range" }), range: { base: "main" } },
+        { ...mkComment({ id: "bad-commit" }), range: { base: "main", head: "layer", headCommit: 7 } },
+        { ...mkComment({ id: "bad-base" }), base: false },
       ],
     });
     expect(loadComments("sess-1")).toEqual({
       ...EMPTY_STORAGE,
       comments: [mkComment({ id: "good" }), mkComment({ id: "ranged", range: { base: "main", head: "layer" } })],
     });
+  });
+
+  it("round-trips comments with and without the view fields", () => {
+    const comments = [
+      mkComment({ id: "plain" }),
+      mkComment({ id: "legacy-range", range: { base: "main", head: "layer" } }),
+      mkComment({
+        id: "range",
+        range: { base: "main", head: "layer", headCommit: "abc", fromCommit: "def", headCheckedOut: false },
+      }),
+      mkComment({ id: "base", side: "old", base: "layer" }),
+    ];
+    saveComments("sess-1", { ...EMPTY_STORAGE, comments });
+    expect(loadComments("sess-1").comments).toEqual(comments);
   });
 });
 

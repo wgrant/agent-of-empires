@@ -558,13 +558,26 @@ pub struct DiffComment {
     /// content rather than the working tree's.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub range: Option<DiffCommentRange>,
+    /// The base an old-side comment was made against, when the view compared
+    /// the working tree with another base than the session's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base: Option<String>,
 }
 
-/// The `base...head` commit range a diff comment was made on.
+/// The `base...head` commit range a diff comment was made on. The commits are
+/// absent on comments made before they were recorded.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DiffCommentRange {
     pub base: String,
     pub head: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub head_commit: Option<String>,
+    /// The merge-base the range diffed from.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from_commit: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub head_checked_out: Option<bool>,
 }
 
 /// Terminal park reason once rate-limit auto-resume exhausts its redelivery budget.
@@ -1413,6 +1426,51 @@ pub(crate) mod test_support {
 mod tests {
     use super::test_support::{prompt, stopped};
     use super::*;
+
+    /// A diff comment keeps its view across a round trip, and one stored
+    /// before commits or a base were recorded still reads.
+    #[test]
+    fn diff_comments_round_trip_with_and_without_view_fields() {
+        let legacy = r#"{"id":"c","filePath":"a.rs","side":"new","startLine":1,"endLine":1,
+            "body":"b","capturedSnippet":"x","createdAt":"t","range":{"base":"main","head":"layer"}}"#;
+        let comment: DiffComment = serde_json::from_str(legacy).unwrap();
+        let range = comment.range.clone().unwrap();
+        assert_eq!(
+            (range.head_commit, range.from_commit, range.head_checked_out),
+            (None, None, None)
+        );
+        assert_eq!(comment.base, None);
+
+        let full = DiffComment {
+            range: Some(DiffCommentRange {
+                base: "main".into(),
+                head: "layer".into(),
+                head_commit: Some("abc".into()),
+                from_commit: Some("def".into()),
+                head_checked_out: Some(false),
+            }),
+            base: None,
+            ..comment.clone()
+        };
+        let json = serde_json::to_value(&full).unwrap();
+        assert_eq!(json["range"]["headCommit"], "abc");
+        assert_eq!(json["range"]["headCheckedOut"], false);
+        assert_eq!(serde_json::from_value::<DiffComment>(json).unwrap(), full);
+
+        let old_side = DiffComment {
+            side: "old".into(),
+            range: None,
+            base: Some("layer".into()),
+            ..comment
+        };
+        let json = serde_json::to_value(&old_side).unwrap();
+        assert_eq!(json["base"], "layer");
+        assert!(json.get("range").is_none());
+        assert_eq!(
+            serde_json::from_value::<DiffComment>(json).unwrap(),
+            old_side
+        );
+    }
 
     #[test]
     fn only_events_showing_nothing_leave_a_text_run_open() {

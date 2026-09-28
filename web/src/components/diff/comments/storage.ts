@@ -95,12 +95,21 @@ export function isWellFormed(c: unknown): c is DiffComment {
     typeof o.body === "string" &&
     typeof o.capturedSnippet === "string" &&
     typeof o.createdAt === "string" &&
-    (o.range === undefined || isRange(o.range))
+    (o.range === undefined || isRange(o.range)) &&
+    (o.base === undefined || typeof o.base === "string")
   );
 }
+
+const optional = (value: unknown, type: "string" | "boolean") => value === undefined || typeof value === type;
 
 function isRange(value: unknown): boolean {
   if (!value || typeof value !== "object") return false;
   const r = value as Record<string, unknown>;
-  return typeof r.base === "string" && typeof r.head === "string";
+  return (
+    typeof r.base === "string" &&
+    typeof r.head === "string" &&
+    optional(r.headCommit, "string") &&
+    optional(r.fromCommit, "string") &&
+    optional(r.headCheckedOut, "boolean")
+  );
 }

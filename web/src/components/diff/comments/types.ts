@@ -21,11 +21,20 @@ export interface DiffComment {
   updatedAt?: string;
   /** The commit range it was made on; its lines are then `head`'s, not the working tree's. */
   range?: DiffCommentRange;
+  /** The base an old-side comment was made against, when the view showed another than the session's. */
+  base?: string;
 }
 
+/** Commits are absent on comments made before they were recorded. */
 export interface DiffCommentRange {
   base: string;
   head: string;
+  /** The commit `head` named when the comment was made. */
+  headCommit?: string;
+  /** The merge-base the range diffed from. */
+  fromCommit?: string;
+  /** Whether the worktree had `head` checked out then. */
+  headCheckedOut?: boolean;
 }
 
 export type DiffCommentDraft = Omit<DiffComment, "id" | "createdAt">;
