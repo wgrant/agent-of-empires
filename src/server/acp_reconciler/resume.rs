@@ -136,12 +136,12 @@ async fn admit(
     }
 }
 
-pub(super) async fn resume_one(state: Arc<AppState>, target: ResumeTarget) -> ResumeOutcome {
-    let id = target.id.clone();
-    let in_flight_turn = target.in_flight_turn;
-
-    // Take the lease before any preparation so a stop landing from here on is honored.
-    let record = worker_registry::load(&id).ok().flatten();
+/// The session's registry record, and whether to attach to its runner or replace it.
+fn registry_decision(
+    id: &str,
+    in_flight_turn: bool,
+) -> (Option<worker_registry::WorkerRecord>, AdoptDecision) {
+    let record = worker_registry::load(id).ok().flatten();
     let decision = record.as_ref().map_or(AdoptDecision::FreshSpawn, |r| {
         adopt_decision(
             worker_registry::is_record_live(r),
@@ -150,10 +150,100 @@ pub(super) async fn resume_one(state: Arc<AppState>, target: ResumeTarget) -> Re
             in_flight_turn,
         )
     });
-    let kind = match decision {
+    (record, decision)
+}
+
+fn resume_kind(decision: AdoptDecision) -> ResumeKind {
+    match decision {
         AdoptDecision::Attach | AdoptDecision::AdoptStaleForDrain => ResumeKind::Attach,
         _ => ResumeKind::Spawn,
+    }
+}
+
+enum AttachAttempt {
+    Attached,
+    Cancelled,
+    /// Another resume path owns the worker.
+    OwnedElsewhere,
+    /// The runner was terminated so a fresh spawn can replace it.
+    Failed {
+        timed_out: bool,
+    },
+}
+
+/// Attaches to the live runner `record` names, terminating it when that fails.
+async fn attach_live_runner(
+    service: &SessionService,
+    target: &ResumeTarget,
+    record: &worker_registry::WorkerRecord,
+    decision: AdoptDecision,
+    reservation: crate::acp::supervisor::ResumeReservation,
+) -> AttachAttempt {
+    let id = &target.id;
+    if decision == AdoptDecision::AdoptStaleForDrain {
+        tracing::info!(
+            target: "acp.supervisor",
+            session = %id,
+            old_build = %record.build_version,
+            new_build = crate::build_info::BUILD_VERSION,
+            "adopting build-stale structured view worker to drain in-flight turn before respawn"
+        );
+    }
+    let sandbox = {
+        let instances = service.instances.read().await;
+        instances
+            .iter()
+            .find(|i| &i.id == id)
+            .and_then(|i| i.sandbox_info.clone())
     };
+    let attach = service.acp_supervisor.attach_inner(
+        id.clone(),
+        PathBuf::from(&target.project_path),
+        vec![],
+        target.in_flight_turn,
+        sandbox,
+        reservation,
+    );
+    match timeout(Duration::from_secs(3), attach).await {
+        Ok(Ok(())) => {
+            // Flagged only once attached: a failed attach respawns on the current binary.
+            if decision == AdoptDecision::AdoptStaleForDrain {
+                service.acp_supervisor.mark_build_respawn_pending(id);
+            }
+            tracing::info!(
+                target: "acp.supervisor",
+                session = %id,
+                pid = record.pid,
+                in_flight_turn = target.in_flight_turn,
+                "reattached to existing structured view runner"
+            );
+            AttachAttempt::Attached
+        }
+        Ok(Err(SupervisorError::SpawnCancelled(_))) => AttachAttempt::Cancelled,
+        Ok(Err(SupervisorError::AlreadyRunning(_))) => {
+            tracing::debug!(target: "acp.supervisor", session = %id, "another resume path owns the worker");
+            AttachAttempt::OwnedElsewhere
+        }
+        Ok(Err(e)) => {
+            tracing::warn!(target: "acp.supervisor", session = %id, "attach failed; terminating the worker and falling back to fresh spawn: {e}");
+            worker_registry::terminate_and_wait(id).await;
+            AttachAttempt::Failed { timed_out: false }
+        }
+        Err(_) => {
+            tracing::warn!(target: "acp.supervisor", session = %id, "attach timed out after 3s; terminating the worker and falling back to fresh spawn");
+            worker_registry::terminate_and_wait(id).await;
+            AttachAttempt::Failed { timed_out: true }
+        }
+    }
+}
+
+pub(super) async fn resume_one(state: Arc<AppState>, target: ResumeTarget) -> ResumeOutcome {
+    let id = target.id.clone();
+    let in_flight_turn = target.in_flight_turn;
+
+    // Take the lease before any preparation so a stop landing from here on is honored.
+    let (record, decision) = registry_decision(&id, in_flight_turn);
+    let kind = resume_kind(decision);
     let mut reservation = match admit(&state, &id, kind).await {
         Ok(r) => r,
         Err(outcome) => return outcome,
@@ -170,64 +260,27 @@ pub(super) async fn resume_one(state: Arc<AppState>, target: ResumeTarget) -> Re
     if let Some(record) = record {
         match decision {
             AdoptDecision::Attach | AdoptDecision::AdoptStaleForDrain => {
-                if decision == AdoptDecision::AdoptStaleForDrain {
-                    tracing::info!(
-                        target: "acp.supervisor",
-                        session = %id,
-                        old_build = %record.build_version,
-                        new_build = crate::build_info::BUILD_VERSION,
-                        "adopting build-stale structured view worker to drain in-flight turn before respawn"
-                    );
-                }
-                let sandbox = {
-                    let instances = state.instances.read().await;
-                    instances
-                        .iter()
-                        .find(|i| i.id == id)
-                        .and_then(|i| i.sandbox_info.clone())
-                };
-                let attach = state.acp_supervisor.attach_inner(
-                    id.clone(),
-                    PathBuf::from(&target.project_path),
-                    vec![],
-                    in_flight_turn,
-                    sandbox,
+                match attach_live_runner(
+                    &state.session_service,
+                    &target,
+                    &record,
+                    decision,
                     reservation,
-                );
-                match timeout(Duration::from_secs(3), attach).await {
-                    Ok(Ok(())) => {
-                        // Flagged only once attached: a failed attach respawns on the current binary.
-                        if decision == AdoptDecision::AdoptStaleForDrain {
-                            state.acp_supervisor.mark_build_respawn_pending(&id);
-                        }
-                        tracing::info!(
-                            target: "acp.supervisor",
-                            session = %id,
-                            pid = record.pid,
-                            in_flight_turn,
-                            "reattached to existing structured view runner"
-                        );
+                )
+                .await
+                {
+                    AttachAttempt::Attached => {
                         if in_flight_turn {
                             seed_in_flight_status(&state, &id).await;
                         }
                         return ResumeOutcome::Attached;
                     }
-                    Ok(Err(SupervisorError::SpawnCancelled(_))) => {
-                        return ResumeOutcome::SpawnFinished
+                    AttachAttempt::Cancelled => return ResumeOutcome::SpawnFinished,
+                    AttachAttempt::OwnedElsewhere => return ResumeOutcome::Attached,
+                    AttachAttempt::Failed { timed_out: true } => {
+                        return ResumeOutcome::RetryAfterAttachTimeout
                     }
-                    Ok(Err(SupervisorError::AlreadyRunning(_))) => {
-                        tracing::debug!(target: "acp.supervisor", session = %id, "another resume path owns the worker");
-                        return ResumeOutcome::Attached;
-                    }
-                    Ok(Err(e)) => {
-                        tracing::warn!(target: "acp.supervisor", session = %id, "attach failed; terminating the worker and falling back to fresh spawn: {e}");
-                        worker_registry::terminate_and_wait(&id).await;
-                    }
-                    Err(_) => {
-                        tracing::warn!(target: "acp.supervisor", session = %id, "attach timed out after 3s; terminating the worker and falling back to fresh spawn");
-                        worker_registry::terminate_and_wait(&id).await;
-                        return ResumeOutcome::RetryAfterAttachTimeout;
-                    }
+                    AttachAttempt::Failed { timed_out: false } => {}
                 }
                 // The failed attach released its lease; the spawn needs one that counts toward capacity.
                 reservation = match admit(&state, &id, ResumeKind::Spawn).await {
@@ -436,31 +489,49 @@ pub(crate) async fn trigger_resume_background(
     id: &str,
 ) -> Result<ResumeTrigger, SupervisorError> {
     service.acp_supervisor.forget_stale_cancel(id);
-    let reservation = match service
+    let in_flight = query_store(&service.acp_event_store, id, "in-flight turn", |s, id| {
+        s.has_in_flight_turn(id)
+    })
+    .await
+    .unwrap_or(false);
+    // A runner that outlived a daemon restart is attached, as the reconciler
+    // would; spawning would terminate it first.
+    let (record, decision) = registry_decision(id, in_flight);
+    let mut reservation = match service
         .acp_supervisor
-        .begin_resume(id, ResumeKind::Spawn)
+        .begin_resume(id, resume_kind(decision))
         .await?
     {
         ResumeReservationOutcome::Reserved(r) => r,
         ResumeReservationOutcome::AlreadyPresent => return Ok(ResumeTrigger::AlreadyResuming),
     };
-    let Some(target) = resume_target_for_session(service, id).await else {
+    let Some(mut target) = resume_target_for_session(service, id).await else {
         return Ok(ResumeTrigger::NotFound);
     };
+    target.in_flight_turn = in_flight;
     let service = Arc::clone(service);
     crate::task_util::spawn_supervised(
         "acp.prompt_wake_resume",
         crate::task_util::PanicPolicy::Log,
         async move {
+            if let Some(record) = record.filter(|_| resume_kind(decision) == ResumeKind::Attach) {
+                match attach_live_runner(&service, &target, &record, decision, reservation).await {
+                    AttachAttempt::Attached
+                    | AttachAttempt::Cancelled
+                    | AttachAttempt::OwnedElsewhere => return,
+                    AttachAttempt::Failed { .. } => {}
+                }
+                // The failed attach released its lease; the spawn needs its own.
+                reservation = match service
+                    .acp_supervisor
+                    .begin_resume(&target.id, ResumeKind::Spawn)
+                    .await
+                {
+                    Ok(ResumeReservationOutcome::Reserved(r)) => r,
+                    _ => return,
+                };
+            }
             // Close a turn a dead worker left open before a new prompt lands (#3686).
-            let in_flight = query_store(
-                &service.acp_event_store,
-                &target.id,
-                "in-flight turn",
-                |s, id| s.has_in_flight_turn(id),
-            )
-            .await
-            .unwrap_or(false);
             if in_flight {
                 service
                     .acp_supervisor
@@ -751,6 +822,52 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
         assert!(!state.acp_event_store.has_in_flight_turn(id));
+    }
+
+    /// A prompt landing before the reconciler's first tick attaches to a runner
+    /// that outlived the restart instead of terminating it for a fresh spawn.
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn prompt_wake_attaches_to_a_live_runner_first() {
+        use crate::process::worker_registry::WorkerRecord;
+
+        let id = "s-prompt-wake-attach";
+        let (_home, state, project) = test_state(id);
+        let socket_path = worker_registry::socket_path_for(id).unwrap();
+        std::fs::create_dir_all(socket_path.parent().unwrap()).unwrap();
+        let control = crate::process::worker::control_socket_sibling(&socket_path);
+        let listener = tokio::net::UnixListener::bind(&control).unwrap();
+        // Stands in for the runner: a failed attach terminates it.
+        let mut runner = std::process::Command::new("sleep")
+            .arg("30")
+            .spawn()
+            .unwrap();
+        let record = WorkerRecord::new(
+            id.to_string(),
+            runner.id(),
+            socket_path,
+            "codex-acp".to_string(),
+            "codex".to_string(),
+            project.path().to_path_buf(),
+            None,
+            Vec::new(),
+            Vec::new(),
+            Some("acp-1".to_string()),
+            Some("default".to_string()),
+        );
+        worker_registry::save(&record).unwrap();
+
+        let trigger = trigger_resume_background(&state.session_service, id)
+            .await
+            .expect("resume is admitted");
+        assert!(matches!(trigger, ResumeTrigger::Started));
+        let attached = timeout(Duration::from_secs(5), listener.accept()).await;
+        assert!(
+            matches!(attached, Ok(Ok(_))),
+            "the prompt wake connects to the live runner's control socket"
+        );
+        let _ = runner.kill();
+        let _ = runner.wait();
     }
 
     /// A session that left the live set after the snapshot is never spawned.
