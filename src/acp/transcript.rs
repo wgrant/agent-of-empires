@@ -1,6 +1,6 @@
 //! `TranscriptModel`: the server-side render model for the structured-view transcript.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -240,6 +240,13 @@ pub enum TranscriptDelta {
 pub struct TranscriptModel {
     rows: Vec<TranscriptRow>,
     row_ids: HashSet<String>,
+    /// Indexes into `rows`, so a long session folds in linear time: each tool
+    /// call's first start row, those with no terminal row yet, each
+    /// subagent's first card, and each hook's last row.
+    tool_starts: HashMap<String, usize>,
+    open_starts: BTreeSet<usize>,
+    subagent_rows: HashMap<String, usize>,
+    hook_rows: HashMap<String, usize>,
     /// Tool calls that reached a terminal row, so nothing closes them twice.
     terminal_tools: HashSet<String>,
     /// Streamed `ToolCallContent`, keyed by tool call id.
@@ -633,7 +640,7 @@ impl TranscriptModel {
                     exit_code: *exit_code,
                 };
                 let row_id = format!("hook-{id}");
-                match self.rows.iter().rposition(|row| row.id == row_id) {
+                match self.hook_rows.get(&row_id).copied() {
                     Some(index) => {
                         let row = &mut self.rows[index];
                         row.text = output.clone();
@@ -963,7 +970,7 @@ impl TranscriptModel {
         } else {
             base_id
         };
-        self.terminal_tools.insert(tool_call_id.to_string());
+        self.mark_terminal(tool_call_id);
         let kind = if declined {
             TranscriptRowKind::ToolStopped
         } else if is_error {
@@ -992,14 +999,12 @@ impl TranscriptModel {
         kind: TranscriptRowKind,
         at: DateTime<Utc>,
     ) -> Vec<TranscriptDelta> {
-        let mut seen = self.terminal_tools.clone();
         let open: Vec<(String, Option<String>)> = self
-            .rows
+            .open_starts
             .iter()
-            .filter(|row| row.kind == TranscriptRowKind::ToolStart)
+            .map(|&index| &self.rows[index])
             .filter(|row| owner.is_none_or(|owner| row.subagent_id.as_deref() == Some(owner)))
             .filter_map(|row| Some((row.tool_call_id.clone()?, row.subagent_id.clone())))
-            .filter(|(id, _)| seen.insert(id.clone()))
             .collect();
         let prefix = if kind == TranscriptRowKind::ToolStopped {
             "stopped"
@@ -1008,7 +1013,7 @@ impl TranscriptModel {
         };
         open.into_iter()
             .flat_map(|(id, subagent_id)| {
-                self.terminal_tools.insert(id.clone());
+                self.mark_terminal(&id);
                 let cleared = self.clear_output_tail(&id);
                 let buffered = self.take_tool_output(&id);
                 let mut row = TranscriptRow::new(
@@ -1036,6 +1041,13 @@ impl TranscriptModel {
         });
         if !removed.is_empty() {
             self.row_ids = self.rows.iter().map(|r| r.id.clone()).collect();
+            self.tool_starts.clear();
+            self.open_starts.clear();
+            self.subagent_rows.clear();
+            self.hook_rows.clear();
+            for index in 0..self.rows.len() {
+                self.index_row(index);
+            }
         }
         removed
     }
@@ -1047,9 +1059,10 @@ impl TranscriptModel {
         update: impl FnOnce(&mut SubagentInfo) -> Option<()>,
     ) -> Vec<TranscriptDelta> {
         let Some(row) = self
-            .rows
-            .iter_mut()
-            .find(|row| row.subagent.as_ref().is_some_and(|s| s.id == id))
+            .subagent_rows
+            .get(id)
+            .copied()
+            .map(|index| &mut self.rows[index])
         else {
             return Vec::new();
         };
@@ -1115,7 +1128,35 @@ impl TranscriptModel {
         }
         self.row_ids.insert(row.id.clone());
         self.rows.push(row.clone());
+        self.index_row(self.rows.len() - 1);
         TranscriptDelta::Append(row)
+    }
+
+    fn mark_terminal(&mut self, tool_call_id: &str) {
+        self.terminal_tools.insert(tool_call_id.to_string());
+        if let Some(index) = self.tool_starts.get(tool_call_id) {
+            self.open_starts.remove(index);
+        }
+    }
+
+    fn index_row(&mut self, index: usize) {
+        let row = &self.rows[index];
+        if row.kind == TranscriptRowKind::ToolStart {
+            if let Some(id) = &row.tool_call_id {
+                if !self.tool_starts.contains_key(id) {
+                    self.tool_starts.insert(id.clone(), index);
+                    if !self.terminal_tools.contains(id) {
+                        self.open_starts.insert(index);
+                    }
+                }
+            }
+        }
+        if let Some(info) = &row.subagent {
+            self.subagent_rows.entry(info.id.clone()).or_insert(index);
+        }
+        if row.kind == TranscriptRowKind::Hook {
+            self.hook_rows.insert(row.id.clone(), index);
+        }
     }
 
     fn grouped_row(&mut self, id: String, kind: TranscriptRowKind, text: String) -> TranscriptRow {
@@ -1263,10 +1304,7 @@ impl TranscriptModel {
     }
 
     fn find_tool_start(&self, tool_call_id: &str) -> Option<usize> {
-        self.rows.iter().position(|r| {
-            r.kind == TranscriptRowKind::ToolStart
-                && r.tool_call_id.as_deref() == Some(tool_call_id)
-        })
+        self.tool_starts.get(tool_call_id).copied()
     }
 }
 
@@ -2666,6 +2704,67 @@ mod tests {
             let m = fold([started(tool("t1", "T")), closer]);
             assert_eq!(count(&m, TranscriptRowKind::ToolStopped), 1, "{label}");
         }
+    }
+
+    /// Removing an AskUserQuestion card shifts the rows after it; later events
+    /// still find their tool, hook and subagent rows.
+    #[test]
+    fn lookups_survive_a_removed_card() {
+        let hook = |status: &str| Event::HookUpdated {
+            id: "h".into(),
+            name: "PreToolUse:Bash".into(),
+            event: "PreToolUse".into(),
+            status: status.into(),
+            output: "blocked".into(),
+            exit_code: None,
+        };
+        let m = fold([
+            prompt("go"),
+            started(tool("a", "A")),
+            started(tool("q", "AskUserQuestion")),
+            elicitation_requested("q"),
+            hook("running"),
+            Event::SubagentSpawned {
+                id: "s1".into(),
+                parent: None,
+                name: "teammate".into(),
+                task: "task".into(),
+                at: at(3),
+                persistent: false,
+            },
+            started(tool("c", "C")),
+            completed("c", false, "ok"),
+            hook("error"),
+            Event::SubagentStateChanged {
+                id: "s1".into(),
+                state: "completed".into(),
+                at: at(4),
+            },
+            Event::ToolUseSummarized {
+                summary: "Did A".into(),
+                tool_call_ids: vec!["a".into()],
+            },
+            stopped("prompt_complete"),
+        ]);
+        assert_eq!(row(&m, "start-a").tool_summary.as_deref(), Some("Did A"));
+        assert_eq!(row(&m, "hook-h").hook.as_ref().unwrap().status, "error");
+        assert_eq!(
+            row(&m, "subagent-s1")
+                .subagent
+                .as_ref()
+                .unwrap()
+                .state
+                .as_deref(),
+            Some("completed")
+        );
+        let swept: Vec<&str> = m
+            .rows()
+            .iter()
+            .filter(|r| r.kind == TranscriptRowKind::ToolStopped)
+            .filter_map(|r| r.tool_call_id.as_deref())
+            .collect();
+        assert_eq!(swept, ["a"]);
+        assert_eq!(count(&m, TranscriptRowKind::ToolStart), 2);
     }
 
     #[test]
