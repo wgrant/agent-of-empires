@@ -195,7 +195,7 @@ pub struct ReplayResponse {
     #[serde(default)]
     pub has_more: bool,
     /// Present only when the request passed `view=rows`: the rows the page's
-    /// events appended or patched, as a fold of the whole log holds them, in
+    /// events appended or patched, as the session's transcript now holds them, in
     /// place of the raw `frames`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rows: Option<Vec<crate::acp::transcript::TranscriptRow>>,

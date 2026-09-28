@@ -218,25 +218,33 @@ pub async fn acp_context_primer(
     .into_response()
 }
 
-/// The rows the events in `first..=last` appended, patched or removed, as a
-/// fold of the whole log now holds them. A row created before the page but
-/// changed in it arrives current, and an older page never rolls back a row a
-/// newer one already carried.
+/// The seqs a page spans, `(after, through]`, running up to its neighbours so
+/// a stored event deleted since, such as a superseded hook update, still falls
+/// in some page: a forward page ends at its cursor, and a backward page runs up
+/// to the `before` it was asked for.
+fn page_span(
+    since: u64,
+    before: Option<u64>,
+    page: &crate::acp::event_store::ReplayPage,
+) -> Option<(u64, u64)> {
+    match before {
+        None => Some((since, page.last_scanned_seq?)),
+        Some(before) => Some((page.events.first()?.seq - 1, before - 1)),
+    }
+}
+
+/// The rows the events in `(after, through]` appended, patched or removed, as
+/// the session's transcript now holds them, and the ids they removed. A row
+/// created before the page but changed in it arrives current, and an older
+/// page never rolls back a row a newer one already carried.
 fn page_rows(
     store: &crate::acp::event_store::EventStore,
     session_id: &str,
-    first: u64,
-    last: u64,
+    (after, through): (u64, u64),
 ) -> (Vec<crate::acp::transcript::TranscriptRow>, Vec<String>) {
-    let mut model = crate::acp::transcript::TranscriptModel::new();
-    let mut changes = crate::acp::transcript::ChangedRows::default();
-    for e in store.replay_recorded_from(session_id, 0) {
-        let deltas = model.apply_event_at(e.seq, &e.event, e.recorded_at);
-        if (first..=last).contains(&e.seq) {
-            changes.record(deltas);
-        }
-    }
-    changes.resolve(&model)
+    let changes = store.transcript_changes(session_id, after, Some(through));
+    let rows = changes.rows.into_iter().map(|(row, _)| row).collect();
+    (rows, changes.removed)
 }
 
 /// Paged transcript replay from the durable event store. `before` pages
@@ -267,21 +275,18 @@ pub async fn acp_replay(
         page.has_more,
     );
     let (frames, rows, removed) = if q.view.as_deref() == Some("rows") {
-        match (page.events.first(), page.events.last()) {
-            (Some(first), Some(last)) => {
+        match page_span(q.since, q.before, &page) {
+            Some(span) => {
                 let store = Arc::clone(&state.acp_event_store);
                 let session_id = id.clone();
-                let (first, last) = (first.seq, last.seq);
-                match tokio::task::spawn_blocking(move || {
-                    page_rows(&store, &session_id, first, last)
-                })
-                .await
+                match tokio::task::spawn_blocking(move || page_rows(&store, &session_id, span))
+                    .await
                 {
                     Ok((rows, removed)) => (Vec::new(), Some(rows), removed),
                     Err(e) => return blocking_failed("blocking task failed", e),
                 }
             }
-            _ => (Vec::new(), Some(Vec::new()), Vec::new()),
+            None => (Vec::new(), Some(Vec::new()), Vec::new()),
         }
     } else {
         let frames = page
@@ -951,9 +956,10 @@ done
     }
 
     /// Catching up with forward pages from any cursor, at any page size,
-    /// leaves a client with exactly the rows of a cold load.
+    /// leaves a client with exactly the rows of a cold load, though the fold
+    /// serving them was fed live as the events were recorded.
     #[test]
-    fn rows_pages_from_any_cursor_rebuild_the_cold_transcript() {
+    fn rows_pages_from_any_cursor_rebuild_the_transcript() {
         let (_tmp, store) = {
             let tmp = tempfile::tempdir().unwrap();
             let store =
@@ -993,6 +999,8 @@ done
             start("t4"),
             stopped(),
         ];
+        // Read first, so every event reaches the fold as it is recorded.
+        assert!(store.transcript_changes(id, 0, None).rows.is_empty());
         for (i, event) in stream.iter().enumerate() {
             store.record(id, i as u64 + 1, event).unwrap();
         }
@@ -1001,23 +1009,29 @@ done
             .iter()
             .map(|(seq, _)| *seq)
             .collect();
-        let cold = cold_rows(&store, id, u64::MAX);
-        let cold_order = cold_model_rows(&store, id, u64::MAX);
-        let page_rows_of = |page: &crate::acp::event_store::ReplayPage| match (
-            page.events.first(),
-            page.events.last(),
-        ) {
-            (Some(first), Some(last)) => page_rows(&store, id, first.seq, last.seq),
-            _ => Default::default(),
+        let rows_through = |through| -> Vec<crate::acp::transcript::TranscriptRow> {
+            let changes = store.transcript_changes(id, 0, Some(through));
+            changes.rows.into_iter().map(|(row, _)| row).collect()
+        };
+        let whole = rows_through(u64::MAX);
+        let whole_by_id: std::collections::BTreeMap<_, _> = whole
+            .iter()
+            .map(|row| (row.id.clone(), row.clone()))
+            .collect();
+        let rows_of = |since, before, page: &crate::acp::event_store::ReplayPage| {
+            page_span(since, before, page)
+                .map(|span| page_rows(&store, id, span))
+                .unwrap_or_default()
         };
         for limit in [1, 2, 5] {
-            // Forward from every cursor a client can hold.
+            // Forward from every cursor a client can hold, holding what the
+            // fold had changed through it.
             for cursor in std::iter::once(0).chain(seqs.iter().copied()) {
-                let mut rows = cold_model_rows(&store, id, cursor);
+                let mut rows = rows_through(cursor);
                 let mut since = cursor;
                 loop {
                     let page = store.replay_page(id, since, Some(limit));
-                    let (changed, removed) = page_rows_of(&page);
+                    let (changed, removed) = rows_of(since, None, &page);
                     for row in changed {
                         crate::acp::transcript::upsert_transcript_row(&mut rows, row);
                     }
@@ -1027,7 +1041,7 @@ done
                         _ => break,
                     }
                 }
-                assert_eq!(rows, cold_order, "forward from {cursor}, limit {limit}");
+                assert_eq!(rows, whole, "forward from {cursor}, limit {limit}");
             }
             // Backward from the tail: every row a page carries is current, and
             // together the pages hold every row.
@@ -1035,8 +1049,12 @@ done
             let mut before = u64::MAX;
             loop {
                 let page = store.replay_page_before(id, before, Some(limit));
-                for row in page_rows_of(&page).0 {
-                    assert_eq!(Some(&row), cold.get(&row.id), "backward, limit {limit}");
+                for row in rows_of(0, Some(before), &page).0 {
+                    assert_eq!(
+                        Some(&row),
+                        whole_by_id.get(&row.id),
+                        "backward, limit {limit}"
+                    );
                     seen.insert(row.id.clone(), row);
                 }
                 match page.last_scanned_seq {
@@ -1044,7 +1062,7 @@ done
                     _ => break,
                 }
             }
-            assert_eq!(seen, cold, "backward, limit {limit}");
+            assert_eq!(seen, whole_by_id, "backward, limit {limit}");
         }
     }
 }

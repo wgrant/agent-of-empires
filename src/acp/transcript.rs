@@ -293,13 +293,14 @@ impl ChangedRows {
 pub struct TranscriptModel {
     rows: Vec<TranscriptRow>,
     row_ids: HashSet<String>,
-    /// Indexes into `rows`, so a long session folds in linear time: each tool
-    /// call's first start row, those with no terminal row yet, each
-    /// subagent's first card, and each hook's last row.
+    /// Indexes into `rows`, so a long session folds in linear time: each
+    /// row's position by id (the last, should an id repeat), each tool call's
+    /// first start row, those with no terminal row yet, and each subagent's
+    /// first card.
+    row_index: HashMap<String, usize>,
     tool_starts: HashMap<String, usize>,
     open_starts: BTreeSet<usize>,
     subagent_rows: HashMap<String, usize>,
-    hook_rows: HashMap<String, usize>,
     /// Tool calls that reached a terminal row, so nothing closes them twice.
     terminal_tools: HashSet<String>,
     /// Streamed `ToolCallContent`, keyed by tool call id.
@@ -344,6 +345,40 @@ impl TranscriptModel {
 
     pub fn rows(&self) -> &[TranscriptRow] {
         &self.rows
+    }
+
+    /// Where the row with `id` sits in [`Self::rows`].
+    pub fn position(&self, id: &str) -> Option<usize> {
+        self.row_index.get(id).copied()
+    }
+
+    /// Roughly how many bytes the rows hold, counting their text payloads.
+    pub fn approx_bytes(&self) -> usize {
+        self.rows
+            .iter()
+            .map(|row| {
+                let tool = row.tool.as_ref().map_or(0, |tool| {
+                    tool.args_preview.len()
+                        + tool
+                            .diffs
+                            .iter()
+                            .map(|d| {
+                                d.old_text.as_ref().map_or(0, String::len)
+                                    + d.new_text.as_ref().map_or(0, String::len)
+                            })
+                            .sum::<usize>()
+                });
+                let output = if row.output.is_empty() {
+                    0
+                } else {
+                    serde_json::to_string(&row.output).map_or(0, |s| s.len())
+                };
+                256 + row.text.len()
+                    + tool
+                    + output
+                    + row.output_tail.as_ref().map_or(0, String::len)
+            })
+            .sum()
     }
 
     pub fn last_seq(&self) -> u64 {
@@ -702,7 +737,7 @@ impl TranscriptModel {
                     exit_code: *exit_code,
                 };
                 let row_id = format!("hook-{id}");
-                match self.hook_rows.get(&row_id).copied() {
+                match self.row_index.get(&row_id).copied() {
                     Some(index) => {
                         let row = &mut self.rows[index];
                         row.text = output.clone();
@@ -1103,10 +1138,10 @@ impl TranscriptModel {
         });
         if !removed.is_empty() {
             self.row_ids = self.rows.iter().map(|r| r.id.clone()).collect();
+            self.row_index.clear();
             self.tool_starts.clear();
             self.open_starts.clear();
             self.subagent_rows.clear();
-            self.hook_rows.clear();
             for index in 0..self.rows.len() {
                 self.index_row(index);
             }
@@ -1203,6 +1238,7 @@ impl TranscriptModel {
 
     fn index_row(&mut self, index: usize) {
         let row = &self.rows[index];
+        self.row_index.insert(row.id.clone(), index);
         if row.kind == TranscriptRowKind::ToolStart {
             if let Some(id) = &row.tool_call_id {
                 if !self.tool_starts.contains_key(id) {
@@ -1215,9 +1251,6 @@ impl TranscriptModel {
         }
         if let Some(info) = &row.subagent {
             self.subagent_rows.entry(info.id.clone()).or_insert(index);
-        }
-        if row.kind == TranscriptRowKind::Hook {
-            self.hook_rows.insert(row.id.clone(), index);
         }
     }
 
