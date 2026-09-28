@@ -387,6 +387,7 @@ impl SessionService {
                             SpawnOutcome {
                                 instance: *instance,
                                 warnings: Vec::new(),
+                                worker_starting: false,
                             },
                             false,
                         ));

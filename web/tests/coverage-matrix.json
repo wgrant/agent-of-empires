@@ -1042,6 +1042,13 @@
       ]
     },
     {
+      "id": "wizard.created-session-stays-listed",
+      "kind": "vitest",
+      "risk": "medium",
+      "specs": ["src/hooks/useSessions.test.ts"],
+      "components": ["web/src/hooks/useSessions.ts"]
+    },
+    {
       "id": "wizard.recent-projects",
       "kind": "live-playwright",
       "risk": "medium",

@@ -61,6 +61,8 @@ pub(crate) struct StructuredSessionSpec {
 pub(crate) struct SpawnOutcome {
     pub instance: Instance,
     pub warnings: Vec<String>,
+    /// Its ACP worker is starting in the background.
+    pub worker_starting: bool,
 }
 
 /// Marker error the core returns when the blocking build task panicked, so the HTTP handler
@@ -422,6 +424,7 @@ pub(crate) async fn spawn_structured_session(
                 .telemetry_session_creates
                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
+            let worker_starting = acp_spawn_target.is_some();
             if let Some((
                 id,
                 tool,
@@ -550,6 +553,7 @@ pub(crate) async fn spawn_structured_session(
             Ok(SpawnOutcome {
                 instance: response_instance,
                 warnings,
+                worker_starting,
             })
         }
         Ok(Err(e)) => Err(e),
@@ -652,6 +656,9 @@ mod tests {
         )
         .unwrap();
         assert_eq!(response["id"], id);
+        // Its worker starts right after the reply, so the dashboard never
+        // shows the new session with nothing running.
+        assert_eq!(response["acp_worker_state"], "resuming");
         assert!(
             state
                 .instances
