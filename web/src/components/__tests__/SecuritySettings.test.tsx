@@ -44,6 +44,11 @@ describe("SecuritySettings", () => {
     ["read-only badge", { read_only: true }, "terminal input blocked"],
     ["cloudflared badge", { behind_tunnel: true }, "cloudflared"],
     ["version with a leading 'v'", { version: "9.9.9" }, "v9.9.9"],
+    [
+      "login persistence warning",
+      { passphrase_enabled: true, login_persistence_problem: "login sessions parent dir is group/world writable" },
+      "asked for the passphrase again after every restart",
+    ],
   ] as [string, Partial<ServerAbout>, string][])("shows the %s", async (_name, about, text) => {
     const container = renderWith(makeAbout(about));
     await waitFor(() => {

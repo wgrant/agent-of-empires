@@ -230,9 +230,67 @@ fn resolve_app_dir_with_fallback(xdg: PathBuf, legacy: PathBuf, xdg_env_set: boo
 pub fn get_app_dir() -> Result<PathBuf> {
     let dir = get_app_dir_path()?;
     if !dir.exists() {
-        fs::create_dir_all(&dir)?;
+        create_private_dir(&dir)?;
     }
+    keep_app_dir_private(&dir);
     Ok(dir)
+}
+
+/// Creates `dir` writable by its owner only, since the app dir holds secrets.
+fn create_private_dir(dir: &Path) -> std::io::Result<()> {
+    let mut builder = fs::DirBuilder::new();
+    builder.recursive(true);
+    #[cfg(unix)]
+    std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
+    builder.create(dir)
+}
+
+/// Drops group and world write from the app dir, once per process per dir.
+/// A umask of 002 or a tool recreating it can leave it group-writable, and the
+/// login session store then refuses to persist.
+fn keep_app_dir_private(dir: &Path) {
+    static CHECKED: std::sync::Mutex<Vec<PathBuf>> = std::sync::Mutex::new(Vec::new());
+    let mut checked = CHECKED.lock().unwrap_or_else(|p| p.into_inner());
+    if checked.iter().any(|seen| seen == dir) {
+        return;
+    }
+    checked.push(dir.to_path_buf());
+    drop(checked);
+    match remove_shared_write(dir) {
+        Ok(true) => {
+            tracing::info!(dir = %dir.display(), "removed group and world write from the app dir")
+        }
+        Ok(false) => {}
+        Err(error) => tracing::warn!(
+            dir = %dir.display(),
+            %error,
+            "app dir is writable by others and was left as is"
+        ),
+    }
+}
+
+/// Removes group and world write from `dir` when it is a real directory owned
+/// by this user; whether it changed anything.
+#[cfg(unix)]
+fn remove_shared_write(dir: &Path) -> std::io::Result<bool> {
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+
+    let meta = fs::symlink_metadata(dir)?;
+    let mode = meta.permissions().mode();
+    // A link's own mode means nothing; where it points is the user's choice.
+    if meta.file_type().is_symlink() || mode & 0o022 == 0 {
+        return Ok(false);
+    }
+    if meta.uid() != nix::unistd::getuid().as_raw() {
+        return Err(std::io::Error::other("owned by another user"));
+    }
+    fs::set_permissions(dir, fs::Permissions::from_mode(mode & 0o7755))?;
+    Ok(true)
+}
+
+#[cfg(not(unix))]
+fn remove_shared_write(_dir: &Path) -> std::io::Result<bool> {
+    Ok(false)
 }
 
 /// Whether the app data dir already exists, **without** creating it (unlike [`get_app_dir`], which
@@ -1406,5 +1464,32 @@ mod tests {
             let e = validate_instance_id(&bad).unwrap_err().to_string();
             assert!(e.contains(reason) && !e.contains(SENTINEL), "{e}");
         }
+    }
+}
+
+#[cfg(all(test, unix))]
+mod app_dir_mode_tests {
+    use super::remove_shared_write;
+    use std::fs;
+    use std::os::unix::fs::PermissionsExt;
+
+    #[test]
+    fn only_shared_write_is_removed() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mode = |p: &std::path::Path| fs::metadata(p).unwrap().permissions().mode() & 0o7777;
+        for (before, changed, after) in [
+            (0o775, true, 0o755),
+            (0o777, true, 0o755),
+            (0o700, false, 0o700),
+        ] {
+            let dir = tmp.path().join(format!("d{before:o}"));
+            fs::create_dir(&dir).unwrap();
+            fs::set_permissions(&dir, fs::Permissions::from_mode(before)).unwrap();
+            assert_eq!(remove_shared_write(&dir).unwrap(), changed, "{before:o}");
+            assert_eq!(mode(&dir), after, "{before:o}");
+        }
+        let link = tmp.path().join("link");
+        std::os::unix::fs::symlink(tmp.path().join("d777"), &link).unwrap();
+        assert!(!remove_shared_write(&link).unwrap());
     }
 }

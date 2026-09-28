@@ -76,6 +76,8 @@ pub struct LoginManager {
     /// Path to the on-disk session store, when persistence is enabled and an app dir is
     /// available.
     sessions_path: Option<PathBuf>,
+    /// Why the store cannot be kept, found at startup, so logins last only until a restart.
+    persistence_problem: Option<String>,
 }
 
 /// Argon2 hash of a passphrase with a fresh random salt.
@@ -104,6 +106,7 @@ impl LoginManager {
             passphrase_hash: passphrase.map(hash_passphrase),
             sessions: RwLock::new(HashMap::new()),
             sessions_path: None,
+            persistence_problem: None,
         }
     }
 
@@ -113,6 +116,16 @@ impl LoginManager {
     pub fn with_persistence(passphrase: Option<&str>, app_dir: &Path) -> Self {
         let passphrase_hash = passphrase.map(hash_passphrase);
         let sessions_path = app_dir.join(SESSIONS_FILE);
+        let persistence_problem = check_path_security(&sessions_path)
+            .err()
+            .map(|e| e.to_string());
+        if let Some(problem) = &persistence_problem {
+            tracing::warn!(
+                target: "auth.passphrase",
+                %problem,
+                "login sessions cannot be kept; every restart will ask for the passphrase again"
+            );
+        }
 
         let sessions = match load_sessions(&sessions_path, passphrase) {
             Ok(map) => map,
@@ -128,14 +141,24 @@ impl LoginManager {
 
         // Rewrite the store once at startup so the passphrase hash is refreshed (rotates
         // the salt) and any dropped/expired entries are pruned on disk.
-        let snapshot = build_persisted(&passphrase_hash, &sessions);
-        write_sessions(&sessions_path, &snapshot);
+        if persistence_problem.is_none() {
+            let snapshot = build_persisted(&passphrase_hash, &sessions);
+            write_sessions(&sessions_path, &snapshot);
+        }
 
         Self {
             passphrase_hash,
             sessions: RwLock::new(sessions),
             sessions_path: Some(sessions_path),
+            persistence_problem,
         }
+    }
+
+    /// Why logins cannot survive a restart, when passphrase login is on.
+    pub fn persistence_problem(&self) -> Option<&str> {
+        self.persistence_problem
+            .as_deref()
+            .filter(|_| self.is_enabled())
     }
 
     /// Whether passphrase login is enabled.
@@ -1569,5 +1592,23 @@ mod tests {
             assert_eq!(check_path_security(&path).is_ok(), ok, "mode {mode:o}");
         }
         assert!(check_path_security(&dir.path().join("missing.toml")).is_ok());
+
+        // A shared app dir is reported once at startup, and only with a passphrase.
+        let shared = dir.path().join("shared");
+        std::fs::create_dir(&shared).unwrap();
+        std::fs::set_permissions(&shared, std::fs::Permissions::from_mode(0o775)).unwrap();
+        let problem = LoginManager::with_persistence(Some("hunter2"), &shared);
+        assert!(problem
+            .persistence_problem()
+            .is_some_and(|p| p.contains("group/world writable")));
+        assert!(LoginManager::with_persistence(None, &shared)
+            .persistence_problem()
+            .is_none());
+        let private = dir.path().join("private");
+        std::fs::create_dir(&private).unwrap();
+        std::fs::set_permissions(&private, std::fs::Permissions::from_mode(0o700)).unwrap();
+        assert!(LoginManager::with_persistence(Some("hunter2"), &private)
+            .persistence_problem()
+            .is_none());
     }
 }
