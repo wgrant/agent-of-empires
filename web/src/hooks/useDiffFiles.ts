@@ -14,7 +14,12 @@ interface UseDiffFilesResult {
   refresh: () => void;
 }
 
-export function useDiffFiles(sessionId: string | null, enabled: boolean): UseDiffFilesResult {
+/** `views` is a `viewsParam` value; changing it refetches at once. */
+export function useDiffFiles(
+  sessionId: string | null,
+  enabled: boolean,
+  views: string | null = null,
+): UseDiffFilesResult {
   const [files, setFiles] = useState<RichDiffFile[]>([]);
   const [perRepoBases, setPerRepoBases] = useState<RepoBase[]>([{ base_branch: "main", repo_path: "" }]);
   const [warning, setWarning] = useState<string | null>(null);
@@ -29,7 +34,7 @@ export function useDiffFiles(sessionId: string | null, enabled: boolean): UseDif
     if (!sessionId) return;
     const reqId = ++requestIdRef.current;
     const capturedSessionId = sessionId;
-    const resp = await getSessionDiffFiles(capturedSessionId);
+    const resp = await getSessionDiffFiles(capturedSessionId, views);
     if (reqId !== requestIdRef.current || capturedSessionId !== sessionId) return;
     if (resp) {
       // Include bases and warning: a base change can leave the file list identical (#3329).
@@ -51,7 +56,7 @@ export function useDiffFiles(sessionId: string | null, enabled: boolean): UseDif
       }
     }
     setLoading(false);
-  }, [sessionId, enabledRef]);
+  }, [sessionId, views, enabledRef]);
 
   const [trackedSessionId, setTrackedSessionId] = useState(sessionId);
   if (sessionId !== trackedSessionId) {

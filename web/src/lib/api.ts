@@ -1,3 +1,4 @@
+import type { DiffView } from "./diffViews";
 import type { AgentLifecycleInfo } from "./agentProfiles";
 import { notifySettingsChanged } from "./settingsEvents";
 import { setHostHourCycle } from "./timeFormat";
@@ -227,24 +228,30 @@ export function killTerminal(id: string, index: number): Promise<boolean> {
   return fetchOk(`/api/sessions/${id}/terminal?index=${index}`, { method: "DELETE" });
 }
 
-export function getSessionDiffFiles(id: string): Promise<RichDiffFilesResponse | null> {
-  return fetchJson<RichDiffFilesResponse>(`/api/sessions/${id}/diff/files`);
+/** `views` is a `viewsParam` value: each repo shown other than by default. */
+export function getSessionDiffFiles(id: string, views?: string | null): Promise<RichDiffFilesResponse | null> {
+  const query = views ? `?${new URLSearchParams({ views }).toString()}` : "";
+  return fetchJson<RichDiffFilesResponse>(`/api/sessions/${id}/diff/files${query}`);
 }
 
 export function getSessionFileContents(
   id: string,
   filePath: string,
   repoName?: string,
+  view?: DiffView,
 ): Promise<RichFileContentsResponse | null> {
   const params = new URLSearchParams({ path: filePath });
   if (repoName) params.set("repo", repoName);
+  if (view?.base) params.set("base", view.base);
+  if (view?.head) params.set("head", view.head);
   return fetchJson<RichFileContentsResponse>(`/api/sessions/${id}/diff/file?${params.toString()}`);
 }
 
-/** URL of a diffed file's current worktree bytes, for opening in a new tab. */
-export function sessionDiffRawFileUrl(id: string, filePath: string, repoName?: string): string {
+/** URL of a diffed file's bytes for opening in a new tab: the worktree's, or `head`'s in a range. */
+export function sessionDiffRawFileUrl(id: string, filePath: string, repoName?: string, head?: string): string {
   const params = new URLSearchParams({ path: filePath });
   if (repoName) params.set("repo", repoName);
+  if (head) params.set("head", head);
   return `/api/sessions/${id}/diff/file/raw?${params.toString()}`;
 }
 

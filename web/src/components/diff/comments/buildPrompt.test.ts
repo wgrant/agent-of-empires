@@ -30,6 +30,7 @@ describe("buildCommentsMarkdown", () => {
     [{ endLine: 14 }, false, "### `src/foo.rs` lines 10-14 (new)"],
     [{}, false, "```rust\nlet x = 1;\n```"],
     [{ repoName: "repoA" }, true, "### [repoA] `src/foo.rs`"],
+    [{ range: { base: "layer", head: "top" } }, false, "### `src/foo.rs` line 10 (new side of `layer...top`)"],
   ])("renders %j (multi=%s) with %j", (c, multi, expected) => {
     expect(md(c, multi)).toContain(expected);
   });

@@ -3,6 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { DiffFileViewer } from "../DiffFileViewer";
+import { DiffViewsContext, type DiffViewsApi } from "../DiffViewsContext";
 import type { RichFileContentsResponse } from "../../../lib/types";
 import type { UseDiffCommentsResult } from "../../../hooks/useDiffComments";
 
@@ -19,6 +20,7 @@ const mock = vi.hoisted(() => ({
   loading: false,
   error: null as string | null,
   anchored: [] as Array<{ status: "active" | "stale"; comment: Record<string, unknown> }>,
+  anchorInput: [] as Array<{ id: string }>,
   snippet: "captured" as string | null,
 }));
 
@@ -36,7 +38,10 @@ vi.mock("../../../hooks/useShikiTheme", () => ({
 }));
 
 vi.mock("../comments/anchorToContents", () => ({
-  anchorCommentsToContents: () => mock.anchored,
+  anchorCommentsToContents: (comments: Array<{ id: string }>) => {
+    mock.anchorInput = comments;
+    return mock.anchored;
+  },
 }));
 
 vi.mock("../comments/extractSnippetFromContents", () => ({
@@ -258,6 +263,33 @@ describe("DiffFileViewer comments", () => {
     render(<DiffFileViewer sessionId="s1" filePath="a.ts" commentsEnabled commentsStore={commentsStore()} />);
     fireEvent.click(screen.getByTestId("select-line"));
     expect(screen.queryByTestId("comment-form")).toBeNull();
+  });
+
+  it("in a range, anchors only that range's comments and records it on new ones", () => {
+    const range = { base: "main", head: "layer" };
+    const store = {
+      ...commentsStore(),
+      comments: [
+        { id: "live", filePath: "a.ts", side: "new", startLine: 1, endLine: 1 },
+        { id: "ranged", filePath: "a.ts", side: "new", startLine: 1, endLine: 1, range },
+      ],
+    } as unknown as UseDiffCommentsResult;
+    const api: DiffViewsApi = {
+      sessionId: "s1",
+      views: [range],
+      clearView: vi.fn(),
+      openTarget: vi.fn(() => true),
+      isShowing: () => true,
+    };
+    render(
+      <DiffViewsContext.Provider value={api}>
+        <DiffFileViewer sessionId="s1" filePath="a.ts" commentsEnabled commentsStore={store} />
+      </DiffViewsContext.Provider>,
+    );
+    expect(mock.anchorInput.map((c) => c.id)).toEqual(["ranged"]);
+    fireEvent.click(screen.getByTestId("select-line"));
+    fireEvent.click(screen.getByText("form-save"));
+    expect(store.addComment).toHaveBeenCalledWith(expect.objectContaining({ range }));
   });
 
   it("leaves line selection off when comments are disabled and find is closed", () => {

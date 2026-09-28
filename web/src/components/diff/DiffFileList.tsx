@@ -3,8 +3,10 @@ import type { RepoBase, RichDiffFile } from "../../lib/types";
 import { sessionDiffRawFileUrl } from "../../lib/api";
 import { buildDiffTree } from "../../lib/diffTree";
 import { useWebSettings } from "../../hooks/useWebSettings";
+import { viewFor, viewLabel, type DiffView } from "../../lib/diffViews";
 import { BasePicker } from "./BasePicker";
 import { FileContextMenu, type PathMenuState } from "./FileContextMenu";
+import { useDiffViews } from "./DiffViewsContext";
 import { Chevron, FlatList, LineCounts, TreeView } from "./DiffFileRows";
 
 interface Props {
@@ -52,6 +54,9 @@ export function DiffFileList({
 }: Props) {
   const isMultiRepo = perRepoBases.length > 1;
   const singleBaseBranch = perRepoBases[0]?.base_branch ?? "main";
+  const diffViews = useDiffViews();
+  const singleView = diffViews ? viewFor(diffViews.views, perRepoBases[0]?.repo_name) : undefined;
+  const singleError = isMultiRepo ? undefined : perRepoBases[0]?.error;
   const [collapsedRepos, setCollapsedRepos] = useState<Set<string>>(() => new Set());
   const { settings, update } = useWebSettings();
   const viewMode = settings.diffViewMode;
@@ -117,13 +122,18 @@ export function DiffFileList({
       // Only file rows carry a repo, since workspace repos can share a path.
       const repo = row.getAttribute("data-repo");
       const file = repo === null ? undefined : files.find((f) => f.path === path && (f.repo_name ?? "") === repo);
+      // A range's file opens as its head commit has it.
+      const head = file && diffViews ? viewFor(diffViews.views, file.repo_name)?.head : undefined;
       const open =
         file && sessionId
-          ? { url: sessionDiffRawFileUrl(sessionId, file.path, file.repo_name), disabled: file.status === "deleted" }
+          ? {
+              url: sessionDiffRawFileUrl(sessionId, file.path, file.repo_name, head),
+              disabled: file.status === "deleted",
+            }
           : undefined;
       setPathMenu({ x: e.clientX, y: e.clientY, path, open });
     },
-    [files, sessionId],
+    [files, sessionId, diffViews],
   );
   const closePathMenu = useCallback(() => setPathMenu(null), []);
 
@@ -152,11 +162,16 @@ export function DiffFileList({
         {...listProps}
       />
     ));
+  } else if (singleError) {
+    body = <ViewError message={singleError} />;
   } else if (files.length === 0) {
     // Naming the base makes a clean tree read as checked, not broken.
     body = (
       <div className="flex items-center justify-center h-full text-text-dim text-xs">
-        No changes vs <span className="font-mono ml-1">{singleBaseBranch}</span>
+        {singleView?.head ? "No changes in" : "No changes vs"}
+        <span className="font-mono ml-1">
+          {singleView?.head ? viewLabel(singleView, singleBaseBranch) : singleBaseBranch}
+        </span>
       </div>
     );
   } else if (viewMode === "tree") {
@@ -181,6 +196,12 @@ export function DiffFileList({
           <span className="font-mono text-[11px] uppercase tracking-wider text-text-dim">Changes</span>
           {isMultiRepo ? (
             <span className={CHIP}>{perRepoBases.length} repos</span>
+          ) : singleView && diffViews ? (
+            <ViewBadge
+              view={singleView}
+              base={singleBaseBranch}
+              onReset={() => diffViews.clearView(perRepoBases[0]?.repo_name)}
+            />
           ) : sessionId && repoPath ? (
             <BasePicker
               sessionId={sessionId}
@@ -270,6 +291,8 @@ function RepoGroup({
     () => (viewMode === "tree" ? buildDiffTree(files, localCollapsed) : []),
     [viewMode, files, localCollapsed],
   );
+  const diffViews = useDiffViews();
+  const view = diffViews ? viewFor(diffViews.views, repo.repo_name) : undefined;
 
   return (
     <div className="border-b border-surface-700/20 last:border-b-0">
@@ -284,7 +307,9 @@ function RepoGroup({
           <Chevron collapsed={collapsed} />
           <span className="font-mono text-[12px] truncate">{repo.repo_name ?? "(default)"}</span>
         </button>
-        {sessionId ? (
+        {view && diffViews ? (
+          <ViewBadge view={view} base={repo.base_branch} onReset={() => diffViews.clearView(repo.repo_name)} />
+        ) : sessionId ? (
           <BasePicker
             sessionId={sessionId}
             repoPath={repo.repo_path}
@@ -299,7 +324,8 @@ function RepoGroup({
         <span className="font-mono text-[11px] text-text-muted">{files.length}</span>
         <LineCounts additions={sum(files, "additions")} deletions={sum(files, "deletions")} />
       </div>
-      {!collapsed && files.length === 0 && (
+      {!collapsed && repo.error && <ViewError message={repo.error} />}
+      {!collapsed && !repo.error && files.length === 0 && (
         <div className="px-3 py-2 text-[11px] text-text-dim italic">No changes in this repo.</div>
       )}
       {!collapsed &&
@@ -315,6 +341,37 @@ function RepoGroup({
         ) : (
           <FlatList files={files} indent="px-6" {...listProps} />
         ))}
+    </div>
+  );
+}
+
+/** The view this browser shows in place of the repo's default, with a way back. */
+function ViewBadge({ view, base, onReset }: { view: DiffView; base: string; onReset: () => void }) {
+  const title = view.head
+    ? `What ${view.head} adds over ${view.base ?? base}, from where they forked. Shown in this browser only.`
+    : `Compared with ${view.base ?? base} in this browser only; the session's base is unchanged.`;
+  return (
+    <span className="inline-flex min-w-0 items-center gap-1" data-testid="diff-view-badge" title={title}>
+      <span className="font-mono text-[10px] px-1.5 py-px rounded bg-brand-600/15 text-brand-500 truncate">
+        {viewLabel(view, base)}
+      </span>
+      <button
+        type="button"
+        onClick={onReset}
+        className="shrink-0 rounded px-1 text-[10px] text-text-dim hover:bg-surface-800 hover:text-text-secondary"
+        aria-label="Back to the working tree diff"
+        data-testid="diff-view-reset"
+      >
+        Working tree
+      </button>
+    </span>
+  );
+}
+
+function ViewError({ message }: { message: string }) {
+  return (
+    <div role="alert" className="px-3 py-2 text-[11px] text-status-error" data-testid="diff-view-error">
+      Can&apos;t show this diff: {message}
     </div>
   );
 }

@@ -3,6 +3,7 @@ import { FileDiff, Virtualizer } from "@pierre/diffs/react";
 import { processFile } from "@pierre/diffs";
 import type { DiffLineAnnotation, FileContents, FileDiffOptions, SelectedLineRange } from "@pierre/diffs";
 import { useFileContents } from "../../hooks/useFileContents";
+import { viewFor } from "../../lib/diffViews";
 import { useWebSettings } from "../../hooks/useWebSettings";
 import { useShikiTheme } from "../../hooks/useShikiTheme";
 import type { UseDiffCommentsResult } from "../../hooks/useDiffComments";
@@ -14,6 +15,7 @@ import { CommentForm } from "./comments/CommentForm";
 import type { AnchoredComment, DiffSide } from "./comments/types";
 import { DiffWorkerPoolProvider } from "./pierre/DiffWorkerPoolProvider";
 import { DiffViewerHeader } from "./DiffViewerHeader";
+import { useDiffViews } from "./DiffViewsContext";
 import { FullFileViewer } from "./FullFileViewer";
 import { FileContentViewer } from "./FileContentViewer";
 import { MarkdownFileView } from "./MarkdownFileView";
@@ -75,7 +77,14 @@ export function DiffFileViewer({
   commentsStore,
   fallbackToFileViewer = false,
 }: Props) {
-  const { contents, loading, error } = useFileContents(sessionId, filePath, repoName, revision);
+  const view = viewFor(useDiffViews()?.views ?? [], repoName);
+  const viewBase = view?.base;
+  const viewHead = view?.head;
+  const commentRange = useMemo(
+    () => (viewBase && viewHead ? { base: viewBase, head: viewHead } : undefined),
+    [viewBase, viewHead],
+  );
+  const { contents, loading, error } = useFileContents(sessionId, filePath, repoName, revision, view);
   const { theme } = useShikiTheme();
   const { settings } = useWebSettings();
 
@@ -97,7 +106,15 @@ export function DiffFileViewer({
   const [showImagePreview, setShowImagePreview] = useState(false);
 
   // Reset transient state on a file or target change, during render; a cited line starts selected.
-  const syncKey = JSON.stringify([sessionId, repoName ?? null, filePath, revision, targetLine ?? null]);
+  const syncKey = JSON.stringify([
+    sessionId,
+    repoName ?? null,
+    filePath,
+    revision,
+    targetLine ?? null,
+    view?.base ?? null,
+    view?.head ?? null,
+  ]);
   const [handledSyncKey, setHandledSyncKey] = useState(syncKey);
   if (syncKey !== handledSyncKey) {
     setHandledSyncKey(syncKey);
@@ -118,7 +135,14 @@ export function DiffFileViewer({
   const showRendered = markdownAvailable && settings.markdownPreview === "rendered";
 
   const commentsActive = commentsEnabled && !!commentsStore;
-  const comments = useMemo(() => commentsStore?.comments ?? [], [commentsStore]);
+  // Each view anchors only its own comments; the rest still count and send.
+  const comments = useMemo(
+    () =>
+      (commentsStore?.comments ?? []).filter(
+        (c) => c.range?.base === commentRange?.base && c.range?.head === commentRange?.head,
+      ),
+    [commentsStore, commentRange],
+  );
   const anchored = useMemo(
     () => anchorCommentsToContents(comments, filePath, repoName, oldContent, newContent),
     [comments, filePath, repoName, oldContent, newContent],
@@ -132,7 +156,7 @@ export function DiffFileViewer({
   );
 
   // Also keys the Virtualizer: it caches row measurements and would keep painting the old file.
-  const viewKey = `${repoName ?? ""}:${resolvedPath}:${revision ?? 0}`;
+  const viewKey = `${repoName ?? ""}:${resolvedPath}:${revision ?? 0}:${view?.base ?? ""}...${view?.head ?? ""}`;
 
   // Parses the server patch only; highlighting runs in the worker pool.
   const fileDiff = useMemo(
@@ -172,10 +196,11 @@ export function DiffFileViewer({
         body,
         capturedSnippet: draft.snippet,
         language: extensionToLanguage(filePath),
+        ...(commentRange ? { range: commentRange } : {}),
       });
       clearDraft();
     },
-    [draft, commentsStore, repoName, filePath, clearDraft],
+    [draft, commentsStore, repoName, filePath, clearDraft, commentRange],
   );
 
   const renderAnnotation = useCallback(
