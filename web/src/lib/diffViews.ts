@@ -66,6 +66,18 @@ export function viewsParam(views: readonly DiffView[]): string | null {
   return views.length === 0 ? null : JSON.stringify(views);
 }
 
+/** A view's ends for display, without the leading path segments base and head
+ *  share: `stack/models...stack/auth` shows as `models...auth`. */
+export function viewEnds(view: DiffView, base: string): { from: string; to?: string } {
+  const from = view.base ?? base;
+  if (!view.head) return { from };
+  const a = from.split("/");
+  const b = view.head.split("/");
+  let shared = 0;
+  while (shared < a.length - 1 && shared < b.length - 1 && a[shared] === b[shared]) shared += 1;
+  return { from: a.slice(shared).join("/"), to: b.slice(shared).join("/") };
+}
+
 /** How a view reads in the pane header. */
 export function viewLabel(view: DiffView, base: string): string {
   const from = view.base ?? base;
