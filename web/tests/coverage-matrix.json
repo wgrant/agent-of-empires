@@ -2202,6 +2202,20 @@
       "components": ["web/src/components/settings/DiffSettings.tsx", "web/src/components/SettingsView.tsx"]
     },
     {
+      "id": "settings.time-format",
+      "kind": "vitest",
+      "risk": "low",
+      "specs": [
+        "src/components/settings/__tests__/TimeFormatSetting.test.tsx",
+        "src/lib/timeFormat.test.ts"
+      ],
+      "components": [
+        "web/src/components/settings/TimeFormatSetting.tsx",
+        "web/src/components/SettingsView.tsx",
+        "web/src/lib/timeFormat.ts"
+      ]
+    },
+    {
       "id": "settings.structured-view-font-size",
       "kind": "mocked-playwright",
       "risk": "low",

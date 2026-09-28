@@ -1,5 +1,6 @@
 import type { AgentLifecycleInfo } from "./agentProfiles";
 import { notifySettingsChanged } from "./settingsEvents";
+import { setHostHourCycle } from "./timeFormat";
 import { clientFormFactor } from "./formFactor";
 import type {
   SessionResponse,
@@ -933,10 +934,14 @@ export interface ServerAbout {
   };
   /** This daemon run's id; a create's retries send it back as `retry_origin`. */
   create_boot_id?: string;
+  /** The host's clock preference, which an automatic time format follows. */
+  hour_cycle?: "h12" | "h23" | null;
 }
 
-export function fetchAbout(): Promise<ServerAbout | null> {
-  return fetchJson<ServerAbout>("/api/about");
+export async function fetchAbout(): Promise<ServerAbout | null> {
+  const about = await fetchJson<ServerAbout>("/api/about");
+  if (about) setHostHourCycle(about.hour_cycle);
+  return about;
 }
 
 /** The current daemon run's id, read fresh right before a create's first send. */

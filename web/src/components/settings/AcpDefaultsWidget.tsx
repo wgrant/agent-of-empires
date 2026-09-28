@@ -10,6 +10,7 @@ import type { ConfigOptionCategory, ConfigOptionDescriptor } from "../../lib/acp
 import type { AgentInfo } from "../../lib/types";
 import type { CustomWidgetProps } from "./customWidgets";
 import { SelectField, TextField } from "./FormFields";
+import { formatDateTime } from "../../lib/timeFormat";
 
 interface AcpAgentDefaults {
   model?: string;
@@ -58,7 +59,7 @@ function freshness(entry: AgentOptionEntry | undefined): string {
     return "No options cached yet. Start a structured session with this agent to populate the lists; you can type values in the meantime.";
   }
   const when = new Date(entry.updated_at);
-  const stamp = isNaN(when.getTime()) ? entry.updated_at : when.toLocaleString();
+  const stamp = isNaN(when.getTime()) ? entry.updated_at : formatDateTime(when);
   return `Options last seen ${stamp}.`;
 }
 
