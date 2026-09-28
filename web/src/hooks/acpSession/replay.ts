@@ -13,10 +13,11 @@ const TAIL_BEFORE = Number.MAX_SAFE_INTEGER;
 // The handshake lands in the first few events of a session.
 const HANDSHAKE_PREFIX_SIZE = 50;
 
-/** `acp/replay` response; `rows` is set (and `frames` empty) only for `view=rows`. */
+/** `acp/replay` response; `rows` and `removed` are set (and `frames` empty) only for `view=rows`. */
 type ReplayPageResponse = {
   frames: AcpFrame[];
   rows?: TranscriptRow[] | null;
+  removed?: string[];
   lost: boolean;
   highest_seq: number;
   next_cursor?: number | null;
@@ -40,6 +41,11 @@ const getReplayPair = (sid: string, params: string): Promise<[Response, Response
 
 const readRows = async (res: Response): Promise<TranscriptRow[]> =>
   ((await res.json()) as ReplayPageResponse).rows ?? [];
+
+const readRowsPage = async (res: Response): Promise<{ rows: TranscriptRow[]; removed: string[] }> => {
+  const page = (await res.json()) as ReplayPageResponse;
+  return { rows: page.rows ?? [], removed: page.removed ?? [] };
+};
 
 /** Catch up from `lastSeq.current`, updating it on a cold open. Errors are swallowed; a later lagged notice retries. */
 export async function fetchReplay(
@@ -113,7 +119,8 @@ async function fetchForward(
   let cursor = firstSince;
   let target: number | null = null;
   const bufferedFrames: AcpFrame[] = [];
-  const bufferedRows = [] as ReturnType<typeof toActivityRows>;
+  let bufferedRows = [] as ReturnType<typeof toActivityRows>;
+  const removed = new Set<string>();
   let reset = false;
   for (;;) {
     const [res, rowsRes] = await getReplayPair(sid, `since=${cursor}&limit=${REPLAY_PAGE_SIZE}`);
@@ -127,7 +134,7 @@ async function fetchForward(
       return;
     }
     const data = (await res.json()) as ReplayPageResponse;
-    const pageRows = await readRows(rowsRes);
+    const { rows: pageRows, removed: pageRemoved } = await readRowsPage(rowsRes);
     if (target === null) {
       target = data.highest_seq;
       // The server's log is behind our cursor (e.g. it was reset), so start over.
@@ -150,11 +157,17 @@ async function fetchForward(
       bufferedFrames.push(...data.frames);
       bufferedRows.push(...toActivityRows(pageRows, sid));
     }
+    // A row a later page removed is gone, even if an earlier page carried it.
+    if (pageRemoved.length > 0) {
+      for (const id of pageRemoved) removed.add(id);
+      bufferedRows = bufferedRows.filter((row) => !removed.has(row.id));
+    }
+    for (const row of pageRows) removed.delete(row.id);
     const next = data.next_cursor;
     if (!(data.has_more && next != null && next > cursor && next < target)) break;
     cursor = next;
   }
-  dispatch({ kind: "catchup", frames: bufferedFrames, rows: bufferedRows, reset });
+  dispatch({ kind: "catchup", frames: bufferedFrames, rows: bufferedRows, removed: [...removed], reset });
   if (reset) {
     lastSeq.current = bufferedFrames.reduce((highest, frame) => Math.max(highest, frame.seq), 0);
   } else if (target !== null) {

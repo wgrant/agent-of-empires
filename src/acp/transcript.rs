@@ -250,6 +250,44 @@ fn session_notice_text(severity: &str, title: &str, description: &Option<String>
     }
 }
 
+/// The rows a span of folded events left changed or removed, net of each other.
+#[derive(Debug, Default)]
+pub struct ChangedRows {
+    changed: HashSet<String>,
+    removed: HashSet<String>,
+}
+
+impl ChangedRows {
+    pub fn record(&mut self, deltas: Vec<TranscriptDelta>) {
+        for delta in deltas {
+            match delta {
+                TranscriptDelta::Append(TranscriptRow { id, .. })
+                | TranscriptDelta::Patch { id, .. } => {
+                    self.removed.remove(&id);
+                    self.changed.insert(id);
+                }
+                TranscriptDelta::Remove(id) => {
+                    self.changed.remove(&id);
+                    self.removed.insert(id);
+                }
+            }
+        }
+    }
+
+    /// The changed rows as `model` now holds them, and the removed ids, sorted.
+    pub fn resolve(self, model: &TranscriptModel) -> (Vec<TranscriptRow>, Vec<String>) {
+        let rows = model
+            .rows()
+            .iter()
+            .filter(|row| self.changed.contains(&row.id))
+            .cloned()
+            .collect();
+        let mut removed: Vec<_> = self.removed.into_iter().collect();
+        removed.sort();
+        (rows, removed)
+    }
+}
+
 /// Folds the ACP `Event` stream into an ordered [`TranscriptRow`] list.
 #[derive(Debug, Clone, Default)]
 pub struct TranscriptModel {
@@ -1478,10 +1516,14 @@ pub(crate) fn upsert_transcript_row(rows: &mut Vec<TranscriptRow>, incoming: Tra
     let row = &mut rows[idx];
     if row.kind == TranscriptRowKind::ToolStart && incoming.kind == TranscriptRowKind::ToolStart {
         if let (Some(prev_tool), Some(inc_tool)) = (row.tool.as_ref(), incoming.tool.as_ref()) {
+            // Only the call's details merge; the rest is the newer row's.
             let merged = merge_tool_start(prev_tool, inc_tool);
-            row.text = merged.name.clone();
-            row.at = merged.started_at;
-            row.tool = Some(merged);
+            *row = TranscriptRow {
+                text: merged.name.clone(),
+                at: merged.started_at,
+                tool: Some(merged),
+                ..incoming
+            };
             return;
         }
     }

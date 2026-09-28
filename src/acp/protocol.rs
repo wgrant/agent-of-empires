@@ -194,11 +194,14 @@ pub struct ReplayResponse {
     /// True when more events exist beyond this page within the store.
     #[serde(default)]
     pub has_more: bool,
-    /// Present only when the request passed `view=rows`: the selected page
-    /// of events folded through `TranscriptModel`, in place of the raw
-    /// `frames`.
+    /// Present only when the request passed `view=rows`: the rows the page's
+    /// events appended or patched, as a fold of the whole log holds them, in
+    /// place of the raw `frames`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rows: Option<Vec<crate::acp::transcript::TranscriptRow>>,
+    /// With `view=rows`, the ids of rows the page's events removed.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub removed: Vec<String>,
 }
 
 /// `GET /api/sessions/{id}/acp/files` response.
