@@ -1046,6 +1046,30 @@ mod tests {
         );
     }
 
+    /// Deleting a session's events, as switching it to the terminal does,
+    /// leaves nothing of the old conversation for the next connect.
+    #[tokio::test]
+    async fn a_connect_after_the_log_is_deleted_starts_clean() {
+        let _home = crate::session::test_support::isolate_app_dir();
+        let state = crate::server::test_support::build_test_app_state(Vec::new());
+        state
+            .acp_event_store
+            .record("s-1", 1, &Event::ThinkingStarted)
+            .unwrap();
+        let reduced = |messages: &[serde_json::Value]| {
+            messages
+                .iter()
+                .find(|m| m["kind"] == "reduced_state")
+                .unwrap()["state"]
+                .clone()
+        };
+        let before = connect_messages(&state, "since=0").await;
+        assert_eq!(reduced(&before)["turn_active"], true);
+        state.session_service.delete_session_events("s-1");
+        let after = connect_messages(&state, "since=0").await;
+        assert_eq!(reduced(&after)["turn_active"], false);
+    }
+
     #[tokio::test]
     async fn control_fold_skips_events_the_drain_already_applied() {
         let _home = crate::session::test_support::isolate_app_dir();

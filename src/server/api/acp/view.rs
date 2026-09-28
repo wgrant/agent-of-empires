@@ -439,7 +439,7 @@ pub async fn acp_disable(
     }
     // The tmux pane reprints a kept conversation, so the ACP projection goes.
     state.acp_supervisor.forget_session(&id);
-    state.acp_event_store.delete_session(&id);
+    state.session_service.delete_session_events(&id);
 
     match tokio::task::spawn_blocking(move || instance.start()).await {
         Ok(Ok(())) => {}
