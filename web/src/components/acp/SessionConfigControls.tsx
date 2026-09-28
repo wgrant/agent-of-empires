@@ -31,10 +31,10 @@ const PROVIDERS: ConfigOptionChoice[] = [
 ];
 // The floor only picks the open direction; height always clamps to the available space.
 const MENU_MAX_HEIGHT_CAP = 288;
+/** A searchable menu holds a long list, so it may use more of the screen. */
+const SEARCHABLE_MENU_MAX_HEIGHT_CAP = 420;
 const MENU_MAX_HEIGHT_FLOOR = 120;
 const MENU_VIEWPORT_MARGIN = 8;
-const EFFORT_SEGMENTED_MAX_COUNT = 5;
-const EFFORT_SEGMENTED_MAX_TOTAL_LABEL_LEN = 40;
 
 function truncate(s: string, max: number): string {
   if (s.length <= max) return s;
@@ -92,7 +92,7 @@ export function SessionConfigControls({
       )}
       {effort && (
         <ConfigRow label={effort.name}>
-          <EffortControl
+          <ModelDropdown
             option={effort}
             pending={pendingConfigOption?.configId === effort.id ? pendingConfigOption.value : null}
             onSelect={(value) => onSetConfigOption(effort.id, value)}
@@ -111,7 +111,7 @@ export function SessionConfigControls({
   );
 }
 
-function ConfigRow({ label, children }: { label: string; children: ReactNode }) {
+export function ConfigRow({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex items-center justify-between gap-3">
       <span className="text-xs text-text-secondary">{label}</span>
@@ -149,6 +149,7 @@ function computeMenuLayout(
   viewportHeight: number,
   viewportTop = 0,
   viewportWidth = Infinity,
+  cap = MENU_MAX_HEIGHT_CAP,
 ): MenuLayout {
   const spaceAbove = rect.top - viewportTop - MENU_VIEWPORT_MARGIN;
   const spaceBelow = viewportTop + viewportHeight - rect.bottom - MENU_VIEWPORT_MARGIN;
@@ -166,18 +167,104 @@ function computeMenuLayout(
   }
   return {
     direction,
-    maxHeight: Math.max(0, Math.min(MENU_MAX_HEIGHT_CAP, available)),
+    maxHeight: Math.max(0, Math.min(cap, available)),
     alignRight: rect.left + MENU_WIDTH > viewportWidth - MENU_VIEWPORT_MARGIN && rect.right >= MENU_WIDTH,
   };
 }
 
+/** A config option's values as a dropdown. */
 function ModelDropdown({ option, pending, onSelect, lockedReason }: SubProps) {
+  return (
+    <ChoiceDropdown
+      label={option.name}
+      choices={option.options}
+      current={option.current_value}
+      pending={pending}
+      onSelect={onSelect}
+      testId={`config-option-${option.id}`}
+      lockedReason={lockedReason}
+    />
+  );
+}
+
+/** Past this many, a menu gets a filter. */
+const SEARCH_THRESHOLD = 12;
+
+/** Every name reads `Provider/Model`: group under the provider and show the rest. */
+function providerGroups(choices: readonly Choice[]): Map<string, Choice[]> | null {
+  if (!choices.every((c) => c.name.indexOf("/") > 0)) return null;
+  const groups = new Map<string, Choice[]>();
+  for (const choice of choices) {
+    const provider = choice.name.slice(0, choice.name.indexOf("/"));
+    groups.set(provider, [...(groups.get(provider) ?? []), choice]);
+  }
+  return groups.size > 1 ? groups : null;
+}
+
+/** Lower case, with separators such as `-` and `/` read as spaces. */
+function normalize(text: string): string {
+  return text.toLowerCase().replace(/[\s\-_/.:]+/g, " ");
+}
+
+/** The choices with every query term in their name or value, whole-phrase
+ *  matches first: "gpt 5" puts GPT-5 ahead of GPT-3.5. */
+function search(choices: readonly Choice[], query: string): Choice[] {
+  const phrase = normalize(query).trim();
+  const terms = phrase.split(" ");
+  const found = choices.filter((c) => {
+    const haystack = normalize(`${c.name} ${c.value}`);
+    return terms.every((term) => haystack.includes(term));
+  });
+  const phraseFirst = (c: Choice) => (normalize(c.name).includes(phrase) ? 0 : 1);
+  return found.sort((a, b) => phraseFirst(a) - phraseFirst(b));
+}
+
+export interface Choice {
+  value: string;
+  name: string;
+  description?: string | null;
+}
+
+/** One value from a list, the dialog's single kind of picker: a button naming
+ *  the current value that opens a menu of the rest, with any descriptions. */
+export function ChoiceDropdown({
+  label,
+  choices,
+  current,
+  pending = null,
+  onSelect,
+  testId,
+  note,
+  lockedReason,
+}: {
+  label: string;
+  choices: readonly Choice[];
+  current: string;
+  /** The value in flight, disabled until confirmed. */
+  pending?: string | null;
+  onSelect: (value: string) => void | Promise<void>;
+  /** Names the trigger; each item is `${testId}-value-${value}`. */
+  testId: string;
+  /** A line under the menu's heading. */
+  note?: string;
+  lockedReason?: string | null;
+}) {
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
   const [menuLayout, setMenuLayout] = useState<MenuLayout>(DEFAULT_MENU_LAYOUT);
   const ref = useRef<HTMLDivElement | null>(null);
-  const menuId = `config-option-menu-${option.id}`;
-  const current = option.options.find((o) => o.value === option.current_value) ?? option.options[0];
-  const label = current?.name ?? option.current_value;
+  const menuId = `${testId}-menu`;
+  const searchable = choices.length > SEARCH_THRESHOLD;
+  const shownChoices = query.trim() ? search(choices, query) : choices;
+  const groups = providerGroups(shownChoices);
+  const selected = choices.find((c) => c.value === current) ?? choices[0];
+  const shown = selected?.name ?? current;
+  const choose = (choice: Choice) => {
+    setOpen(false);
+    setQuery("");
+    if (choice.value === pending || choice.value === current) return;
+    void onSelect(choice.value);
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -203,7 +290,13 @@ function ModelDropdown({ option, pending, onSelect, lockedReason }: SubProps) {
       const rect = ref.current?.getBoundingClientRect();
       if (!rect) return;
       setMenuLayout(
-        computeMenuLayout(rect, vv?.height ?? window.innerHeight, vv?.offsetTop ?? 0, vv?.width ?? window.innerWidth),
+        computeMenuLayout(
+          rect,
+          vv?.height ?? window.innerHeight,
+          vv?.offsetTop ?? 0,
+          vv?.width ?? window.innerWidth,
+          searchable ? SEARCHABLE_MENU_MAX_HEIGHT_CAP : MENU_MAX_HEIGHT_CAP,
+        ),
       );
     };
     recompute();
@@ -217,20 +310,23 @@ function ModelDropdown({ option, pending, onSelect, lockedReason }: SubProps) {
       vv?.removeEventListener("resize", recompute);
       vv?.removeEventListener("scroll", recompute);
     };
-  }, [open]);
+  }, [open, searchable]);
 
   return (
     <div ref={ref} className="relative">
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
         disabled={!!lockedReason}
+        onClick={() => {
+          setOpen((v) => !v);
+          setQuery("");
+        }}
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
-        title={lockedReason ?? `${option.name}: ${label}`}
-        aria-label={`${option.name}: ${label}`}
-        data-testid={`config-option-${option.id}`}
+        title={lockedReason ?? `${label}: ${shown}`}
+        aria-label={`${label}: ${shown}`}
+        data-testid={testId}
         className={[
           "inline-flex items-center gap-1 rounded-md border border-surface-700 bg-surface-800/60 px-2 py-1 text-[11px] font-medium",
           "text-text-secondary",
@@ -238,7 +334,7 @@ function ModelDropdown({ option, pending, onSelect, lockedReason }: SubProps) {
           "disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-surface-700 disabled:hover:text-text-secondary",
         ].join(" ")}
       >
-        <span>{truncate(label, MODEL_LABEL_MAX)}</span>
+        <span>{truncate(shown, MODEL_LABEL_MAX)}</span>
         <ChevronUp className="h-3 w-3 opacity-70" />
       </button>
       {open && (
@@ -252,45 +348,58 @@ function ModelDropdown({ option, pending, onSelect, lockedReason }: SubProps) {
           style={{ maxHeight: menuLayout.maxHeight }}
           role="menu"
         >
-          <div className="border-b border-surface-800 px-3 py-1.5 text-[10px] uppercase tracking-wider text-text-dim">
-            {option.name}
+          <div className="border-b border-surface-800 px-3 py-1.5">
+            <div className="text-[10px] uppercase tracking-wider text-text-dim">{label}</div>
+            {note && <div className="mt-0.5 text-[11px] text-text-dim">{note}</div>}
+            {searchable && (
+              <input
+                type="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && shownChoices[0]) choose(shownChoices[0]);
+                }}
+                // A phone's keyboard would cover the menu it opens with.
+                autoFocus={window.matchMedia?.("(hover: hover)").matches ?? false}
+                placeholder={`Search ${choices.length}…`}
+                aria-label={`Search ${label}`}
+                data-testid={`${testId}-search`}
+                className="mt-1.5 w-full rounded border border-surface-700 bg-surface-900 px-2 py-1 text-[12px] text-text-primary placeholder:text-text-dim focus:border-brand-600 focus:outline-none"
+              />
+            )}
           </div>
           <div className="overflow-y-auto">
-            {option.options.map((opt) => {
-              const isCurrent = opt.value === option.current_value;
-              const isPending = pending === opt.value;
-              return (
-                <button
-                  key={opt.value}
-                  type="button"
-                  role="menuitem"
-                  disabled={isPending}
-                  onClick={() => {
-                    if (isPending || isCurrent) {
-                      setOpen(false);
-                      return;
-                    }
-                    setOpen(false);
-                    void onSelect(opt.value);
-                  }}
-                  data-testid={`config-option-${option.id}-value-${opt.value}`}
-                  className={[
-                    "flex w-full items-start gap-2 px-3 py-1.5 text-left text-[12px]",
-                    isCurrent
-                      ? "bg-surface-800 text-text-primary"
-                      : "text-text-secondary hover:bg-surface-800 hover:text-text-primary",
-                    isPending ? "cursor-not-allowed opacity-50" : "",
-                  ].join(" ")}
-                >
-                  <span className="flex-1">
-                    <span className="block font-medium">{opt.name}</span>
-                    {opt.description && <span className="block text-[11px] text-text-dim">{opt.description}</span>}
-                  </span>
-                  {isCurrent && !isPending && <span className="text-[10px] uppercase text-brand-500">Active</span>}
-                  {isPending && <span className="text-[10px] uppercase text-text-dim">…</span>}
-                </button>
-              );
-            })}
+            {shownChoices.length === 0 && <div className="px-3 py-2 text-[12px] text-text-dim">No matches</div>}
+            {groups
+              ? [...groups].map(([provider, members]) => (
+                  <div key={provider}>
+                    <div className="sticky top-0 bg-surface-850 px-3 pt-2 pb-1 text-[10px] uppercase tracking-wider text-text-dim">
+                      {provider}
+                    </div>
+                    {members.map((choice) => (
+                      <ChoiceItem
+                        key={choice.value}
+                        choice={choice}
+                        name={choice.name.slice(provider.length + 1)}
+                        current={current}
+                        pending={pending}
+                        onChoose={choose}
+                        testId={testId}
+                      />
+                    ))}
+                  </div>
+                ))
+              : shownChoices.map((choice) => (
+                  <ChoiceItem
+                    key={choice.value}
+                    choice={choice}
+                    name={choice.name}
+                    current={current}
+                    pending={pending}
+                    onChoose={choose}
+                    testId={testId}
+                  />
+                ))}
           </div>
         </div>
       )}
@@ -298,51 +407,45 @@ function ModelDropdown({ option, pending, onSelect, lockedReason }: SubProps) {
   );
 }
 
-function EffortControl(props: SubProps) {
-  const { option } = props;
-  const totalLabelLen = option.options.reduce((acc, o) => acc + o.name.length, 0);
-  const useSegmented =
-    option.options.length > 0 &&
-    option.options.length <= EFFORT_SEGMENTED_MAX_COUNT &&
-    totalLabelLen <= EFFORT_SEGMENTED_MAX_TOTAL_LABEL_LEN;
-  return useSegmented ? <EffortSegmented {...props} /> : <ModelDropdown {...props} />;
-}
-
-function EffortSegmented({ option, pending, onSelect }: SubProps) {
+function ChoiceItem({
+  choice,
+  name,
+  current,
+  pending,
+  onChoose,
+  testId,
+}: {
+  choice: Choice;
+  name: string;
+  current: string;
+  pending: string | null;
+  onChoose: (choice: Choice) => void;
+  testId: string;
+}) {
+  const isCurrent = choice.value === current;
+  const isPending = pending === choice.value;
   return (
-    <div
-      role="radiogroup"
-      aria-label={option.name}
-      data-testid={`config-option-${option.id}`}
-      className="inline-flex items-center gap-0.5 rounded-md border border-surface-700 bg-surface-800/60 p-0.5"
+    <button
+      type="button"
+      role="menuitem"
+      disabled={isPending}
+      onClick={() => onChoose(choice)}
+      data-testid={`${testId}-value-${choice.value}`}
+      className={[
+        "flex w-full items-start gap-2 px-3 py-1.5 text-left text-[12px]",
+        isCurrent
+          ? "bg-surface-800 text-text-primary"
+          : "text-text-secondary hover:bg-surface-800 hover:text-text-primary",
+        isPending ? "cursor-not-allowed opacity-50" : "",
+      ].join(" ")}
     >
-      {option.options.map((opt) => {
-        const isCurrent = opt.value === option.current_value;
-        const isPending = pending === opt.value;
-        return (
-          <button
-            key={opt.value}
-            type="button"
-            role="radio"
-            aria-checked={isCurrent}
-            disabled={isPending}
-            onClick={() => {
-              if (isPending || isCurrent) return;
-              void onSelect(opt.value);
-            }}
-            title={opt.description ?? `${option.name}: ${opt.name}`}
-            data-testid={`config-option-${option.id}-value-${opt.value}`}
-            className={[
-              "rounded px-2 py-0.5 text-[11px] font-medium transition-colors",
-              isCurrent ? "bg-surface-700 text-text-primary" : "text-text-secondary hover:text-text-primary",
-              isPending ? "cursor-not-allowed opacity-50" : "",
-            ].join(" ")}
-          >
-            {opt.name}
-          </button>
-        );
-      })}
-    </div>
+      <span className="flex-1">
+        <span className="block font-medium">{name}</span>
+        {choice.description && <span className="block text-[11px] text-text-dim">{choice.description}</span>}
+      </span>
+      {isCurrent && !isPending && <span className="text-[10px] uppercase text-brand-500">Active</span>}
+      {isPending && <span className="text-[10px] uppercase text-text-dim">…</span>}
+    </button>
   );
 }
 

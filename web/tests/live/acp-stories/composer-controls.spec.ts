@@ -181,7 +181,8 @@ function modeTrigger(page: Page) {
 
 /** Pick a mode in the session settings dialog, then close it so the chip shows the result. */
 async function pickMode(page: Page, mode: RegExp) {
-  const item = page.getByTestId("session-mode-options").getByText(mode).first();
+  await page.getByTestId("session-mode").click();
+  const item = page.getByRole("menu").getByText(mode).first();
   await expect(item).toBeVisible({ timeout: 5_000 });
   await item.click();
   await page.getByRole("button", { name: "Done" }).click();
@@ -214,8 +215,10 @@ test("session settings use OpenCode's config-option modes and never trap the use
   await expect(trigger).toContainText(/Build/i, { timeout: 10_000 });
 
   await trigger.click();
-  // Scoped to the mode list: the reasoning-effort selector has its own "Default".
-  await expect(page.getByTestId("session-mode-options").getByText(/^Default$/)).toHaveCount(0);
+  // Scoped to the mode menu: the reasoning-effort selector has its own "Default".
+  await page.getByTestId("session-mode").click();
+  await expect(page.getByRole("menu").getByText(/^Default$/)).toHaveCount(0);
+  await page.getByTestId("session-mode").click();
   await pickMode(page, /^Plan$/i);
   await expect(trigger).toContainText(/Plan/i, { timeout: 10_000 });
 

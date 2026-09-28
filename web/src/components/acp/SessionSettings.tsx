@@ -15,7 +15,7 @@ import { TOUR_ANCHORS, tourAnchor } from "../../lib/tourSteps";
 import { BRAND_BUTTON, ConfirmButton, Dialog } from "../Dialog";
 import { compactModelName, composerStatusText, type ComposerStatusParts } from "./composerStatus";
 import { LaunchOptionRestartDialog } from "./LaunchOptionRestartDialog";
-import { SessionConfigControls } from "./SessionConfigControls";
+import { ChoiceDropdown, ConfigRow, SessionConfigControls } from "./SessionConfigControls";
 
 interface Props {
   sessionId: string;
@@ -246,22 +246,33 @@ function SessionSettingsDialog({
           </button>
         </div>
       </Section>
-      {channel && (
-        <Section label={channel.label}>
-          <ModeOptions channel={channel} onSelect={onSelectMode} />
-        </Section>
-      )}
-      {hasSessionConfigControls(configOptions) && (
-        <Section label="Model and effort">
-          <SessionConfigControls
-            configOptions={configOptions}
-            pendingConfigOption={pendingConfigOption}
-            onSetConfigOption={setConfigOption}
-          />
-        </Section>
-      )}
-      <Section label="Thinking">
-        <ThinkingDisplayOptions sessionId={sessionId} />
+      <Section label="Session">
+        <div className="flex flex-col gap-2">
+          {channel && (
+            <ConfigRow label={channel.label}>
+              <ChoiceDropdown
+                label={channel.label}
+                choices={channel.modes.map((mode) => ({
+                  value: mode.id,
+                  name: mode.name,
+                  description: mode.description,
+                }))}
+                current={channel.activeId}
+                pending={channel.pendingId}
+                onSelect={onSelectMode}
+                testId="session-mode"
+              />
+            </ConfigRow>
+          )}
+          {hasSessionConfigControls(configOptions) && (
+            <SessionConfigControls
+              configOptions={configOptions}
+              pendingConfigOption={pendingConfigOption}
+              onSetConfigOption={setConfigOption}
+            />
+          )}
+          <ThinkingDisplayRow sessionId={sessionId} />
+        </div>
       </Section>
       {launchOptions.length > 0 && (
         <Section label="Launch options · restart required">
@@ -303,82 +314,28 @@ function Section({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-function ModeOptions({ channel, onSelect }: { channel: ModeChannel; onSelect: (id: string) => void }) {
-  return (
-    <div role="radiogroup" aria-label={channel.label} data-testid="session-mode-options" className="flex flex-col">
-      {channel.modes.map((opt) => {
-        const isPending = opt.id === channel.pendingId;
-        const isActive = opt.id === channel.activeId;
-        return (
-          <button
-            key={opt.id}
-            type="button"
-            role="radio"
-            aria-checked={isActive}
-            disabled={isPending}
-            onClick={() => onSelect(opt.id)}
-            className={[
-              "flex w-full items-start gap-2 rounded-md px-2 py-2 text-left text-xs hover:bg-surface-700/40",
-              isActive ? "bg-surface-700/30" : "",
-              isPending ? "cursor-not-allowed opacity-50" : "",
-            ].join(" ")}
-          >
-            <span
-              className={[
-                "mt-0.5 inline-block h-3 w-3 shrink-0 rounded-full border",
-                isActive ? "border-brand-500 bg-brand-500" : "border-surface-600",
-              ].join(" ")}
-            />
-            <span className="min-w-0 flex-1">
-              <span className="block font-medium text-text-primary">{opt.name}</span>
-              {opt.description && <span className="block text-[11px] text-text-dim">{opt.description}</span>}
-            </span>
-            {isPending && <span className="text-[10px] uppercase text-text-dim">…</span>}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
 const THINKING_CHOICES: readonly (ThinkingDisplay | "default")[] = ["default", ...THINKING_DISPLAYS];
 
 /** Per-session override of the dashboard's thinking display; "Default" follows the dashboard. */
-function ThinkingDisplayOptions({ sessionId }: { sessionId: string }) {
+function ThinkingDisplayRow({ sessionId }: { sessionId: string }) {
   const { override, globalDefault, setOverride } = useSessionThinkingDisplay(sessionId);
-  const selected = override ?? "default";
   return (
-    <div className="flex flex-col gap-1.5">
-      <div
-        role="radiogroup"
-        aria-label="Thinking display"
-        data-testid="thinking-display-options"
-        className="inline-flex w-fit items-center gap-0.5 rounded-md border border-surface-700 bg-surface-800/60 p-0.5"
-      >
-        {THINKING_CHOICES.map((choice) => {
-          const isCurrent = choice === selected;
-          return (
-            <button
-              key={choice}
-              type="button"
-              role="radio"
-              aria-checked={isCurrent}
-              data-testid={`thinking-display-value-${choice}`}
-              onClick={() => setOverride(choice === "default" ? null : choice)}
-              className={[
-                "rounded px-2 py-0.5 text-[11px] font-medium transition-colors",
-                isCurrent ? "bg-surface-700 text-text-primary" : "text-text-secondary hover:text-text-primary",
-              ].join(" ")}
-            >
-              {choice === "default" ? "Default" : THINKING_DISPLAY_LABELS[choice]}
-            </button>
-          );
-        })}
-      </div>
-      <p className="text-[11px] text-text-dim">
-        Default follows your dashboard setting ({THINKING_DISPLAY_LABELS[globalDefault]}). Thinking is always recorded,
-        so you can reveal it later.
-      </p>
-    </div>
+    <ConfigRow label="Thinking">
+      <ChoiceDropdown
+        label="Thinking"
+        note="Thinking is always recorded, so you can reveal it later."
+        choices={THINKING_CHOICES.map((choice) => ({
+          value: choice,
+          name:
+            choice === "default"
+              ? `Default (${THINKING_DISPLAY_LABELS[globalDefault]})`
+              : THINKING_DISPLAY_LABELS[choice],
+          description: choice === "default" ? "Follows your dashboard setting" : null,
+        }))}
+        current={override ?? "default"}
+        onSelect={(choice) => setOverride(choice === "default" ? null : (choice as ThinkingDisplay))}
+        testId="thinking-display"
+      />
+    </ConfigRow>
   );
 }

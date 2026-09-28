@@ -25,6 +25,7 @@ test("a session's thinking display hides and expands earlier thinking", async ({
 
   const choose = async (value: string) => {
     await openSessionSettings(page);
+    await page.getByTestId("thinking-display").click();
     await page.getByTestId(`thinking-display-value-${value}`).click();
     await page.getByRole("button", { name: "Done" }).click();
   };

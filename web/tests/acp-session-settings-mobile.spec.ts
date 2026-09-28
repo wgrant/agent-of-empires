@@ -45,13 +45,14 @@ test("the mobile settings dialog survives focus leaving the composer", async ({ 
     .click();
   await openSessionSettings(page);
 
-  // What an iOS tap on a radio does to focus.
+  // What an iOS tap on a button does to focus.
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await page.waitForTimeout(100);
 
   const dialog = page.getByTestId("session-settings-dialog");
   await expect(dialog).toBeVisible();
-  await dialog.getByRole("radio", { name: /Plan Mode/ }).click();
+  await dialog.getByTestId("session-mode").click();
+  await dialog.getByRole("menuitem", { name: /Plan Mode/ }).click();
   await expect.poll(() => mock.configOptionBodies.length).toBe(1);
   await expect(dialog).toBeVisible();
 

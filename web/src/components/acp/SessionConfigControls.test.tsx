@@ -65,24 +65,43 @@ describe("SessionConfigControls", () => {
     for (const id of ["model", "effort", "future"]) expect(byId(id) !== null).toBe(shown.includes(id));
   });
 
-  it("uses a segmented control for short effort lists, sending the value, and a dropdown past the threshold", () => {
+  it("picks effort from the same dropdown as the model, sending the value", () => {
     const { onSetConfigOption } = mount([EFFORT]);
-    expect(screen.getByRole("radiogroup", { name: "Reasoning Effort" })).toBeTruthy();
+    expect(screen.queryByRole("radiogroup")).toBeNull();
+    fireEvent.click(byId("effort")!);
     fireEvent.click(byId("effort-value-high")!);
     expect(onSetConfigOption).toHaveBeenCalledWith("effort", "high");
+  });
+
+  it("searches a long model list, phrase matches first, grouped under each provider", () => {
+    const names = [
+      "OpenRouter/GPT-3.5 Turbo",
+      "OpenRouter/GPT-5",
+      "OpenAI/GPT-5 Mini",
+      ...Array.from({ length: 12 }, (_, i) => `OpenRouter/Filler ${i}`),
+    ];
+    const long: ConfigOptionDescriptor = {
+      id: "model",
+      name: "Model",
+      category: "model",
+      current_value: "m3",
+      options: names.map((name, i) => ({ value: `m${i}`, name })),
+    };
+    const { onSetConfigOption } = mount([long]);
+    fireEvent.click(byId("model")!);
+    const search = byId("model-search") as HTMLInputElement;
+    fireEvent.change(search, { target: { value: "gpt 5" } });
+    const items = screen.getAllByRole("menuitem").map((item) => item.textContent);
+    // Providers head their groups; each item drops the provider prefix.
+    expect(screen.getByText("OpenRouter")).toBeTruthy();
+    expect(items).toEqual(["GPT-5", "GPT-3.5 Turbo", "GPT-5 Mini"]);
+    fireEvent.keyDown(search, { key: "Enter" });
+    expect(onSetConfigOption).toHaveBeenCalledWith("model", "m1");
+
     cleanup();
-    mount([
-      option("effort", "Reasoning Effort", "thought_level", [
-        "Default",
-        "Low",
-        "Medium",
-        "High",
-        "Very High",
-        "Extreme reasoning",
-      ]),
-    ]);
-    expect(screen.queryByRole("radiogroup")).toBeNull();
-    expect(byId("effort")).toBeTruthy();
+    mount([MODEL]);
+    fireEvent.click(byId("model")!);
+    expect(byId("model-search")).toBeNull();
   });
 
   it("toggles the model menu aria state and sends the option value", () => {
@@ -93,7 +112,7 @@ describe("SessionConfigControls", () => {
     expect(chip.getAttribute("aria-controls")).toBeNull();
     fireEvent.click(chip);
     expect(chip.getAttribute("aria-expanded")).toBe("true");
-    expect(chip.getAttribute("aria-controls")).toBe("config-option-menu-model");
+    expect(chip.getAttribute("aria-controls")).toBe("config-option-model-menu");
     fireEvent.click(byId("model-value-claude-sonnet-4-6")!);
     expect(onSetConfigOption).toHaveBeenCalledExactlyOnceWith("model", "claude-sonnet-4-6");
   });
@@ -144,7 +163,7 @@ describe("SessionConfigControls", () => {
       } as DOMRect);
       mount([MODEL]);
       fireEvent.click(byId("model")!);
-      const menu = document.getElementById("config-option-menu-model")!;
+      const menu = document.getElementById("config-option-model-menu")!;
       expect(menu.className).toContain(direction === "up" ? "bottom-full" : "top-full");
       expect(menu.style.maxHeight).toBe(`${maxHeight}px`);
     } finally {
