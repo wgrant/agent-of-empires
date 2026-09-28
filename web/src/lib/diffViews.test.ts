@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 
-import { parseDiffTarget, viewFor, viewLabel, viewMatches, viewsParam, withView, withoutView } from "./diffViews";
+import {
+  parseDiffTarget,
+  viewEnds,
+  viewFor,
+  viewLabel,
+  viewMatches,
+  viewsParam,
+  withView,
+  withoutView,
+} from "./diffViews";
 
 describe("diff views", () => {
   it.each<[string, unknown, ReturnType<typeof parseDiffTarget>]>([
@@ -39,5 +48,15 @@ describe("diff views", () => {
     expect(viewLabel({ base: "main", head: "layer" }, "origin/main")).toBe("main...layer");
     expect(viewLabel({ base: "layer" }, "main")).toBe("vs layer");
     expect(viewLabel({ head: "layer" }, "main")).toBe("main...layer");
+  });
+
+  it.each<[string, string, string | undefined, { from: string; to?: string }]>([
+    ["a shared path prefix", "stack/models", "stack/auth", { from: "models", to: "auth" }],
+    ["deeper shared segments", "u/stack/models", "u/stack/auth", { from: "models", to: "auth" }],
+    ["one end its prefix", "stack", "stack/auth", { from: "stack", to: "stack/auth" }],
+    ["nothing shared", "main", "stack/auth", { from: "main", to: "stack/auth" }],
+    ["no head", "stack/models", undefined, { from: "stack/models" }],
+  ])("drops %s from a view's ends", (_, base, head, want) => {
+    expect(viewEnds({ base, ...(head ? { head } : {}) }, "main")).toEqual(want);
   });
 });

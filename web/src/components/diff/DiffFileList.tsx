@@ -3,7 +3,7 @@ import type { RepoBase, RichDiffFile } from "../../lib/types";
 import { sessionDiffRawFileUrl } from "../../lib/api";
 import { buildDiffTree } from "../../lib/diffTree";
 import { useWebSettings } from "../../hooks/useWebSettings";
-import { viewFor, viewLabel, type DiffView } from "../../lib/diffViews";
+import { viewEnds, viewFor, viewLabel, type DiffView } from "../../lib/diffViews";
 import { BasePicker } from "./BasePicker";
 import { FileContextMenu, type PathMenuState } from "./FileContextMenu";
 import { useDiffViews } from "./DiffViewsContext";
@@ -196,13 +196,7 @@ export function DiffFileList({
           <span className="font-mono text-[11px] uppercase tracking-wider text-text-dim">Changes</span>
           {isMultiRepo ? (
             <span className={CHIP}>{perRepoBases.length} repos</span>
-          ) : singleView && diffViews ? (
-            <ViewBadge
-              view={singleView}
-              base={singleBaseBranch}
-              onReset={() => diffViews.clearView(perRepoBases[0]?.repo_name)}
-            />
-          ) : sessionId && repoPath ? (
+          ) : singleView ? null : sessionId && repoPath ? (
             <BasePicker
               sessionId={sessionId}
               repoPath={repoPath}
@@ -243,6 +237,13 @@ export function DiffFileList({
             </>
           )}
         </div>
+        {!isMultiRepo && singleView && diffViews && (
+          <ViewBadge
+            view={singleView}
+            base={singleBaseBranch}
+            onReset={() => diffViews.clearView(perRepoBases[0]?.repo_name)}
+          />
+        )}
         {warning && <p className="text-[11px] text-status-waiting mt-1">{warning}</p>}
       </div>
 
@@ -307,9 +308,7 @@ function RepoGroup({
           <Chevron collapsed={collapsed} />
           <span className="font-mono text-[12px] truncate">{repo.repo_name ?? "(default)"}</span>
         </button>
-        {view && diffViews ? (
-          <ViewBadge view={view} base={repo.base_branch} onReset={() => diffViews.clearView(repo.repo_name)} />
-        ) : sessionId ? (
+        {view ? null : sessionId ? (
           <BasePicker
             sessionId={sessionId}
             repoPath={repo.repo_path}
@@ -324,6 +323,11 @@ function RepoGroup({
         <span className="font-mono text-[11px] text-text-muted">{files.length}</span>
         <LineCounts additions={sum(files, "additions")} deletions={sum(files, "deletions")} />
       </div>
+      {view && diffViews && (
+        <div className="bg-surface-850 px-3 pb-1.5">
+          <ViewBadge view={view} base={repo.base_branch} onReset={() => diffViews.clearView(repo.repo_name)} />
+        </div>
+      )}
       {!collapsed && repo.error && <ViewError message={repo.error} />}
       {!collapsed && !repo.error && files.length === 0 && (
         <div className="px-3 py-2 text-[11px] text-text-dim italic">No changes in this repo.</div>
@@ -345,15 +349,28 @@ function RepoGroup({
   );
 }
 
-/** The view this browser shows in place of the repo's default, with a way back. */
+/** The view this browser shows in place of the repo's default, on a line of its
+ *  own, with a way back. The base gives way before the head. */
 function ViewBadge({ view, base, onReset }: { view: DiffView; base: string; onReset: () => void }) {
   const title = view.head
     ? `What ${view.head} adds over ${view.base ?? base}, from where they forked. Shown in this browser only.`
     : `Compared with ${view.base ?? base} in this browser only; the session's base is unchanged.`;
+  const { from, to } = viewEnds(view, base);
   return (
-    <span className="inline-flex min-w-0 items-center gap-1" data-testid="diff-view-badge" title={title}>
-      <span className="font-mono text-[10px] px-1.5 py-px rounded bg-brand-600/15 text-brand-500 truncate">
-        {viewLabel(view, base)}
+    <div className="mt-1 flex min-w-0 items-center gap-1.5" data-testid="diff-view-badge" title={title}>
+      <span className="shrink-0 font-mono text-[10px] uppercase tracking-wider text-text-dim">
+        {to ? "Range" : "Base"}
+      </span>
+      <span className="flex min-w-0 flex-1 items-center font-mono text-[11px] text-brand-500">
+        {to ? (
+          <>
+            <span className="min-w-0 truncate">{from}</span>
+            <span className="shrink-0 text-text-dim">...</span>
+            <span className="max-w-[70%] shrink-0 truncate">{to}</span>
+          </>
+        ) : (
+          <span className="min-w-0 truncate">vs {from}</span>
+        )}
       </span>
       <button
         type="button"
@@ -364,7 +381,7 @@ function ViewBadge({ view, base, onReset }: { view: DiffView; base: string; onRe
       >
         Working tree
       </button>
-    </span>
+    </div>
   );
 }
 
