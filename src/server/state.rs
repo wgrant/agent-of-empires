@@ -45,6 +45,18 @@ pub(super) struct ChangedFilesEntry {
 
 pub const CHANGED_FILES_TTL: std::time::Duration = std::time::Duration::from_millis(1500);
 
+/// Commit ranges whose file lists are kept; past it the cache starts over.
+const RANGE_FILES_CAP: usize = 64;
+
+/// File lists of commit ranges, keyed by repo and resolved commits. A range
+/// between two commits never changes, so an entry needs no expiry.
+pub(super) type RangeFilesCache = std::sync::Mutex<
+    std::collections::HashMap<
+        (String, crate::git::diff::CommitRange),
+        Vec<crate::git::diff::DiffFile>,
+    >,
+>;
+
 /// Per-profile entry tracking a live `FileWatchService` subscription and the
 /// `tokio::spawn`ed forwarder that drains its receiver into `AppState::disk_changed`.
 pub(crate) struct DiskWatchEntry {
@@ -139,6 +151,7 @@ pub struct AppState {
     /// burst of file switches reuses one branch scan. See `ChangedFilesEntry`.
     pub(super) changed_files_cache:
         std::sync::RwLock<std::collections::HashMap<(String, String), ChangedFilesEntry>>,
+    pub(super) range_files_cache: RangeFilesCache,
     /// Broadcasts session status transitions to consumers (currently the push-notification
     /// module).
     pub status_tx: broadcast::Sender<StatusChange>,
@@ -226,6 +239,37 @@ impl AppState {
             );
         }
         Ok(files)
+    }
+
+    /// The files `base...head` changes in `repo_path`, and the range the refs
+    /// resolved to. The refs resolve on every call, since a branch can move;
+    /// the file list is cached by the commits they named.
+    pub fn range_files_cached(
+        &self,
+        repo_path: &std::path::Path,
+        base: &str,
+        head: &str,
+    ) -> crate::git::error::Result<(
+        crate::git::diff::ResolvedRange,
+        Vec<crate::git::diff::DiffFile>,
+    )> {
+        let resolved = crate::git::diff::resolve_range(repo_path, base, head)?;
+        let key = (repo_path.to_string_lossy().into_owned(), resolved.range);
+        let lock = || {
+            self.range_files_cache
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+        };
+        if let Some(files) = lock().get(&key) {
+            return Ok((resolved, files.clone()));
+        }
+        let files = crate::git::diff::range_changed_files(repo_path, resolved.range)?;
+        let mut cache = lock();
+        if cache.len() >= RANGE_FILES_CAP {
+            cache.clear();
+        }
+        cache.insert(key, files.clone());
+        Ok((resolved, files))
     }
 
     /// Get or create the per-instance serialization mutex.
