@@ -25,6 +25,9 @@ pub struct ResolvedRange {
     /// Set when base and head share no history, so the diff runs from base's
     /// tip and may include changes unrelated to head.
     pub warning: Option<String>,
+    /// Whether the repository's checked-out HEAD is `head`, so edits to the
+    /// working tree change it.
+    pub head_checked_out: bool,
 }
 
 /// Resolve `base` and `head` the way `git rev-parse` would, each to a commit.
@@ -42,12 +45,18 @@ pub fn resolve_range(repo_path: &Path, base: &str, head: &str) -> Result<Resolve
             )),
         ),
     };
+    let head_checked_out = repo
+        .head()
+        .ok()
+        .and_then(|h| h.peel_to_commit().ok())
+        .is_some_and(|c| c.id() == head_commit);
     Ok(ResolvedRange {
         range: CommitRange {
             from,
             head: head_commit,
         },
         warning,
+        head_checked_out,
     })
 }
 
@@ -123,14 +132,6 @@ pub fn file_at_commit(repo_path: &Path, commit: git2::Oid, path: &Path) -> Resul
     let repo = crate::git::open_repo_at(repo_path)?;
     let tree = repo.find_commit(commit)?.tree()?;
     Ok(get_blob_bytes(&repo, &tree, path))
-}
-
-/// Whether the repository's checked-out HEAD is `commit`.
-pub fn is_checked_out(repo_path: &Path, commit: git2::Oid) -> bool {
-    crate::git::open_repo_at(repo_path)
-        .ok()
-        .and_then(|repo| repo.head().ok()?.peel_to_commit().ok().map(|c| c.id()))
-        == Some(commit)
 }
 
 /// A file as the commit `rev` names has it, if it is a blob there.

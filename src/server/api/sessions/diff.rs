@@ -529,7 +529,7 @@ fn range_file_response(
     let commits = serde_json::to_value(RangeCommits {
         head: resolved.range.head.to_string(),
         from: resolved.range.from.to_string(),
-        head_checked_out: diff::is_checked_out(repo_path, resolved.range.head),
+        head_checked_out: resolved.head_checked_out,
     })
     .expect("RangeCommits is always serializable");
     let with_commits = |mut value: serde_json::Value| {
@@ -539,7 +539,7 @@ fn range_file_response(
     let Some(changed) = files.iter().find(|f| f.path == file_path) else {
         let bytes = diff::file_at_commit(repo_path, resolved.range.head, file_path)?
             .ok_or(DiffFileError::NotFound("file not found"))?;
-        let is_binary = bytes.contains(&0);
+        let is_binary = diff::is_binary_bytes(&bytes);
         let file = RichDiffFileInfo {
             path: file_path.to_string_lossy().into_owned(),
             old_path: None,

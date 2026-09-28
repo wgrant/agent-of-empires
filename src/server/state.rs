@@ -45,17 +45,52 @@ pub(super) struct ChangedFilesEntry {
 
 pub const CHANGED_FILES_TTL: std::time::Duration = std::time::Duration::from_millis(1500);
 
-/// Commit ranges whose file lists are kept; past it the cache starts over.
+/// Most commit ranges, and most files across them, whose lists are kept.
 const RANGE_FILES_CAP: usize = 64;
+const RANGE_FILES_TOTAL_CAP: usize = 200_000;
+
+type RangeKey = (String, crate::git::diff::CommitRange);
 
 /// File lists of commit ranges, keyed by repo and resolved commits. A range
-/// between two commits never changes, so an entry needs no expiry.
-pub(super) type RangeFilesCache = std::sync::Mutex<
-    std::collections::HashMap<
-        (String, crate::git::diff::CommitRange),
-        Vec<crate::git::diff::DiffFile>,
-    >,
->;
+/// between two commits never changes, so an entry needs no expiry; the least
+/// recently used go when the cache is full.
+#[derive(Default)]
+pub(super) struct RangeFilesCache {
+    entries: std::collections::HashMap<RangeKey, (u64, Vec<crate::git::diff::DiffFile>)>,
+    tick: u64,
+}
+
+impl RangeFilesCache {
+    fn get(&mut self, key: &RangeKey) -> Option<Vec<crate::git::diff::DiffFile>> {
+        self.tick += 1;
+        let tick = self.tick;
+        self.entries.get_mut(key).map(|(used, files)| {
+            *used = tick;
+            files.clone()
+        })
+    }
+
+    fn insert(&mut self, key: RangeKey, files: Vec<crate::git::diff::DiffFile>) {
+        self.tick += 1;
+        self.entries.insert(key, (self.tick, files));
+        let total = |entries: &std::collections::HashMap<RangeKey, (u64, Vec<_>)>| {
+            entries.values().map(|(_, f)| f.len()).sum::<usize>()
+        };
+        while self.entries.len() > RANGE_FILES_CAP
+            || (self.entries.len() > 1 && total(&self.entries) > RANGE_FILES_TOTAL_CAP)
+        {
+            let Some(oldest) = self
+                .entries
+                .iter()
+                .min_by_key(|(_, (used, _))| *used)
+                .map(|(key, _)| key.clone())
+            else {
+                break;
+            };
+            self.entries.remove(&oldest);
+        }
+    }
+}
 
 /// Per-profile entry tracking a live `FileWatchService` subscription and the
 /// `tokio::spawn`ed forwarder that drains its receiver into `AppState::disk_changed`.
@@ -151,7 +186,7 @@ pub struct AppState {
     /// burst of file switches reuses one branch scan. See `ChangedFilesEntry`.
     pub(super) changed_files_cache:
         std::sync::RwLock<std::collections::HashMap<(String, String), ChangedFilesEntry>>,
-    pub(super) range_files_cache: RangeFilesCache,
+    pub(super) range_files_cache: std::sync::Mutex<RangeFilesCache>,
     /// Broadcasts session status transitions to consumers (currently the push-notification
     /// module).
     pub status_tx: broadcast::Sender<StatusChange>,
@@ -261,14 +296,10 @@ impl AppState {
                 .unwrap_or_else(|p| p.into_inner())
         };
         if let Some(files) = lock().get(&key) {
-            return Ok((resolved, files.clone()));
+            return Ok((resolved, files));
         }
         let files = crate::git::diff::range_changed_files(repo_path, resolved.range)?;
-        let mut cache = lock();
-        if cache.len() >= RANGE_FILES_CAP {
-            cache.clear();
-        }
-        cache.insert(key, files.clone());
+        lock().insert(key, files.clone());
         Ok((resolved, files))
     }
 
@@ -366,5 +397,56 @@ mod tests {
                 .contains_key("held-key"),
             "a key with a live holder must survive pruning"
         );
+    }
+}
+
+#[cfg(test)]
+mod range_files_cache_tests {
+    use super::*;
+
+    /// Past either cap the least recently used range goes, never all of them.
+    #[test]
+    fn the_least_recently_used_range_goes_first() {
+        let key = |n: u8| {
+            let oid = git2::Oid::from_bytes(&[n; 20]).unwrap();
+            (
+                "/repo".to_string(),
+                crate::git::diff::CommitRange {
+                    from: oid,
+                    head: oid,
+                },
+            )
+        };
+        let files = |count: usize| {
+            vec![
+                crate::git::diff::DiffFile {
+                    path: "a".into(),
+                    old_path: None,
+                    status: crate::git::diff::FileStatus::Added,
+                    additions: 1,
+                    deletions: 0,
+                };
+                count
+            ]
+        };
+        let mut cache = RangeFilesCache::default();
+        for n in 0..RANGE_FILES_CAP as u8 {
+            cache.insert(key(n), files(1));
+        }
+        assert!(cache.get(&key(0)).is_some());
+        cache.insert(key(200), files(1));
+        assert_eq!(cache.entries.len(), RANGE_FILES_CAP);
+        assert!(cache.get(&key(0)).is_some(), "used lately, so kept");
+        assert!(cache.get(&key(1)).is_none(), "the least recently used went");
+
+        let mut cache = RangeFilesCache::default();
+        cache.insert(key(1), files(RANGE_FILES_TOTAL_CAP / 2));
+        cache.insert(key(2), files(RANGE_FILES_TOTAL_CAP / 2));
+        cache.insert(key(3), files(10));
+        assert!(cache.get(&key(1)).is_none());
+        assert!(cache.get(&key(2)).is_some() && cache.get(&key(3)).is_some());
+        // A single oversized range still caches.
+        cache.insert(key(4), files(RANGE_FILES_TOTAL_CAP + 1));
+        assert_eq!(cache.entries.len(), 1);
     }
 }
