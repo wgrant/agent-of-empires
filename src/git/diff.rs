@@ -1,4 +1,12 @@
-//! Diffs between a branch or commit and the working directory.
+//! Diffs between a branch or commit and the working directory, or between
+//! two commits (see [`range`]).
+
+mod range;
+
+pub use range::{
+    file_at_commit, file_at_revision, range_changed_files, range_file_contents, resolve_range,
+    CommitRange, ResolvedRange,
+};
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -95,12 +103,48 @@ pub fn compute_changed_files(repo_path: &Path, base_branch: &str) -> Result<Vec<
 
     // Get diff from base tree to working directory (includes index)
     let diff = repo.diff_tree_to_workdir_with_index(Some(&base_tree), Some(&mut opts))?;
+    let mut files = files_of_diff(diff)?;
 
+    // Append conflicted files from the index (not visible via diff_tree_to_workdir_with_index)
+    let index = repo.index()?;
+    if index.has_conflicts() {
+        for conflict in index.conflicts()? {
+            let conflict = conflict?;
+            let path = conflict
+                .our
+                .as_ref()
+                .or(conflict.their.as_ref())
+                .or(conflict.ancestor.as_ref())
+                .and_then(|entry| std::str::from_utf8(&entry.path).ok())
+                .map(PathBuf::from);
+
+            if let Some(path) = path {
+                if !files.iter().any(|f| f.path == path) {
+                    files.push(DiffFile {
+                        path,
+                        old_path: None,
+                        status: FileStatus::Conflicted,
+                        additions: 0,
+                        deletions: 0,
+                    });
+                }
+            }
+        }
+    }
+
+    // Sort by path for consistent ordering
+    files.sort_by(|a, b| a.path.cmp(&b.path));
+
+    Ok(files)
+}
+
+/// The files a diff changes, with renames and copies detected and each
+/// file's added and deleted line counts, unsorted.
+fn files_of_diff(mut diff: git2::Diff<'_>) -> Result<Vec<DiffFile>> {
     // Find renames/copies
     let mut find_opts = git2::DiffFindOptions::new();
     find_opts.renames(true);
     find_opts.copies(true);
-    let mut diff = diff;
     diff.find_similar(Some(&mut find_opts))?;
 
     let mut files = Vec::new();
@@ -154,37 +198,6 @@ pub fn compute_changed_files(repo_path: &Path, base_branch: &str) -> Result<Vec<
             deletions,
         });
     }
-
-    // Append conflicted files from the index (not visible via diff_tree_to_workdir_with_index)
-    let index = repo.index()?;
-    if index.has_conflicts() {
-        for conflict in index.conflicts()? {
-            let conflict = conflict?;
-            let path = conflict
-                .our
-                .as_ref()
-                .or(conflict.their.as_ref())
-                .or(conflict.ancestor.as_ref())
-                .and_then(|entry| std::str::from_utf8(&entry.path).ok())
-                .map(PathBuf::from);
-
-            if let Some(path) = path {
-                if !files.iter().any(|f| f.path == path) {
-                    files.push(DiffFile {
-                        path,
-                        old_path: None,
-                        status: FileStatus::Conflicted,
-                        additions: 0,
-                        deletions: 0,
-                    });
-                }
-            }
-        }
-    }
-
-    // Sort by path for consistent ordering
-    files.sort_by(|a, b| a.path.cmp(&b.path));
-
     Ok(files)
 }
 
