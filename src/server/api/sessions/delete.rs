@@ -144,7 +144,7 @@ async fn purge_session_artifacts(
                     }
                 }
                 state.acp_supervisor.forget_session(id);
-                state.acp_event_store.delete_session(id);
+                state.session_service.delete_session_events(id);
 
                 tokio::task::spawn_blocking(move || committed.finish())
                     .await

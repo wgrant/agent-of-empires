@@ -1309,12 +1309,8 @@ mod tests {
 
             // The daemon's control cache folded the same log.
             let control_cache = crate::acp::control_cache::ControlStateCache::new();
-            control_cache.get_or_hydrate(&live_id, || {
-                let mut reduced = crate::acp::state::AcpState::new(
-                    crate::acp::state::AcpSessionId(live_id.clone()),
-                    crate::acp::state::AgentName("claude".into()),
-                    None,
-                );
+            let claude = (crate::acp::state::AgentName("claude".into()), None);
+            control_cache.get_or_hydrate(&live_id, claude, |mut reduced| {
                 let mut last_seq = 0;
                 for (seq, event) in store.replay_from(&live_id, 0) {
                     let _ = reduced.apply_event(event);

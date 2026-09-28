@@ -1065,6 +1065,13 @@ impl SessionService {
             .unwrap_or_default()
     }
 
+    /// Drop a session's event log and the control state folded from it, so
+    /// nothing reads the old conversation back.
+    pub(crate) fn delete_session_events(&self, id: &str) {
+        self.acp_event_store.delete_session(id);
+        self.acp_control_cache.forget(id);
+    }
+
     /// The daemon's live control state for a session, folded once at the publish choke
     /// point and hydrated from the event log on a cache miss.
     pub(crate) async fn fold_control_state(&self, id: &str) -> crate::acp::state::AcpState {
@@ -1087,7 +1094,7 @@ impl SessionService {
         &self,
         id: &str,
     ) -> Option<(crate::acp::state::AcpState, u64)> {
-        use crate::acp::state::{AcpSessionId, AcpState, AgentName};
+        use crate::acp::state::AgentName;
         let (agent, model) = {
             let instances = self.instances.read().await;
             instances
@@ -1107,8 +1114,7 @@ impl SessionService {
         // The hydrate closure runs under the cache's per-session lock and does a locking
         // SQLite scan, so the whole thing goes off the runtime rather than just the scan.
         tokio::task::spawn_blocking(move || {
-            cache.get_or_hydrate(&sid.clone(), || {
-                let mut reduced = AcpState::new(AcpSessionId(sid.clone()), agent, model);
+            cache.get_or_hydrate(&sid.clone(), (agent, model), |mut reduced| {
                 let mut last_seq = 0;
                 for (seq, event) in store.replay_from(&sid, 0) {
                     let _ = reduced.apply_event(event);
