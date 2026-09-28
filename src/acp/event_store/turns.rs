@@ -316,12 +316,12 @@ impl EventStore {
             "SELECT json_extract(event_json, '$.ElicitationRequested.elicitation.nonce') AS nonce
              FROM acp_events
              WHERE session_id = ?1
-               AND json_extract(event_json, '$.ElicitationRequested') IS NOT NULL
+               AND discriminant = 'ElicitationRequested'
                AND json_extract(event_json, '$.ElicitationRequested.elicitation.nonce') NOT IN (
                    SELECT json_extract(event_json, '$.ElicitationResolved.nonce')
                    FROM acp_events
                    WHERE session_id = ?1
-                     AND json_extract(event_json, '$.ElicitationResolved') IS NOT NULL
+                     AND discriminant = 'ElicitationResolved'
                )",
             "unresolved_elicitation_nonces",
             session_id,

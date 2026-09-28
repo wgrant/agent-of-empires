@@ -2,9 +2,6 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Duration;
-
-use tokio::time::timeout;
 
 use super::{is_resumable, query_store, AppState, ResumeOutcome};
 use crate::acp::supervisor::{
@@ -204,8 +201,8 @@ async fn attach_live_runner(
         sandbox,
         reservation,
     );
-    match timeout(Duration::from_secs(3), attach).await {
-        Ok(Ok(())) => {
+    match attach.await {
+        Ok(()) => {
             // Flagged only once attached: a failed attach respawns on the current binary.
             if decision == AdoptDecision::AdoptStaleForDrain {
                 service.acp_supervisor.mark_build_respawn_pending(id);
@@ -219,20 +216,20 @@ async fn attach_live_runner(
             );
             AttachAttempt::Attached
         }
-        Ok(Err(SupervisorError::SpawnCancelled(_))) => AttachAttempt::Cancelled,
-        Ok(Err(SupervisorError::AlreadyRunning(_))) => {
+        Err(SupervisorError::SpawnCancelled(_)) => AttachAttempt::Cancelled,
+        Err(SupervisorError::AlreadyRunning(_)) => {
             tracing::debug!(target: "acp.supervisor", session = %id, "another resume path owns the worker");
             AttachAttempt::OwnedElsewhere
         }
-        Ok(Err(e)) => {
+        Err(SupervisorError::RunnerUnresponsive(_)) => {
+            tracing::warn!(target: "acp.supervisor", session = %id, "runner did not answer the attach handshake; terminating it and falling back to fresh spawn");
+            worker_registry::terminate_and_wait(id).await;
+            AttachAttempt::Failed { timed_out: true }
+        }
+        Err(e) => {
             tracing::warn!(target: "acp.supervisor", session = %id, "attach failed; terminating the worker and falling back to fresh spawn: {e}");
             worker_registry::terminate_and_wait(id).await;
             AttachAttempt::Failed { timed_out: false }
-        }
-        Err(_) => {
-            tracing::warn!(target: "acp.supervisor", session = %id, "attach timed out after 3s; terminating the worker and falling back to fresh spawn");
-            worker_registry::terminate_and_wait(id).await;
-            AttachAttempt::Failed { timed_out: true }
         }
     }
 }
@@ -594,6 +591,8 @@ pub(super) async fn respawn_drained_stale_workers(state: &Arc<AppState>) {
 mod tests {
     use super::super::test_fixtures::{structured_instance, test_state};
     use super::*;
+    use std::time::Duration;
+    use tokio::time::timeout;
 
     #[tokio::test]
     async fn build_spawn_request_reads_live_session_fields() {
@@ -866,8 +865,16 @@ mod tests {
             matches!(attached, Ok(Ok(_))),
             "the prompt wake connects to the live runner's control socket"
         );
-        let _ = runner.kill();
-        let _ = runner.wait();
+        // It never answers the handshake, so it is terminated for a fresh spawn.
+        let exited = timeout(
+            Duration::from_secs(15),
+            tokio::task::spawn_blocking(move || runner.wait()),
+        )
+        .await;
+        assert!(
+            matches!(exited, Ok(Ok(Ok(_)))),
+            "a runner that does not answer is terminated"
+        );
     }
 
     /// A session that left the live set after the snapshot is never spawned.

@@ -25,6 +25,9 @@ use crate::process::worker_registry;
 use crate::session::config::repo_config::resolve_config_with_repo_or_warn;
 use crate::session::SandboxInfo;
 
+/// How long a runner left by a previous daemon has to answer the attach handshake.
+const ATTACH_HANDSHAKE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
+
 fn yolo_environment(agent: &str, enabled: bool) -> Option<(String, String)> {
     if !enabled {
         return None;
@@ -427,6 +430,13 @@ impl<S: BroadcastSink> Supervisor<S> {
 
     /// Install a launched client under the reservation's lease, or retire it
     /// when a stop or a newer epoch won the race. Returns the installed client.
+    ///
+    /// Retires the previous worker's requests before this worker's events
+    /// publish; once the drain starts, this worker's own are in the log and
+    /// the sweep can no longer tell them apart. The lease makes this the only
+    /// install for the session, so that store work runs before `workers` is
+    /// taken: concurrent reattaches after a restart would otherwise queue
+    /// behind each other's queries.
     async fn install_worker(
         &self,
         session_id: &str,
@@ -439,20 +449,10 @@ impl<S: BroadcastSink> Supervisor<S> {
         let (identity, context_reset) = installation;
         let lease = reservation.lease().clone();
         let client = Arc::new(client);
-        let mut workers = self.workers.lock().await;
-        let install = lock_recover(&self.lifecycle).install(&lease, identity);
-        if let Err(refusal) = install {
-            drop(workers);
-            let _ = client.shutdown().await;
-            drop(client);
-            return Err(self.retire_refused_install(&lease, identity, refusal).await);
-        }
-        // Retire the previous worker's requests before this worker's events
-        // publish; once the drain starts, this worker's own are in the log and
-        // the sweep can no longer tell them apart. A replaced worker took its
-        // tailers and background work with it, while an attached worker is
-        // alive and its tailed sub-agents resume (#4001). The resume send is
-        // a real await, so it runs after `workers` is dropped.
+        // A replaced worker took its tailers and background work with it,
+        // while an attached worker is alive and its tailed sub-agents resume
+        // (#4001). The resume send is a real await, so it runs after
+        // `workers` is dropped.
         self.cancel_orphaned_requests(session_id);
         let resumable = if matches!(kind, WorkerKind::Attached) {
             collect_resumable_background_agent_launches(&*self.sink, &self.next_seqs, session_id)
@@ -461,6 +461,14 @@ impl<S: BroadcastSink> Supervisor<S> {
             stop_orphaned_background_work_on(&*self.sink, &self.next_seqs, session_id);
             Vec::new()
         };
+        let mut workers = self.workers.lock().await;
+        let install = lock_recover(&self.lifecycle).install(&lease, identity);
+        if let Err(refusal) = install {
+            drop(workers);
+            let _ = client.shutdown().await;
+            drop(client);
+            return Err(self.retire_refused_install(&lease, identity, refusal).await);
+        }
         if context_reset.is_some() {
             lock_recover(&self.pending_context_resets).insert(session_id.to_string());
         }
@@ -691,7 +699,12 @@ impl<S: BroadcastSink> Supervisor<S> {
             None
         };
 
-        let mut client = AcpClient::attach(
+        let unresolved_subagents = self.sink.unresolved_native_subagents(&session_id);
+        let unfinished_workflows = self.sink.unfinished_workflow_ids(&session_id);
+        // Bounds only the runner's own answer. Installing the worker after
+        // it runs to completion however long the daemon takes, so a slow
+        // install never kills a runner that answered.
+        let attach = AcpClient::attach(
             record.socket_path.clone(),
             cwd,
             additional_dirs,
@@ -701,10 +714,12 @@ impl<S: BroadcastSink> Supervisor<S> {
             sandbox_resources,
             agent_key,
             record.source_profile.clone(),
-            self.sink.unresolved_native_subagents(&session_id),
-            self.sink.unfinished_workflow_ids(&session_id),
-        )
-        .await?;
+            unresolved_subagents,
+            unfinished_workflows,
+        );
+        let mut client = tokio::time::timeout(ATTACH_HANDSHAKE_TIMEOUT, attach)
+            .await
+            .map_err(|_| SupervisorError::RunnerUnresponsive(session_id.clone()))??;
 
         let inbound = client
             .take_inbound()
@@ -1687,6 +1702,217 @@ mod tests {
         }
     }
 
+    /// A stand-in runner that answers the attach handshake, with its registry
+    /// record saved; the handshake task ends when the daemon side closes and
+    /// signals once the session is ready.
+    fn fake_attachable_runner(
+        session_id: &str,
+        dir: &std::path::Path,
+    ) -> (
+        std::process::Child,
+        tokio::task::JoinHandle<()>,
+        tokio::sync::oneshot::Receiver<()>,
+    ) {
+        use crate::acp::control_protocol::{self, ControlBody};
+        use std::os::unix::process::CommandExt as _;
+
+        // `is_record_live` requires a live pid; `sleep 60` as its own process
+        // group leader keeps the cleanup kill off the test process.
+        let fake_runner = std::process::Command::new("sleep")
+            .arg("60")
+            .process_group(0)
+            .spawn()
+            .expect("spawn stand-in runner");
+
+        let socket = dir.join(format!("{session_id}.sock"));
+        let control_socket = crate::process::worker::control_socket_sibling(&socket);
+        let listener = tokio::net::UnixListener::bind(&control_socket).unwrap();
+        let session_id_owned = session_id.to_string();
+        let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
+        let runner_handshake = tokio::spawn(async move {
+            let mut ready_tx = Some(ready_tx);
+            let (mut peer, _) = listener.accept().await.unwrap();
+            control_protocol::write_frame(
+                &mut peer,
+                &ControlBody::Hello {
+                    control_protocol_version: control_protocol::CONTROL_PROTOCOL_VERSION,
+                    session_id: session_id_owned,
+                },
+            )
+            .await
+            .unwrap();
+            while let Some(frame) = control_protocol::read_frame(&mut peer).await.unwrap() {
+                let reply = match frame {
+                    ControlBody::Attach { .. } => continue,
+                    ControlBody::Initialize { .. } => ControlBody::Initialized {
+                        result: serde_json::json!({
+                            "protocolVersion": 1, "agentCapabilities": {}
+                        }),
+                    },
+                    ControlBody::ResumeSession => ControlBody::SessionReady {
+                        acp_session_id: "acp-sid".into(),
+                        result: serde_json::json!({}),
+                    },
+                    frame => panic!("unexpected attach handshake frame: {frame:?}"),
+                };
+                let ready = matches!(reply, ControlBody::SessionReady { .. });
+                control_protocol::write_frame(&mut peer, &reply)
+                    .await
+                    .unwrap();
+                if ready {
+                    if let Some(tx) = ready_tx.take() {
+                        let _ = tx.send(());
+                    }
+                }
+            }
+        });
+
+        // An agent key absent from the registry resolves to
+        // `ExpectedAgent::Other`, skipping the per-adapter compat gate: this
+        // fixture tests attach wiring, not agent compatibility.
+        let record = worker_registry::WorkerRecord::new(
+            session_id.to_string(),
+            fake_runner.id(),
+            socket,
+            "test-agent-acp".into(),
+            "test-agent".into(),
+            dir.to_path_buf(),
+            None,
+            vec![],
+            vec![],
+            Some("acp-sid".into()),
+            None,
+        );
+        worker_registry::save(&record).unwrap();
+        (fake_runner, runner_handshake, ready_rx)
+    }
+
+    /// Installing an attached worker can queue behind other sessions after a
+    /// restart; only the runner's own answer is timed, so a runner that
+    /// answered is attached, not killed, however long the install waits.
+    #[tokio::test]
+    async fn a_slow_install_never_times_out_a_runner_that_answered() {
+        let session_id = "sess-slow-install";
+        let (_home, tmp) = isolate_home();
+        let (sink, store, _rx, _store_tmp) = channel_sink();
+        let (mut fake_runner, runner_handshake, ready) =
+            fake_attachable_runner(session_id, tmp.path());
+        let sup = Supervisor::new(sink);
+        sup.hydrate_seqs(store.all_session_seqs());
+
+        // `begin_resume` takes `workers` too, so reserve before holding it.
+        let ResumeReservationOutcome::Reserved(reservation) = sup
+            .begin_resume(session_id, ResumeKind::Attach)
+            .await
+            .unwrap()
+        else {
+            panic!("the session is free to attach");
+        };
+        let queue = sup.workers.lock().await;
+        let attach = sup.attach_inner(
+            session_id.to_string(),
+            tmp.path().to_path_buf(),
+            vec![],
+            false,
+            None,
+            reservation,
+        );
+        tokio::pin!(attach);
+        tokio::time::timeout(std::time::Duration::from_secs(10), async {
+            tokio::select! {
+                result = &mut attach => panic!("attach finished while install was held: {result:?}"),
+                _ = ready => {}
+            }
+            // Hold the install past the handshake budget.
+            let held = tokio::time::sleep(
+                ATTACH_HANDSHAKE_TIMEOUT + std::time::Duration::from_millis(500),
+            );
+            tokio::select! {
+                result = &mut attach => panic!("attach finished while install was held: {result:?}"),
+                _ = held => {}
+            }
+        })
+        .await
+        .expect("the runner answers the handshake");
+        drop(queue);
+        tokio::time::timeout(std::time::Duration::from_secs(5), attach)
+            .await
+            .expect("attach completes once the install runs")
+            .expect("a runner that answered is attached");
+        assert!(
+            fake_runner.try_wait().unwrap().is_none(),
+            "the runner is still alive"
+        );
+
+        runner_handshake.abort();
+        let _ = fake_runner.kill();
+        let _ = fake_runner.wait();
+    }
+
+    /// Blocks the install's first store read until released, reporting when it starts.
+    struct GatedSink {
+        entered: std::sync::Mutex<Option<std::sync::mpsc::Sender<()>>>,
+        release: std::sync::Mutex<std::sync::mpsc::Receiver<()>>,
+    }
+
+    impl BroadcastSink for GatedSink {
+        fn publish(&self, _session_id: &str, _seq: u64, _event: &Event) {}
+        fn unresolved_approval_nonces(
+            &self,
+            _session_id: &str,
+        ) -> Vec<crate::acp::approvals::Nonce> {
+            if let Some(entered) = self.entered.lock().unwrap().take() {
+                let _ = entered.send(());
+                let _ = self.release.lock().unwrap().recv();
+            }
+            Vec::new()
+        }
+    }
+
+    /// The install's store reads run before it takes `workers`, so one
+    /// session's slow query never holds up another's install.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn install_reads_the_store_without_holding_workers() {
+        let session_id = "sess-install-io";
+        let (_home, tmp) = isolate_home();
+        let (entered_tx, entered_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let sink = Arc::new(GatedSink {
+            entered: std::sync::Mutex::new(Some(entered_tx)),
+            release: std::sync::Mutex::new(release_rx),
+        });
+        let (mut fake_runner, runner_handshake, _) = fake_attachable_runner(session_id, tmp.path());
+        let sup = Arc::new(Supervisor::new(sink));
+        let attaching = {
+            let sup = Arc::clone(&sup);
+            let dir = tmp.path().to_path_buf();
+            tokio::spawn(async move {
+                sup.attach(session_id.to_string(), dir, vec![], false, None)
+                    .await
+            })
+        };
+        tokio::task::spawn_blocking(move || {
+            entered_rx.recv_timeout(std::time::Duration::from_secs(10))
+        })
+        .await
+        .unwrap()
+        .expect("the install reads the store");
+        assert!(
+            sup.workers.try_lock().is_ok(),
+            "workers is free during the store read"
+        );
+        release_tx.send(()).unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(10), attaching)
+            .await
+            .expect("attach completes")
+            .unwrap()
+            .expect("the runner is attached");
+
+        runner_handshake.abort();
+        let _ = fake_runner.kill();
+        let _ = fake_runner.wait();
+    }
+
     /// One `attach` fixture for the survivor and untrackable cases below: a
     /// fake runner behind a control socket, an unresolved
     /// `BackgroundAgentLaunched` (+`Progress`) already on disk, and the
@@ -1696,9 +1922,7 @@ mod tests {
         session_id: &str,
         output_file: &str,
     ) -> AttachBackgroundAgentFixture {
-        use crate::acp::control_protocol::{self, ControlBody};
         use crate::acp::state::BackgroundAgentStatus;
-        use std::os::unix::process::CommandExt as _;
 
         let (_home, tmp) = isolate_home();
         let (sink, store, rx, _store_tmp) = channel_sink();
@@ -1729,67 +1953,7 @@ mod tests {
             },
         );
 
-        // `is_record_live` requires a live pid; `sleep 60` as its own process
-        // group leader keeps the cleanup kill off the test process.
-        let fake_runner = std::process::Command::new("sleep")
-            .arg("60")
-            .process_group(0)
-            .spawn()
-            .expect("spawn stand-in runner");
-
-        let socket = tmp.path().join(format!("{session_id}.sock"));
-        let control_socket = crate::process::worker::control_socket_sibling(&socket);
-        let listener = tokio::net::UnixListener::bind(&control_socket).unwrap();
-        let session_id_owned = session_id.to_string();
-        let runner_handshake = tokio::spawn(async move {
-            let (mut peer, _) = listener.accept().await.unwrap();
-            control_protocol::write_frame(
-                &mut peer,
-                &ControlBody::Hello {
-                    control_protocol_version: control_protocol::CONTROL_PROTOCOL_VERSION,
-                    session_id: session_id_owned,
-                },
-            )
-            .await
-            .unwrap();
-            while let Some(frame) = control_protocol::read_frame(&mut peer).await.unwrap() {
-                let reply = match frame {
-                    ControlBody::Attach { .. } => continue,
-                    ControlBody::Initialize { .. } => ControlBody::Initialized {
-                        result: serde_json::json!({
-                            "protocolVersion": 1, "agentCapabilities": {}
-                        }),
-                    },
-                    ControlBody::ResumeSession => ControlBody::SessionReady {
-                        acp_session_id: "acp-sid".into(),
-                        result: serde_json::json!({}),
-                    },
-                    frame => panic!("unexpected attach handshake frame: {frame:?}"),
-                };
-                control_protocol::write_frame(&mut peer, &reply)
-                    .await
-                    .unwrap();
-            }
-        });
-
-        // An agent key absent from the registry resolves to
-        // `ExpectedAgent::Other`, skipping the per-adapter compat gate: this
-        // fixture tests attach wiring, not agent compatibility.
-        let record = worker_registry::WorkerRecord::new(
-            session_id.to_string(),
-            fake_runner.id(),
-            socket,
-            "test-agent-acp".into(),
-            "test-agent".into(),
-            tmp.path().to_path_buf(),
-            None,
-            vec![],
-            vec![],
-            Some("acp-sid".into()),
-            None,
-        );
-        worker_registry::save(&record).unwrap();
-
+        let (fake_runner, runner_handshake, _) = fake_attachable_runner(session_id, tmp.path());
         let sup = Supervisor::new(sink);
         sup.hydrate_seqs(store.all_session_seqs());
         tokio::time::timeout(
