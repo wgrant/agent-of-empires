@@ -88,6 +88,9 @@ pub enum SupervisorError {
     Blocked(crate::session::StartBlocked),
     #[error("session {0:?} no longer exists")]
     SessionGone(String),
+    /// A runner left by a previous daemon did not answer the attach handshake in time.
+    #[error("the structured view runner for session {0:?} did not answer the attach handshake")]
+    RunnerUnresponsive(String),
 }
 
 /// What the caller does with prompt text after it was published.
