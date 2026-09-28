@@ -157,7 +157,7 @@ pub(super) fn compact_completed_stream_runs(
             }
         };
         // A subagent's events interleave with the main agent's text without ending it.
-        if matches!(event, Event::SubagentUpdate { .. }) {
+        if matches!(event, Event::SubagentUpdate { .. }) || event.is_ambient() {
             continue;
         }
         let Some((kind, text)) = stream_chunk(&event) else {
@@ -615,6 +615,8 @@ mod tests {
                 id: "a1".into(),
                 event: Box::new(agent_chunk("sub")),
             },
+            // Nor does a token count, which the finished turn drops.
+            Event::TurnOutputTokens { tokens: 5 },
             agent_chunk("lo"),
             Event::AgentThoughtChunk {
                 text: "plan".into(),
@@ -634,7 +636,7 @@ mod tests {
         let replay = store.replay_from("s-1", 0);
         assert_eq!(
             replay.iter().map(|(seq, _)| *seq).collect::<Vec<_>>(),
-            vec![2, 3, 5, 6, 7]
+            vec![2, 4, 6, 7, 8]
         );
         assert!(matches!(
             &replay[1].1,
@@ -642,7 +644,7 @@ mod tests {
         ));
         assert!(matches!(
             &replay[2].1,
-            Event::AgentThoughtSnapshot { block_start_seq: 4, text } if text == "planning"
+            Event::AgentThoughtSnapshot { block_start_seq: 5, text } if text == "planning"
         ));
         assert!(matches!(&replay[3].1, Event::AgentMessageChunk { text } if text == "Done"));
     }
