@@ -259,6 +259,21 @@ describe("ShikiSyntaxHighlighter stale-content transitions (#3974)", () => {
     vi.mocked(highlightSnippet).mockResolvedValue("<pre><code>highlighted</code></pre>");
   });
 
+  it("shows a code review's findings JSON as their list, and other JSON as code", () => {
+    const Comp = getSyntaxHighlighter();
+    const findings = JSON.stringify([
+      { file: "calc.py", line: 14, summary: "Indexes past the end", failure_scenario: "IndexError" },
+    ]);
+    const { container, getAllByTestId, rerender } = render(<Comp language="json" code={findings} />);
+    expect(getAllByTestId("review-finding")[0]!.textContent).toContain("calc.py:14");
+    expect(container.querySelector("pre")).toBeNull();
+    for (const code of ['[{"file": "a.py"}]', "[]", "not json"]) {
+      rerender(<Comp language="json" code={code} />);
+      expect(container.querySelector('[data-testid="review-finding"]')).toBeNull();
+      expect(container.textContent).toContain(code);
+    }
+  });
+
   it("clears highlighted output when a reused block transitions to unfenced text", async () => {
     vi.mocked(highlightSnippet).mockResolvedValueOnce('<pre class="shiki">highlighted rust</pre>');
     const Comp = getSyntaxHighlighter();

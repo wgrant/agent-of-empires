@@ -2,6 +2,8 @@
 // Transcript markdown: assistant-ui's streaming-aware MarkdownTextPrimitive with
 // shiki code blocks and transcript-aware links, images, tables, and callouts.
 
+import { parseReviewFindingsText } from "../../lib/reviewFindings";
+import { FindingsList } from "./ReviewFindingsCard";
 import { MarkdownTextPrimitive } from "@assistant-ui/react-markdown";
 import type { SyntaxHighlighterProps } from "@assistant-ui/react-markdown";
 import * as React from "react";
@@ -175,6 +177,12 @@ function ShikiSyntaxHighlighter({ language, code }: SyntaxHighlighterProps) {
   }, [language, code, inputKey, shiki.theme, shiki.appearance]);
 
   const html = result && result.key === inputKey ? result.html : null;
+  // A code review's findings printed as JSON read better as the list they are.
+  const findings = useMemo(
+    () => (!language || language === "json" ? parseReviewFindingsText(code) : null),
+    [language, code],
+  );
+  if (findings) return <FindingsList findings={findings.findings} />;
 
   // The em-based size carries no line-height, so set it or code inherits the looser body leading.
   return (

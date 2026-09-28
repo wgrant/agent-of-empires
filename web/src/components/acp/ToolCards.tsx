@@ -1,5 +1,7 @@
 // Tool-call card dispatch: picks the purpose-built card for each call.
 
+import { parseReviewFindings } from "../../lib/reviewFindings";
+import { ReviewFindingsCard } from "./ReviewFindingsCard";
 import type { ReactNode } from "react";
 
 import { parseJsonObject, pickStr } from "../../lib/acpArgs";
@@ -87,6 +89,10 @@ function renderToolCard(tool: ToolCall, result: ActivityRow | undefined, profile
     const todos = classifyTodoWrite(tool, profile);
     if (todos.isTodoWrite) return <TodoUpdateCard tool={tool} result={result} todos={todos.todos} />;
   }
+  // Claude Code's ReportFindings, the structured result of a code review.
+  const findings =
+    tool.kind === "think" || tool.kind === "other" ? parseReviewFindings(parseJsonObject(tool.args_preview)) : null;
+  if (findings) return <ReviewFindingsCard tool={tool} result={result} report={findings} />;
   const special =
     (capabilities.wakeup ? classifySpecialTool(tool, specialTitles.scheduleNames, SCHEDULE_TOOLS) : null) ??
     classifySpecialTool(tool, specialTitles.harnessNames, HARNESS_TOOLS);
