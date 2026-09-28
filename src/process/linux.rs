@@ -266,6 +266,74 @@ fn parse_psi_some_avg10(psi: &str) -> Option<f32> {
     None
 }
 
+/// Launches a process in its own scope under the systemd user manager, if the
+/// daemon runs as a user service. A system service's children stay with it:
+/// the user manager can stop with the user's last login.
+pub(super) fn user_scope_launcher(unit: &str) -> Option<super::OutsideServiceLauncher> {
+    let cgroup = fs::read_to_string("/proc/self/cgroup").ok()?;
+    if !runs_under_user_manager(&cgroup, nix::unistd::getuid().as_raw()) {
+        return None;
+    }
+    let runtime_dir = std::env::var_os("XDG_RUNTIME_DIR")?;
+    let (program, expands_environment) = systemd_run().as_ref()?;
+    let unit: String = unit
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let mut args: Vec<std::ffi::OsString> = ["--user", "--scope", "--quiet", "--collect"]
+        .iter()
+        .map(Into::into)
+        .collect();
+    // From systemd 254 it expands `$VAR` in the command unless told not to.
+    if *expands_environment {
+        args.push("--expand-environment=no".into());
+    }
+    args.push(format!("--unit={unit}.scope").into());
+    args.push("--".into());
+    let mut env = vec![("XDG_RUNTIME_DIR".into(), runtime_dir)];
+    if let Some(bus) = std::env::var_os("DBUS_SESSION_BUS_ADDRESS") {
+        env.push(("DBUS_SESSION_BUS_ADDRESS".into(), bus));
+    }
+    Some(super::OutsideServiceLauncher {
+        program: program.clone(),
+        args,
+        env,
+    })
+}
+
+/// Whether the cgroup v2 path lies in the user manager's tree.
+fn runs_under_user_manager(cgroup: &str, uid: u32) -> bool {
+    let manager = format!("user@{uid}.service");
+    cgroup
+        .lines()
+        .filter_map(|line| line.strip_prefix("0::"))
+        .any(|path| path.split('/').any(|part| part == manager))
+}
+
+/// `systemd-run` on PATH, and whether it expands the environment in commands.
+fn systemd_run() -> &'static Option<(std::path::PathBuf, bool)> {
+    static FOUND: std::sync::OnceLock<Option<(std::path::PathBuf, bool)>> =
+        std::sync::OnceLock::new();
+    FOUND.get_or_init(|| {
+        let program = std::env::split_paths(&std::env::var_os("PATH")?)
+            .map(|dir| dir.join("systemd-run"))
+            .find(|path| path.is_file())?;
+        let version = super::command_output(program.to_str()?, &["--version"])?;
+        Some((program, systemd_version(&version).is_some_and(|v| v >= 254)))
+    })
+}
+
+/// The version number from `systemd-run --version`'s `systemd 259 (...)`.
+fn systemd_version(output: &str) -> Option<u32> {
+    output.split_whitespace().nth(1)?.parse().ok()
+}
+
 /// GNOME's clock setting, else the time format of the locale the host runs
 /// in, unless that is the unset C locale.
 pub(super) fn host_hour_cycle() -> Option<&'static str> {
@@ -424,6 +492,30 @@ impl super::SleepInhibit for SystemdInhibitor {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_a_user_service_starts_runners_in_their_own_scope() {
+        for (cgroup, expected) in [
+            (
+                "0::/user.slice/user-1000.slice/user@1000.service/app.slice/aoe.service\n",
+                true,
+            ),
+            ("0::/system.slice/aoe.service\n", false),
+            ("0::/user.slice/user-1000.slice/session-3.scope\n", false),
+            (
+                "0::/user.slice/user-1001.slice/user@1001.service/app.slice/aoe.service\n",
+                false,
+            ),
+            ("12:pids:/user@1000.service\n0::/init.scope\n", false),
+        ] {
+            assert_eq!(runs_under_user_manager(cgroup, 1000), expected, "{cgroup}");
+        }
+        assert_eq!(
+            systemd_version("systemd 259 (259.5-0ubuntu3.4)\n+PAM"),
+            Some(259)
+        );
+        assert_eq!(systemd_version("garbage"), None);
+    }
 
     #[test]
     fn test_parse_stat_field() {
