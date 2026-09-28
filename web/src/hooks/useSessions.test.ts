@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { useSessions } from "./useSessions";
@@ -34,4 +34,29 @@ describe("useSessions / loaded sentinel", () => {
       expect(result.current.error).toBe(error);
     },
   );
+});
+
+describe("useSessions / a session this client created", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it("survives a poll that began before it existed, and is listed once when the server has it", async () => {
+    vi.useFakeTimers();
+    const session = (id: string) => ({ id, title: id }) as unknown as api.SessionsEnvelope["sessions"][number];
+    let resolveStale: (value: api.SessionsEnvelope | null) => void = () => {};
+    const fetchSessions = vi
+      .spyOn(api, "fetchSessions")
+      .mockImplementationOnce(() => new Promise((r) => (resolveStale = r)));
+    const { result } = renderHook(() => useSessions());
+
+    act(() => result.current.injectSession(session("new")));
+    await act(async () => resolveStale({ sessions: [session("old")], workspace_ordering: [] }));
+    expect(result.current.sessions.map((s) => s.id)).toEqual(["new", "old"]);
+
+    fetchSessions.mockResolvedValue({ sessions: [session("new"), session("old")], workspace_ordering: [] });
+    await act(async () => vi.advanceTimersByTimeAsync(3000));
+    expect(result.current.sessions.map((s) => s.id)).toEqual(["new", "old"]);
+  });
 });

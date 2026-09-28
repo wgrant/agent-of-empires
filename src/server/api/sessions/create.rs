@@ -1064,6 +1064,11 @@ pub async fn create_session(
                 crate::claude_settings::read_tui_fullscreen(),
             );
             resp.warnings = outcome.warnings;
+            // The worker starts right after this reply; saying so keeps the
+            // dashboard from showing the new session as having nothing running.
+            if outcome.worker_starting {
+                resp.acp_worker_state = crate::daemon::AcpWorkerState::Resuming;
+            }
             // Carry the resolved tie value (#1927); list_sessions' overlay does
             // not run here, so a managed worktree would report untied until the
             // next list refresh.

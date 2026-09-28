@@ -5,6 +5,8 @@ import { setServerDown } from "../lib/connectionState";
 
 const POLL_INTERVAL = 3000;
 const LOCAL_ORDERING_WINDOW_MS = 4000;
+/** How long a session this client created stays listed while the server's list lacks it. */
+const INJECTED_SESSION_GRACE_MS = 30_000;
 
 export function useSessions() {
   const [sessions, setSessions] = useState<SessionResponse[]>([]);
@@ -13,8 +15,12 @@ export function useSessions() {
   const [loaded, setLoaded] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastLocalOrderingAtRef = useRef<number>(0);
+  // A poll already in flight when a session is created answers without it;
+  // keeping it until a list includes it stops the new session vanishing.
+  const injectedRef = useRef(new Map<string, { session: SessionResponse; at: number }>());
 
   const injectSession = useCallback((session: SessionResponse) => {
+    injectedRef.current.set(session.id, { session, at: Date.now() });
     // Single-session responses omit rate-limit fields; keep the last known values (#3514).
     setSessions((prev) => {
       if (prev.some((s) => s.id === session.id)) return prev;
@@ -28,7 +34,13 @@ export function useSessions() {
 
   const applyResult = useCallback((data: SessionsEnvelope | null) => {
     if (data !== null) {
-      setSessions(data.sessions);
+      const listed = new Set(data.sessions.map((s) => s.id));
+      const kept: SessionResponse[] = [];
+      for (const [id, { session, at }] of injectedRef.current) {
+        if (listed.has(id) || Date.now() - at > INJECTED_SESSION_GRACE_MS) injectedRef.current.delete(id);
+        else kept.push(session);
+      }
+      setSessions(kept.length > 0 ? [...kept, ...data.sessions] : data.sessions);
       // Ignore server ordering while a local drag's PUT may still be landing.
       if (Date.now() - lastLocalOrderingAtRef.current > LOCAL_ORDERING_WINDOW_MS) {
         setWorkspaceOrdering(data.workspace_ordering);
