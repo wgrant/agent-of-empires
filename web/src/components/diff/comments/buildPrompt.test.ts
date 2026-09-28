@@ -31,6 +31,25 @@ describe("buildCommentsMarkdown", () => {
     [{}, false, "```rust\nlet x = 1;\n```"],
     [{ repoName: "repoA" }, true, "### [repoA] `src/foo.rs`"],
     [{ range: { base: "layer", head: "top" } }, false, "### `src/foo.rs` line 10 (new side of `layer...top`)"],
+    [
+      {
+        range: {
+          base: "layer",
+          head: "top",
+          headCommit: "0123456789abcdef",
+          fromCommit: "fedcba9876543210",
+          headCheckedOut: false,
+        },
+      },
+      false,
+      "(new side of `layer...top` at `0123456`, from merge-base `fedcba9`; `top` is not checked out in this worktree)",
+    ],
+    [
+      { range: { base: "layer", head: "top", headCommit: "0123456789abcdef", headCheckedOut: true } },
+      false,
+      "(new side of `layer...top` at `0123456`)\n",
+    ],
+    [{ side: "old", base: "layer" }, false, "line 10 (old side, against `layer`)"],
   ])("renders %j (multi=%s) with %j", (c, multi, expected) => {
     expect(md(c, multi)).toContain(expected);
   });
@@ -108,5 +127,27 @@ describe("parseDiffCommentsSentinel", () => {
 
   it.each(["hello world", "<!-- aoe:diff-comments:v1 not-base64!@# -->\nbody\n"])("returns null for %j", (text) => {
     expect(parseDiffCommentsSentinel(text)).toBeNull();
+  });
+});
+
+describe("comments from several views", () => {
+  it("name each one's view once any is off the default view", () => {
+    const out = buildCommentsMarkdown(
+      [
+        mk({ id: "live", filePath: "a.rs" }),
+        mk({ id: "old", filePath: "b.rs", side: "old" }),
+        mk({ id: "ranged", filePath: "c.rs", range: { base: "main", head: "layer" } }),
+      ],
+      { isMultiRepo: false },
+    );
+    expect(out).toContain("`a.rs` line 10 (new side, working tree)");
+    expect(out).toContain("`b.rs` line 10 (old side, against the session's base)");
+    expect(out).toContain("`c.rs` line 10 (new side of `main...layer`)");
+  });
+
+  it("keep the plain side when every comment is on the default view", () => {
+    const out = buildCommentsMarkdown([mk({ side: "old" }), mk({ id: "c2" })], { isMultiRepo: false });
+    expect(out).toContain("line 10 (old)");
+    expect(out).toContain("line 10 (new)");
   });
 });

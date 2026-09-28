@@ -4787,6 +4787,12 @@ mod diff_views {
             "the commit, not the uncommitted edit"
         );
         assert_eq!(body["file"]["status"], "added");
+        let rev = |name: &str| run_git(dir.path(), &["rev-parse", name]).trim().to_string();
+        assert_eq!(body["range_commits"]["head"], rev("top"));
+        assert_eq!(body["range_commits"]["from"], rev("layer"));
+        assert_eq!(body["range_commits"]["head_checked_out"], true);
+        let (_, other) = file("b.txt", "layer").await;
+        assert_eq!(other["range_commits"]["head_checked_out"], false);
         let (_, body) = file("b.txt", "top").await;
         assert_eq!(
             (body["old_content"].as_str(), body["new_content"].as_str()),

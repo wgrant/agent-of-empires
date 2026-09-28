@@ -1,5 +1,6 @@
 import type { DiffComment } from "./types";
 import { isWellFormed } from "./storage";
+import { commentViewLabel } from "./views";
 
 interface BuildOpts {
   /** Prefix each heading with `[repoName]`. */
@@ -60,9 +61,11 @@ export function parseDiffCommentsSentinel(text: string): DiffCommentsCardPayload
 
 /** Sorted comment sections, each with a fence longer than any backtick run in its snippet. */
 export function buildCommentsMarkdown(comments: DiffComment[], opts: BuildOpts): string {
+  // Once any comment is off the default view, each names the view it is on.
+  const labelled = comments.some((c) => c.range || c.base);
   return [...comments]
     .sort(compareComments)
-    .map((c) => renderComment(c, opts.isMultiRepo))
+    .map((c) => renderComment(c, opts.isMultiRepo, labelled))
     .join("\n\n---\n\n");
 }
 
@@ -89,13 +92,13 @@ export function buildDiffCommentsPrompt(
   };
 }
 
-function renderComment(c: DiffComment, isMultiRepo: boolean): string {
+function renderComment(c: DiffComment, isMultiRepo: boolean, labelled: boolean): string {
   const repo = isMultiRepo && c.repoName ? `[${c.repoName}] ` : "";
   const range = c.startLine === c.endLine ? `line ${c.startLine}` : `lines ${c.startLine}-${c.endLine}`;
   const longestTicks = Math.max(0, ...(c.capturedSnippet.match(/`+/g) ?? []).map((m) => m.length));
   const fence = "`".repeat(Math.max(3, longestTicks + 1));
   const codeBlock = `${fence}${c.language ?? ""}\n${c.capturedSnippet}\n${fence}`;
-  const where = c.range ? `${c.side} side of \`${c.range.base}...${c.range.head}\`` : c.side;
+  const where = labelled ? commentViewLabel(c) : c.side;
   return `### ${repo}\`${c.filePath}\` ${range} (${where})\n\n${codeBlock}\n\n${c.body.trim()}`;
 }
 

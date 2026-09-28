@@ -131,6 +131,19 @@ pub struct RichFileContentsResponse {
     pub is_binary: bool,
     /// True if the file was too large to send inline; contents are omitted.
     pub truncated: bool,
+    /// For a commit range, the commits it resolved to, so a comment made on it
+    /// can tell later whether its lines still mean the same.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub range_commits: Option<RangeCommits>,
+}
+
+#[derive(Serialize)]
+pub struct RangeCommits {
+    pub head: String,
+    /// The merge-base the range diffs from.
+    pub from: String,
+    /// Whether the worktree has `head` checked out, so edits there change it.
+    pub head_checked_out: bool,
 }
 
 /// Caps for the contents-based diff endpoint. The client renders with a
@@ -464,6 +477,7 @@ fn contents_response(
             patch: String::new(),
             is_binary,
             truncated: true,
+            range_commits: None,
         }
     } else {
         RichFileContentsResponse {
@@ -473,6 +487,7 @@ fn contents_response(
             patch,
             is_binary,
             truncated: false,
+            range_commits: None,
         }
     };
     serde_json::to_value(resp).expect("RichFileContentsResponse is always serializable")
@@ -511,6 +526,16 @@ fn range_file_response(
     use crate::git::diff;
     relative_repo_path(file_path).map_err(DiffFileError::BadRequest)?;
     let (resolved, files) = state.range_files_cached(repo_path, base, head)?;
+    let commits = serde_json::to_value(RangeCommits {
+        head: resolved.range.head.to_string(),
+        from: resolved.range.from.to_string(),
+        head_checked_out: diff::is_checked_out(repo_path, resolved.range.head),
+    })
+    .expect("RangeCommits is always serializable");
+    let with_commits = |mut value: serde_json::Value| {
+        value["range_commits"] = commits.clone();
+        value
+    };
     let Some(changed) = files.iter().find(|f| f.path == file_path) else {
         let bytes = diff::file_at_commit(repo_path, resolved.range.head, file_path)?
             .ok_or(DiffFileError::NotFound("file not found"))?;
@@ -528,13 +553,13 @@ fn range_file_response(
         } else {
             String::from_utf8_lossy(&bytes).into_owned()
         };
-        return Ok(contents_response(
+        return Ok(with_commits(contents_response(
             file,
             String::new(),
             content,
             String::new(),
             is_binary,
-        ));
+        )));
     };
     let contents = diff::range_file_contents(repo_path, resolved.range, changed)?;
     let file = RichDiffFileInfo {
@@ -545,13 +570,13 @@ fn range_file_response(
         deletions: changed.deletions,
         repo_name,
     };
-    Ok(contents_response(
+    Ok(with_commits(contents_response(
         file,
         contents.old_content,
         contents.new_content,
         contents.patch,
         contents.is_binary,
-    ))
+    )))
 }
 
 pub async fn session_diff_file(

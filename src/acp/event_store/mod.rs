@@ -403,6 +403,7 @@ mod tests {
             created_at: "2026-01-01T00:00:00Z".into(),
             updated_at: None,
             range: None,
+            base: None,
         };
         let prompt = |repo_name| Event::UserDiffCommentsPrompt {
             intro: "Hey:".into(),
