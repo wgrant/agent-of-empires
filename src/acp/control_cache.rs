@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use super::state::{AcpState, Event};
+use super::state::{AcpSessionId, AcpState, AgentName, Event};
 
 /// A session's folded control state and how far it has been folded.
 #[derive(Debug, Clone)]
@@ -11,7 +11,13 @@ struct Cached {
     state: AcpState,
     /// Highest seq folded in.
     last_seq: u64,
+    /// The agent and model the fold was seeded with. The session's own
+    /// record supersedes them until an event replaces them.
+    seed: Identity,
 }
+
+/// A session's agent and model, as its record names them.
+pub type Identity = (AgentName, Option<String>);
 
 /// Per-session slot.
 type Slot = Arc<Mutex<Option<Cached>>>;
@@ -105,21 +111,36 @@ impl ControlStateCache {
     }
 
     /// The session's control state and the last seq folded into it, running
-    /// `hydrate` on a miss.
+    /// `hydrate` over a state seeded with `identity` on a miss. On a hit the
+    /// agent and model follow `identity` unless an event has replaced them.
     pub fn get_or_hydrate(
         &self,
         session_id: &str,
-        hydrate: impl FnOnce() -> (AcpState, u64),
+        identity: Identity,
+        hydrate: impl FnOnce(AcpState) -> (AcpState, u64),
     ) -> (AcpState, u64) {
         let slot = self.slot(session_id);
         let mut guard = lock(&slot);
-        if let Some(cached) = guard.as_ref() {
+        if let Some(cached) = guard.as_mut() {
+            if cached.state.agent.0 == cached.seed.0 .0 {
+                cached.state.agent = identity.0.clone();
+            }
+            if cached.state.model == cached.seed.1 {
+                cached.state.model = identity.1.clone();
+            }
+            cached.seed = identity;
             return (cached.state.clone(), cached.last_seq);
         }
-        let (state, last_seq) = hydrate();
+        let seeded = AcpState::new(
+            AcpSessionId(session_id.to_string()),
+            identity.0.clone(),
+            identity.1.clone(),
+        );
+        let (state, last_seq) = hydrate(seeded);
         *guard = Some(Cached {
             state: state.clone(),
             last_seq,
+            seed: identity,
         });
         (state, last_seq)
     }
@@ -139,10 +160,9 @@ impl ControlStateCache {
 mod tests {
     use super::*;
     use crate::acp::state::test_support::{prompt, stopped};
-    use crate::acp::state::{AcpSessionId, AgentName};
 
-    fn seed() -> AcpState {
-        AcpState::new(AcpSessionId("s-1".into()), AgentName("claude".into()), None)
+    fn claude() -> Identity {
+        (AgentName("claude".into()), None)
     }
 
     /// An un-hydrated session must not start folding mid-stream: the
@@ -156,9 +176,9 @@ mod tests {
         assert!(!cache.is_hydrated("s-1"));
 
         let mut hydrated = 0;
-        let (state, _) = cache.get_or_hydrate("s-1", || {
+        let (state, _) = cache.get_or_hydrate("s-1", claude(), |seeded| {
             hydrated += 1;
-            (seed(), 0)
+            (seeded, 0)
         });
         assert!(!state.turn_active);
         assert_eq!(hydrated, 1);
@@ -171,14 +191,14 @@ mod tests {
         let mut hydrate_count = || {
             hydrates += 1;
         };
-        cache.get_or_hydrate("s-1", || {
+        cache.get_or_hydrate("s-1", claude(), |seeded| {
             hydrate_count();
-            (seed(), 0)
+            (seeded, 0)
         });
         cache.apply_if_cached("s-1", 1, &prompt("go"));
-        let (state, _) = cache.get_or_hydrate("s-1", || {
+        let (state, _) = cache.get_or_hydrate("s-1", claude(), |seeded| {
             hydrate_count();
-            (seed(), 0)
+            (seeded, 0)
         });
         assert!(state.turn_active, "the live fold reached the reader");
 
@@ -207,9 +227,9 @@ mod tests {
         cache.apply_if_cached("s-1", 2, &approval);
         cache.apply_if_cached("s-1", 2, &approval);
         cache.apply_if_cached("s-1", 3, &stopped("end_turn"));
-        let (state, _) = cache.get_or_hydrate("s-1", || {
+        let (state, _) = cache.get_or_hydrate("s-1", claude(), |seeded| {
             hydrate_count();
-            (seed(), 0)
+            (seeded, 0)
         });
         assert!(!state.turn_active);
         assert_eq!(state.pending_approvals.len(), 1);
@@ -237,10 +257,49 @@ mod tests {
         ];
         for (name, first, second, still_cached) in cases {
             let cache = ControlStateCache::new();
-            cache.get_or_hydrate("s-1", || (seed(), first - 1));
+            cache.get_or_hydrate("s-1", claude(), |seeded| (seeded, first - 1));
             cache.apply_if_cached("s-1", first, &prompt("go"));
             cache.apply_if_cached("s-1", second, &stopped("end_turn"));
             assert_eq!(cache.is_hydrated("s-1"), still_cached, "{name}");
         }
+    }
+
+    /// The session's record names its agent and model; an event that
+    /// switched the agent outranks the record until the record changes too.
+    #[test]
+    fn identity_follows_the_record_unless_an_event_replaced_it() {
+        let cache = ControlStateCache::new();
+        let identity = |agent: &str, model: Option<&str>| -> Identity {
+            (AgentName(agent.into()), model.map(str::to_owned))
+        };
+        cache.get_or_hydrate("s-1", identity("claude", Some("opus")), |seeded| {
+            (seeded, 0)
+        });
+        let (state, _) = cache.get_or_hydrate(
+            "s-1",
+            identity("claude", Some("sonnet")),
+            |_| unreachable!(),
+        );
+        assert_eq!(
+            state.model.as_deref(),
+            Some("sonnet"),
+            "a model picked since"
+        );
+
+        cache.apply_if_cached(
+            "s-1",
+            1,
+            &Event::AgentSwitched {
+                from: "claude".into(),
+                to: "codex".into(),
+                reason: "rate limit".into(),
+            },
+        );
+        let (state, _) = cache.get_or_hydrate(
+            "s-1",
+            identity("claude", Some("sonnet")),
+            |_| unreachable!(),
+        );
+        assert_eq!(state.agent.0, "codex", "the switch outranks a stale record");
     }
 }
