@@ -1201,6 +1201,7 @@ pub(super) fn public_create_session_error(e: &anyhow::Error) -> String {
             GitError::WorktreeAlreadyExists(_)
             | GitError::BranchAlreadyCheckedOut(_)
             | GitError::BranchNotFound(_)
+            | GitError::RevisionNotFound(_)
             | GitError::NotAGitRepo => return git_err.to_string(),
             // Raw command output / libgit2 / IO: not safe to expose.
             GitError::WorktreeCommandFailed(_)
