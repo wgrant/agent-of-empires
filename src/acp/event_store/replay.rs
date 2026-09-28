@@ -153,7 +153,7 @@ fn decode_rows(
     (out, last_scanned_seq, has_more)
 }
 
-fn recorded_at(created_at_ms: i64) -> DateTime<Utc> {
+pub(super) fn recorded_at(created_at_ms: i64) -> DateTime<Utc> {
     DateTime::from_timestamp_millis(created_at_ms).unwrap_or_default()
 }
 

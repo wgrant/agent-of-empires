@@ -6,6 +6,7 @@ mod rate_limit;
 mod replay;
 mod search;
 mod stream_compaction;
+mod transcripts;
 mod turns;
 mod wakeups;
 
@@ -24,6 +25,7 @@ pub use background::BackgroundActivity;
 pub use rate_limit::RateLimitPark;
 pub use replay::{ReplayPage, StoredEvent};
 pub use search::ContentHit;
+pub use transcripts::{RowChanges, TranscriptHold};
 pub use turns::{TerminalRepairProbe, UnresolvedBackgroundAgentLaunch};
 
 /// Lifecycle and metadata events that neither count as session activity nor
@@ -59,6 +61,7 @@ pub struct EventStore {
     search_conn: Mutex<Connection>,
     schema: events::Schema,
     max_events_per_session: usize,
+    transcripts: transcripts::TranscriptCache,
 }
 
 impl EventStore {
@@ -96,6 +99,7 @@ impl EventStore {
             search_conn: Mutex::new(search_conn),
             schema,
             max_events_per_session,
+            transcripts: transcripts::TranscriptCache::default(),
         })
     }
 
@@ -191,6 +195,13 @@ impl EventStore {
                 warn!(target: "acp.event_store", %error, "failed to reclaim free pages");
             }
         }
+        // After releasing the connection: building a fold reads the log while
+        // holding the fold, so taking them the other way round would deadlock.
+        drop(conn);
+        if inserted != 0 {
+            self.transcripts
+                .observe(session_id, seq, event, replay::recorded_at(now_ms));
+        }
         Ok(())
     }
 
@@ -253,6 +264,7 @@ impl EventStore {
     /// Drop every event for a session, cascading to its attachment blobs.
     pub fn delete_session(&self, session_id: &str) {
         let deleted = events::delete_topic(&self.conn(), &self.schema, session_id);
+        self.transcripts.forget(session_id);
         debug!(
             target: "acp.event_store",
             session = %session_id,
