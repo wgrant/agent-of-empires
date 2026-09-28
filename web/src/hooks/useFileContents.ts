@@ -5,6 +5,9 @@ import type { RichFileContentsResponse } from "../lib/types";
 
 interface UseFileContentsResult {
   contents: RichFileContentsResponse | null;
+  /** Whether `contents` is for the file and view asked for now, rather than the
+   *  previous one kept on screen while it loads. */
+  current: boolean;
   loading: boolean;
   error: string | null;
   refresh: () => void;
@@ -78,7 +81,18 @@ export function useFileContents(
       ? cacheKeyFor(sessionId, filePath, repoName, externalRevision, { base: viewBase, head: viewHead })
       : null;
 
-  const [contents, setContents] = useState<RichFileContentsResponse | null>(() => (key ? cacheGet(key) : null));
+  // What the shown contents are for, revision aside: a refresh of the same file
+  // and view keeps them current while it loads.
+  const subject = JSON.stringify([sessionId, filePath, repoName ?? null, viewBase ?? null, viewHead ?? null]);
+  const [shown, setShown] = useState<{ contents: RichFileContentsResponse | null; subject: string }>(() => ({
+    contents: key ? cacheGet(key) : null,
+    subject,
+  }));
+  const contents = shown.contents;
+  const setContents = useCallback(
+    (value: RichFileContentsResponse | null, of: string) => setShown({ contents: value, subject: of }),
+    [],
+  );
   const [loading, setLoading] = useState(key != null && cacheGet(key) == null);
   const [error, setError] = useState<string | null>(null);
   const [handledKey, setHandledKey] = useState(key);
@@ -88,12 +102,12 @@ export function useFileContents(
     setHandledKey(key);
     setError(null);
     if (!key) {
-      setContents(null);
+      setContents(null, subject);
       setLoading(false);
     } else {
       const hit = cacheGet(key);
       if (hit) {
-        setContents(hit);
+        setContents(hit, subject);
         setLoading(false);
       } else {
         setLoading(true);
@@ -104,7 +118,7 @@ export function useFileContents(
   const fetchContents = useCallback(
     async (force = false) => {
       if (!sessionId || !filePath) {
-        setContents(null);
+        setContents(null, subject);
         setLoading(false);
         return;
       }
@@ -113,7 +127,7 @@ export function useFileContents(
       if (!force) {
         const hit = cacheGet(k);
         if (hit) {
-          setContents(hit);
+          setContents(hit, subject);
           setLoading(false);
           setError(null);
           return;
@@ -126,13 +140,13 @@ export function useFileContents(
       if (reqId !== requestIdRef.current) return;
       if (resp) {
         cachePut(k, resp);
-        setContents(resp);
+        setContents(resp, subject);
       } else {
         setError("Failed to load file contents");
       }
       setLoading(false);
     },
-    [sessionId, filePath, repoName, externalRevision, viewBase, viewHead],
+    [sessionId, filePath, repoName, externalRevision, viewBase, viewHead, subject, setContents],
   );
 
   useEffect(() => {
@@ -144,5 +158,5 @@ export function useFileContents(
 
   const refresh = useCallback(() => fetchContents(true), [fetchContents]);
 
-  return { contents, loading, error, refresh };
+  return { contents, current: shown.subject === subject, loading, error, refresh };
 }

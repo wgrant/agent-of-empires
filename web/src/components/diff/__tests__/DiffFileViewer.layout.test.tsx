@@ -41,6 +41,7 @@ const mock = vi.hoisted(() => ({
 vi.mock("../../../hooks/useFileContents", () => ({
   useFileContents: () => ({
     contents: mock.contents,
+    current: true,
     loading: mock.contents === undefined,
     error: null,
     refresh: vi.fn(),

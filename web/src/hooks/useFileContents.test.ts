@@ -80,11 +80,29 @@ describe("useFileContents", () => {
     rerender({ path: "b.ts", rev: undefined });
     expect(shown()).toBe("alpha");
     expect(result.current.loading).toBe(true);
+    expect(result.current.current).toBe(false);
 
     await waitFor(() => expect(spy).toHaveBeenCalledTimes(2));
     resolve(contents("b.ts", "beta"));
     await waitFor(() => expect(shown()).toBe("beta"));
     expect(result.current.loading).toBe(false);
+    expect(result.current.current).toBe(true);
+  });
+
+  it("keeps contents current through a refresh, not through a change of view", async () => {
+    spy.mockResolvedValueOnce(contents("a.ts", "live"));
+    const hook = renderHook(
+      ({ rev, head }) => useFileContents("s1", "a.ts", undefined, rev, head ? { base: "main", head } : undefined),
+      { initialProps: { rev: 1, head: undefined as string | undefined } },
+    );
+    await waitFor(() => expect(hook.result.current.contents?.new_content).toBe("live"));
+    spy.mockImplementationOnce(() => new Promise(() => {}));
+    hook.rerender({ rev: 2, head: undefined });
+    expect(hook.result.current.current).toBe(true);
+    spy.mockImplementationOnce(() => new Promise(() => {}));
+    hook.rerender({ rev: 2, head: "layer" });
+    expect(hook.result.current.contents?.new_content).toBe("live");
+    expect(hook.result.current.current).toBe(false);
   });
 
   it("surfaces an error when the fetch returns no contents", async () => {

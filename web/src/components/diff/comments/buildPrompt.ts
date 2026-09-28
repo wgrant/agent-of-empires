@@ -5,6 +5,9 @@ import { commentViewLabel } from "./views";
 interface BuildOpts {
   /** Prefix each heading with `[repoName]`. */
   isMultiRepo: boolean;
+  /** Name each comment's view even if all were made on the default view, as
+   *  when the one open now is another and hides them. */
+  labelViews?: boolean;
 }
 
 const DEFAULT_OUTRO = "Please address these comments.";
@@ -62,7 +65,7 @@ export function parseDiffCommentsSentinel(text: string): DiffCommentsCardPayload
 /** Sorted comment sections, each with a fence longer than any backtick run in its snippet. */
 export function buildCommentsMarkdown(comments: DiffComment[], opts: BuildOpts): string {
   // Once any comment is off the default view, each names the view it is on.
-  const labelled = comments.some((c) => c.range || c.base);
+  const labelled = opts.labelViews || comments.some((c) => c.range || c.base);
   return [...comments]
     .sort(compareComments)
     .map((c) => renderComment(c, opts.isMultiRepo, labelled))

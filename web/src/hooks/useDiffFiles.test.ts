@@ -137,4 +137,20 @@ describe("useDiffFiles", () => {
     rerender({ id: null });
     expect(result.current).toMatchObject({ files: [], revision: 0, loading: false });
   });
+
+  it("drops the old view's files at once when the view changes, then shows the new view's", async () => {
+    mockGetFiles.mockResolvedValueOnce(resp({ files: [file("live.ts")] }));
+    const hook = renderHook(({ views }) => useDiffFiles("s1", true, views), {
+      initialProps: { views: null as string | null },
+    });
+    await waitFor(() => expect(hook.result.current.files.map((f) => f.path)).toEqual(["live.ts"]));
+    const range = JSON.stringify([{ base: "main", head: "layer" }]);
+    mockGetFiles.mockResolvedValueOnce(resp({ files: [file("layer.ts")] }));
+    hook.rerender({ views: range });
+    expect(hook.result.current.files).toEqual([]);
+    expect(hook.result.current.loading).toBe(true);
+    await waitFor(() => expect(hook.result.current.files.map((f) => f.path)).toEqual(["layer.ts"]));
+    expect(mockGetFiles).toHaveBeenLastCalledWith("s1", range);
+    expect(hook.result.current.loading).toBe(false);
+  });
 });
