@@ -327,6 +327,29 @@ pub fn boot_id() -> Option<String> {
     }
 }
 
+/// How to start a process that must outlive the daemon's service: this program
+/// and these arguments go before its own argv, with this environment.
+pub struct OutsideServiceLauncher {
+    pub program: std::path::PathBuf,
+    pub args: Vec<std::ffi::OsString>,
+    pub env: Vec<(std::ffi::OsString, std::ffi::OsString)>,
+}
+
+/// A launcher that runs a process in its own unit named `unit`, when the
+/// daemon runs as a systemd user service whose stop would otherwise kill
+/// everything it started; `None` to spawn it directly.
+pub fn outside_service_launcher(unit: &str) -> Option<OutsideServiceLauncher> {
+    #[cfg(target_os = "linux")]
+    {
+        linux::user_scope_launcher(unit)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = unit;
+        None
+    }
+}
+
 /// The host user's clock preference, `"h12"` or `"h23"`, when the desktop or
 /// locale states one. Browsers never expose an OS 24-hour setting, so the web
 /// UI falls back to this.

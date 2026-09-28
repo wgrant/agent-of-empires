@@ -124,7 +124,20 @@ pub(super) fn spawn_runner_detached(
             (None, None) => (config.spec.command.clone(), Vec::new()),
         };
 
-    let mut cmd = tokio::process::Command::new(&current_exe);
+    // Under a systemd user service the runner gets its own scope, so
+    // restarting the service does not kill it before a new daemon can reattach.
+    let launcher = crate::process::outside_service_launcher(&format!(
+        "aoe-runner-{session_id}-{}",
+        config.generation
+    ));
+    let mut cmd = match &launcher {
+        Some(launcher) => {
+            let mut cmd = tokio::process::Command::new(&launcher.program);
+            cmd.args(&launcher.args).arg(&current_exe);
+            cmd
+        }
+        None => tokio::process::Command::new(&current_exe),
+    };
     cmd.arg("__acp-runner")
         .arg("--socket")
         .arg(socket_path)
@@ -226,6 +239,9 @@ pub(super) fn spawn_runner_detached(
         // fixed container mount in build_sandbox_docker_argv (#2587).
         cmd.env(crate::session::artifacts::ARTIFACT_DIR_ENV, dir);
     }
+    if let Some(launcher) = &launcher {
+        cmd.envs(launcher.env.iter().map(|(key, value)| (key, value)));
+    }
     if !extra_path_dirs.is_empty() {
         // Prepend the resolved bin dirs so the adapter and its
         // `#!/usr/bin/env node` shim resolve against the same install.
@@ -259,6 +275,7 @@ pub(super) fn spawn_runner_detached(
         runner = %current_exe.display(),
         agent = %config.spec.command,
         resolved = %spawn_command,
+        own_scope = launcher.is_some(),
         "spawning detached structured view runner"
     );
 
