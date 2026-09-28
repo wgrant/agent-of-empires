@@ -4,6 +4,7 @@
 import { useAuiState } from "@assistant-ui/react";
 
 import { messageTimeLabel } from "../../lib/messageTime";
+import { formatDateTime } from "../../lib/timeFormat";
 
 const MARGIN =
   "group-data-[message-margin]/transcript:top-1 group-data-[message-margin]/transcript:right-full group-data-[message-margin]/transcript:left-auto group-data-[message-margin]/transcript:mt-0 group-data-[message-margin]/transcript:mr-3 group-data-[message-margin]/transcript:flex-col group-data-[message-margin]/transcript:items-end group-data-[message-margin]/transcript:gap-0";
@@ -15,7 +16,7 @@ export function MessageTime({ tapped, align }: { tapped: boolean; align: "start"
   return (
     <time
       dateTime={createdAt.toISOString()}
-      title={createdAt.toLocaleString()}
+      title={formatDateTime(createdAt)}
       data-testid="message-time"
       className={[
         "absolute top-full mt-0.5 flex gap-1 whitespace-nowrap font-mono text-[11px] leading-tight text-text-dim",

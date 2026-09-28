@@ -15,6 +15,7 @@ import { computeSessionRowTag, useSessionRowTagMode } from "../../lib/sessionRow
 import { PluginRowLine } from "../plugin/PluginSlots";
 import { formatDurationSecondsShort, formatSnoozeRemainingShort } from "./format";
 import type { RowModel } from "./rowModel";
+import { formatDateTime, formatTime } from "../../lib/timeFormat";
 
 const CHIP = "inline-flex shrink-0 items-center rounded border px-1 py-0 text-[10px]";
 const MUTED = "border-surface-700/40 bg-surface-800/40 font-mono font-medium text-text-dim";
@@ -115,9 +116,7 @@ function RateLimitBadge({ sessions }: { sessions: SessionResponse[] }) {
   if (!rateLimited) return null;
   const reset = rateLimited.resetsAt ? new Date(rateLimited.resetsAt) : null;
   const resetLabel =
-    reset && !Number.isNaN(reset.getTime())
-      ? reset.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-      : null;
+    reset && !Number.isNaN(reset.getTime()) ? formatTime(reset, { hour: "2-digit", minute: "2-digit" }) : null;
   const title = `Rate-limited${rateLimited.count > 1 ? ` (${rateLimited.count} sessions)` : ""}${resetLabel ? `; resets at ${resetLabel}` : ""}`;
   return (
     <Chip
@@ -179,7 +178,7 @@ export function RowTrailingBadges({ workspace, model }: { workspace: Workspace; 
       )}
       {!effectiveArchived && effectiveSnoozedUntil && (
         <Chip
-          title={`Snoozed until ${new Date(effectiveSnoozedUntil).toLocaleString()}`}
+          title={`Snoozed until ${formatDateTime(new Date(effectiveSnoozedUntil))}`}
           label="Snoozed"
           className={`${CHIP} gap-0.5 ${MUTED}`}
         >

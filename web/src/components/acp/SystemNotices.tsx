@@ -15,6 +15,7 @@ import {
   type SessionConnectionDiagnostics,
 } from "./status/connectionStatus";
 import type { ConversationSyncStatus } from "./status/conversationSyncStatus";
+import { formatTime } from "../../lib/timeFormat";
 
 /** Owns the rate-limit recovery modal toggle and hands its opener to `children`. */
 export function RateLimitRecoverySection({
@@ -57,7 +58,7 @@ function rateLimitWording(status: string): string {
 export function rateLimitDetail(limit: NonNullable<AcpState["rateLimit"]>): string {
   const reset = limit.resets_at === null ? null : new Date(limit.resets_at);
   return reset && !Number.isNaN(reset.getTime())
-    ? `Rate-limited (${limit.kind}); resets at ${reset.toLocaleTimeString()}.`
+    ? `Rate-limited (${limit.kind}); resets at ${formatTime(reset)}.`
     : `Rate-limited (${limit.kind}); ${rateLimitWording(limit.status)}`;
 }
 

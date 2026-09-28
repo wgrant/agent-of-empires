@@ -28,6 +28,7 @@ import { TOUR_ANCHORS, tourAnchor } from "../lib/tourSteps";
 import { PluginSettingsSections } from "./settings/PluginSettingsSections";
 import { SettingsHeader } from "./settings/SettingsHeader";
 import { StructuredViewDisplaySettings } from "./settings/StructuredViewDisplaySettings";
+import { TimeFormatSetting } from "./settings/TimeFormatSetting";
 import { ProfilesSection } from "./profiles/ProfilesSection";
 import { ProfileSelector } from "./settings/ProfileSelector";
 import { safeGetItem, safeSetItem } from "../lib/safeStorage";
@@ -594,14 +595,17 @@ export function SettingsView({
 
       case "theme":
         return (
-          <SchemaSection
-            section="theme"
-            schema={schema}
-            focusRequest={focusRequest}
-            values={(settings?.theme ?? {}) as Record<string, unknown>}
-            onSaveField={saveThemeField}
-            hideFields={cityhall ? CITYHALL_THEME_HIDDEN : undefined}
-          />
+          <div className="space-y-4">
+            <TimeFormatSetting />
+            <SchemaSection
+              section="theme"
+              schema={schema}
+              focusRequest={focusRequest}
+              values={(settings?.theme ?? {}) as Record<string, unknown>}
+              onSaveField={saveThemeField}
+              hideFields={cityhall ? CITYHALL_THEME_HIDDEN : undefined}
+            />
+          </div>
         );
       case "diff":
         return <DiffSettings />;
