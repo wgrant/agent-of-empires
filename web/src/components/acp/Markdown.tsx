@@ -16,6 +16,7 @@ import remarkGfm from "remark-gfm";
 import { writeClipboard } from "../../lib/clipboard";
 import { tableSource } from "../../lib/tableMarkdown";
 import { highlightSnippet } from "../../lib/snippetHighlighter";
+import { useReveal } from "../../hooks/useReveal";
 import { useShikiTheme } from "../../hooks/useShikiTheme";
 import { parseFileRef, resolveArtifactUrl, resolveToRepoRelative } from "../../lib/fileRef";
 import { useAcpFileRef } from "./AcpFileRefContext";
@@ -25,7 +26,8 @@ import { WrapLines, WrapToggle, useWrapState } from "./WrapToggle";
 
 interface Props {
   text: string;
-  /** Paced reveal, for the live streaming message only; history would otherwise type itself out. */
+  /** Paced reveal of text that arrives while mounted, for the live streaming
+   *  message only. Text present at mount shows at once. */
   smooth?: boolean;
   /** Single newlines as hard breaks, for user prompts typed in a textarea. Assistant
    *  text keeps soft breaks because models hard-wrap their markdown. */
@@ -41,13 +43,14 @@ const TableSourceContext = createContext<{ text: string; complete: boolean } | n
 
 export function Markdown({ text, smooth = false, breaks = false }: Props) {
   const remarkPlugins = useMemo(() => remarkPluginsFor(breaks), [breaks]);
+  const revealed = useReveal(text, smooth);
   // `smooth` is set only on the live streaming message, whose text can still grow.
   const tableContext = useMemo(() => ({ text, complete: !smooth }), [text, smooth]);
   return (
     <TableSourceContext.Provider value={tableContext}>
       <MarkdownTextPrimitive
-        preprocess={() => text}
-        smooth={smooth}
+        preprocess={() => revealed}
+        smooth={false}
         remarkPlugins={remarkPlugins}
         className="acp-markdown acp-markdown-body leading-relaxed"
         components={{
