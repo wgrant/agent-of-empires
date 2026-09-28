@@ -887,6 +887,18 @@ pub enum Event {
     },
 }
 
+impl Event {
+    /// Reported beside a reply without interrupting it.
+    pub fn is_ambient(&self) -> bool {
+        matches!(
+            self,
+            Event::TurnOutputTokens { .. }
+                | Event::PromptSuggested { .. }
+                | Event::ToolUseSummarized { .. }
+        )
+    }
+}
+
 impl AcpState {
     const MAX_RECENT_DIFFS: usize = 16;
 

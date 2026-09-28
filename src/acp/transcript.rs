@@ -323,7 +323,7 @@ impl TranscriptModel {
             }
             _ => None,
         };
-        if self.open_text_run.map(|(kind, _)| kind) != incoming_text_kind {
+        if !event.is_ambient() && self.open_text_run.map(|(kind, _)| kind) != incoming_text_kind {
             self.open_text_run = None;
         }
 
@@ -1680,6 +1680,27 @@ mod tests {
                 Some("Listed files")
             );
         }
+        // A token count or summary arriving mid-reply leaves it one message.
+        let reply = fold([
+            Event::AgentMessageChunk {
+                text: "is n".into(),
+            },
+            Event::TurnOutputTokens { tokens: 40 },
+            Event::ToolUseSummarized {
+                summary: "Listed files".into(),
+                tool_call_ids: vec!["t1".into()],
+            },
+            Event::AgentMessageChunk {
+                text: "early".into(),
+            },
+        ]);
+        let messages: Vec<_> = reply
+            .rows()
+            .iter()
+            .filter(|r| r.kind == TranscriptRowKind::Message)
+            .map(|r| r.text.as_str())
+            .collect();
+        assert_eq!(messages, ["is nearly"]);
         // A silent success stays out of view, as in Claude Code.
         let quiet = HookInfo {
             status: "success".into(),
