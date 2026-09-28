@@ -39,6 +39,13 @@ export function SecuritySettings() {
 
       {loadError && <p className="text-[13px] text-status-error mb-3">Could not load server status.</p>}
 
+      {about?.login_persistence_problem && (
+        <p data-testid="login-persistence-problem" className="text-[13px] text-status-waiting mb-3">
+          Signed-in devices will be asked for the passphrase again after every restart: the server cannot keep its login
+          sessions ({about.login_persistence_problem}).
+        </p>
+      )}
+
       <div className="rounded-lg border border-surface-700/50 bg-surface-900 px-4 py-2">
         <Row
           label="Auth mode"
