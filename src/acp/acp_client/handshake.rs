@@ -53,6 +53,8 @@ pub(super) fn initialize_params(extensions: ClientExtensions) -> serde_json::Val
     capabilities["_meta"]["terminal_output_delta"] = serde_json::json!(true);
     capabilities["_meta"]["aoe/sessionUpdates"] =
         serde_json::json!(super::extension_updates::AOE_SESSION_UPDATES);
+    // The web renders Claude Code's ReportFindings, so a code review reports through it.
+    capabilities["_meta"]["aoe/reportFindings"] = serde_json::json!(true);
     // JetBrains AIR names each opt-in; SDKs that strip unknown capability
     // fields keep `_meta`, so native subagents are declared both ways.
     let mut air = Vec::new();
@@ -141,6 +143,7 @@ mod tests {
             serde_json::json!({
                 "terminal_output_delta": true,
                 "aoe/sessionUpdates": ["hook_update", "prompt_suggestion", "tool_use_summary", "turn_output_tokens"],
+                "aoe/reportFindings": true,
             })
         );
         assert_eq!(params["clientInfo"]["name"], "agent-of-empires");
