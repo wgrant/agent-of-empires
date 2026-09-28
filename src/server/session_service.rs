@@ -1042,6 +1042,25 @@ impl SessionService {
     /// point and hydrated from the event log on a cache miss.
     pub(crate) async fn fold_control_state(&self, id: &str) -> crate::acp::state::AcpState {
         use crate::acp::state::{AcpSessionId, AcpState, AgentName};
+        match self.control_state_snapshot(id).await {
+            Some((state, _)) => state,
+            None => {
+                // The blocking pool panicked or shut down.
+                let mut fallback =
+                    AcpState::new(AcpSessionId(id.to_string()), AgentName(String::new()), None);
+                fallback.turn_active = true;
+                fallback
+            }
+        }
+    }
+
+    /// [`Self::fold_control_state`] with the last seq folded into it, or `None`
+    /// if the blocking pool failed.
+    pub(crate) async fn control_state_snapshot(
+        &self,
+        id: &str,
+    ) -> Option<(crate::acp::state::AcpState, u64)> {
+        use crate::acp::state::{AcpSessionId, AcpState, AgentName};
         let (agent, model) = {
             let instances = self.instances.read().await;
             instances
@@ -1072,13 +1091,7 @@ impl SessionService {
             })
         })
         .await
-        .unwrap_or_else(|_| {
-            // The blocking pool panicked or shut down.
-            let mut fallback =
-                AcpState::new(AcpSessionId(id.to_string()), AgentName(String::new()), None);
-            fallback.turn_active = true;
-            fallback
-        })
+        .ok()
     }
 
     /// Deliver one queued row and retire it only after `send_turn` succeeds.
