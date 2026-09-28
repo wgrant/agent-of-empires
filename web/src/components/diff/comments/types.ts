@@ -19,6 +19,13 @@ export interface DiffComment {
   /** ISO 8601. */
   createdAt: string;
   updatedAt?: string;
+  /** The commit range it was made on; its lines are then `head`'s, not the working tree's. */
+  range?: DiffCommentRange;
+}
+
+export interface DiffCommentRange {
+  base: string;
+  head: string;
 }
 
 export type DiffCommentDraft = Omit<DiffComment, "id" | "createdAt">;

@@ -54,6 +54,12 @@ Override the branch a repo diffs against when the eventual PR target differs fro
 - **TUI**: press `b` in the diff view.
 - **CLI**: `aoe session set-base <session> <branch>`, or `--clear` to drop it. In a multi-repo workspace pass `--repo <name>`; without it the command lists the repos and exits.
 
+## Commit ranges
+
+The web diff view can also show a commit range: what one commit adds over another, from their merge-base (git's `base...head`), with no working-tree changes. For a stacked branch this shows one layer's changes alone. A [plugin pane](../plugin-api.md#diff-targets) opens a range when you click one of its rows; the diff header then reads `base...head`, and **Working tree** returns to the usual view. In a multi-repo workspace a range applies to one repo, and the others stay live.
+
+A range is this browser's view only: other devices keep their own, and the session's base override is untouched. **Open file** opens the file as `head` has it. Comments made on a range name it in the prompt, so the agent knows the lines are `head`'s rather than the working tree's, and show inline only while that range is open.
+
 ## Configuration
 
 ```toml

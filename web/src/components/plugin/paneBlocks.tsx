@@ -4,6 +4,8 @@ import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { ArrowUpRight, ChevronRight } from "lucide-react";
 
 import { invokePluginAction, type PluginUiTone } from "../../lib/api";
+import { parseDiffTarget, type DiffTarget } from "../../lib/diffViews";
+import { useSessionDiffViews, type DiffViewsApi } from "../diff/DiffViewsContext";
 import { usePluginUiPoke, usePluginUiRevision } from "../../lib/pluginUiContext";
 import { accentStyle, lucideIcon, toneTextClass, validTone } from "../../lib/pluginUi";
 import { isInternalHref } from "../../lib/pluginHref";
@@ -21,6 +23,13 @@ interface BlockProps {
 // Forwarded verbatim with the action; the host injects the authoritative session_id.
 function actionParams(block: Obj): Obj | undefined {
   return isObject(block.params) ? block.params : undefined;
+}
+
+/** A block's `diff` target when this surface can show it: a session's pane whose diff pane is here. */
+function useDiffTarget(block: Obj, sessionId?: string): { target: DiffTarget; views: DiffViewsApi } | null {
+  const views = useSessionDiffViews(sessionId);
+  const target = views ? parseDiffTarget(block.diff) : null;
+  return views && target ? { target, views } : null;
 }
 
 function children(block: Obj): Obj[] {
@@ -100,8 +109,9 @@ function RowSignal({ badge, wrap }: { badge: Obj; wrap?: boolean }) {
   );
 }
 
-/** Up to two lines. A `method` makes the body a button, with any `href` as a
- *  separate trailing link; with `href` alone the whole row is the link. */
+/** Up to two lines. A `diff` target or a `method` makes the body a button, with
+ *  any `href` as a separate trailing link; with `href` alone the whole row is
+ *  the link. A diff target is selected while the diff pane shows it. */
 function BlockRow({ block, pluginId, sessionId, wrap }: BlockProps) {
   const label = str(block, "label");
   const value = str(block, "value");
@@ -114,7 +124,8 @@ function BlockRow({ block, pluginId, sessionId, wrap }: BlockProps) {
   const accent = accentStyle(block.color);
   const safe = safeHref(str(block, "href"));
   const method = str(block, "method");
-  const selected = block.selected === true;
+  const diff = useDiffTarget(block, sessionId);
+  const selected = diff ? diff.views.isShowing(diff.target) : block.selected === true;
   const tooltip = str(block, "tooltip") || undefined;
   const mono = block.mono === true ? "font-mono" : "";
   const badges = objectList(block, "badges") ?? [];
@@ -174,7 +185,12 @@ function BlockRow({ block, pluginId, sessionId, wrap }: BlockProps) {
     </span>
   );
 
-  if (method) {
+  const activate = diff
+    ? () => void diff.views.openTarget(diff.target)
+    : method
+      ? () => run(method, actionParams(block))
+      : null;
+  if (activate) {
     const shell = selected
       ? "rounded border border-brand-500/40 bg-brand-500/10"
       : "rounded border border-surface-700/60";
@@ -182,7 +198,7 @@ function BlockRow({ block, pluginId, sessionId, wrap }: BlockProps) {
       <div className={`flex items-stretch text-xs ${shell}`} data-testid="plugin-row-selectable">
         <button
           type="button"
-          onClick={() => run(method, actionParams(block))}
+          onClick={activate}
           disabled={busy}
           aria-busy={busy || undefined}
           aria-pressed={selected}
@@ -232,7 +248,8 @@ function BlockAction({ block, pluginId, sessionId, stretch = false }: BlockProps
   const tooltip = str(block, "tooltip") || undefined;
   const safe = safeHref(str(block, "href"));
   const { busy, run } = usePaneActionRunner(pluginId, sessionId);
-  if (!label || (!method && !safe && !disabled)) return null;
+  const diff = useDiffTarget(block, sessionId);
+  if (!label || (!method && !safe && !disabled && !diff)) return null;
 
   const layout = stretch ? "w-full justify-center" : "self-start";
   const skin =
@@ -243,7 +260,7 @@ function BlockAction({ block, pluginId, sessionId, stretch = false }: BlockProps
   const leading = busy ? <Spinner className="size-3.5" /> : renderIcon(icon, "size-3.5");
 
   // A disabled action must not stay clickable through its href.
-  if (safe && !method && !disabled) {
+  if (safe && !method && !disabled && !diff) {
     return (
       <a {...pluginLinkProps(safe)} title={tooltip} data-testid="plugin-pane-action" className={className}>
         {leading}
@@ -255,8 +272,14 @@ function BlockAction({ block, pluginId, sessionId, stretch = false }: BlockProps
   return (
     <button
       type="button"
-      onClick={method ? () => run(method, actionParams(block)) : undefined}
-      disabled={busy || disabled || !method}
+      onClick={
+        diff
+          ? () => void diff.views.openTarget(diff.target)
+          : method
+            ? () => run(method, actionParams(block))
+            : undefined
+      }
+      disabled={busy || disabled || (!method && !diff)}
       aria-busy={busy || undefined}
       title={tooltip}
       data-testid="plugin-pane-action"

@@ -3,12 +3,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { DiffFileList } from "../DiffFileList";
+import { DiffViewsContext, type DiffViewsApi } from "../DiffViewsContext";
+import type { DiffView } from "../../../lib/diffViews";
 import type { RepoBase, RichDiffFile } from "../../../lib/types";
 
 const mock = vi.hoisted(() => ({
   fetchBranches: vi.fn(),
   setSessionDiffBase: vi.fn(),
-  sessionDiffRawFileUrl: (id: string, path: string, repo?: string) => `${id}:${repo ?? ""}:${path}`,
+  sessionDiffRawFileUrl: (id: string, path: string, repo?: string, head?: string) =>
+    `${id}:${repo ?? ""}:${path}${head ? `@${head}` : ""}`,
 }));
 vi.mock("../../../lib/api", () => mock);
 const openInNewTab = vi.hoisted(() => vi.fn());
@@ -274,5 +277,68 @@ describe("base picker", () => {
     fireEvent.change(typed.input, { target: { value: "typed-branch" } });
     fireEvent.keyDown(typed.input, { key: "Enter" });
     await applied("typed-branch");
+  });
+});
+
+describe("diff views", () => {
+  function renderWithViews(views: DiffView[], props: Partial<React.ComponentProps<typeof DiffFileList>> = {}) {
+    const api: DiffViewsApi = {
+      sessionId: "s1",
+      views,
+      clearView: vi.fn(),
+      openTarget: vi.fn(() => true),
+      isShowing: () => false,
+    };
+    render(
+      <DiffViewsContext.Provider value={api}>
+        <DiffFileList
+          files={[]}
+          perRepoBases={[{ base_branch: "main", repo_path: "/r" }]}
+          warning={null}
+          selectedPath={null}
+          selectedRepoName={undefined}
+          loading={false}
+          onSelectFile={vi.fn()}
+          sessionId="s1"
+          repoPath="/r"
+          {...props}
+        />
+      </DiffViewsContext.Provider>,
+    );
+    return api;
+  }
+
+  it("shows a range in place of the base picker, with a way back", () => {
+    const api = renderWithViews([{ base: "main", head: "layer" }], {
+      perRepoBases: [{ base_branch: "main", repo_path: "/r", head: "layer" }],
+    });
+    expect(screen.getByTestId("diff-view-badge").textContent).toContain("main...layer");
+    expect(screen.getByText("No changes in")).toBeTruthy();
+    expect(screen.queryByTitle(/diff base/i)).toBeNull();
+    fireEvent.click(screen.getByTestId("diff-view-reset"));
+    expect(api.clearView).toHaveBeenCalledWith(undefined);
+  });
+
+  it("says why a range could not be shown instead of listing nothing", () => {
+    renderWithViews([{ base: "main", head: "nope" }], {
+      perRepoBases: [{ base_branch: "main", repo_path: "/r", head: "nope", error: "'nope' does not name a commit" }],
+    });
+    expect(screen.getByRole("alert").textContent).toContain("'nope' does not name a commit");
+  });
+
+  it("marks only the repo a view applies to, and opens its files at head", () => {
+    const api = renderWithViews([{ repo: "api", base: "main", head: "layer" }], {
+      perRepoBases: [
+        { repo_name: "api", base_branch: "main", repo_path: "/api", head: "layer" },
+        { repo_name: "web", base_branch: "main", repo_path: "/web" },
+      ],
+      files: [file({ path: "a.rs", repo_name: "api" }), file({ path: "w.ts", repo_name: "web" })],
+    });
+    expect(screen.getAllByTestId("diff-view-badge")).toHaveLength(1);
+    fireEvent.click(screen.getByTestId("diff-view-reset"));
+    expect(api.clearView).toHaveBeenCalledWith("api");
+    fireEvent.contextMenu(screen.getByText("a.rs"));
+    fireEvent.click(screen.getByText("Open file"));
+    expect(openInNewTab).toHaveBeenCalledWith("s1:api:a.rs@layer", "a.rs");
   });
 });

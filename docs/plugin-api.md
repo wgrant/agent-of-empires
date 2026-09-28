@@ -8,7 +8,7 @@ A manifest carries two independent version axes.
 
 | Key | Meaning |
 |---|---|
-| `api_version` | The manifest *schema* version. The current schema is `13`. The host rejects a manifest whose `api_version` is newer than it supports. |
+| `api_version` | The manifest *schema* version. The current schema is `14`. The host rejects a manifest whose `api_version` is newer than it supports. |
 | `aoe_version` | A semver requirement on the *host app* version, e.g. `">=1.11.0, <2.0.0"`. The host refuses to install, and skips loading, a plugin whose requirement excludes the running version. Optional; requires `api_version >= 4`. |
 
 Each key below notes the `api_version` it needs. Target the newest schema your plugin uses, and set `aoe_version` to the host range you have tested.
@@ -19,7 +19,7 @@ Each key below notes the `api_version` it needs. Target the newest schema your p
 id = "dev.example.my-plugin"
 name = "My Plugin"
 version = "0.1.0"
-api_version = 13
+api_version = 14
 aoe_version = ">=1.11.0, <2.0.0"
 description = "What the plugin does."
 capabilities = ["runtime.worker"]
@@ -30,7 +30,7 @@ capabilities = ["runtime.worker"]
 | `id` | string | yes | Plugin id (see [Plugin id](#plugin-id)). Namespaces config, events, and action names. |
 | `name` | string | yes | Human-readable display name. |
 | `version` | string | yes | Semantic version of the plugin. |
-| `api_version` | integer | yes | Manifest schema version, `1` to `13`. |
+| `api_version` | integer | yes | Manifest schema version, `1` to `14`. |
 | `description` | string | no | Shown in plugin listings. Defaults to empty. |
 | `aoe_version` | string | no | Host-app semver requirement. Requires `api_version >= 4`. |
 | `capabilities` | array of string | no | Runtime grants the worker needs (see [Capabilities](#capabilities)). Static contributions need none. |
@@ -297,20 +297,20 @@ The payload is capped at 64 KiB. Everything but `blocks` is validated strictly; 
 | `heading` | `text` | |
 | `note` | `text` | `tone` |
 | `divider` | | |
-| `row` | one of `label` / `value` / `prefix` / `icon` / `avatar` | `sublabel`, `tone`, `value_tone`, `color`, `href`, `tooltip`, `mono`, `selected`, `badges`, `method`, `params` |
+| `row` | one of `label` / `value` / `prefix` / `icon` / `avatar` | `sublabel`, `tone`, `value_tone`, `color`, `href`, `tooltip`, `mono`, `selected`, `badges`, `method`, `params`, `diff` (requires `api_version >= 14`) |
 | `section` | | `title`, `children`, `value`, `value_tone`, `badges`, `icon`, `tone`, `boxed`, `scroll`, `collapsible`, `collapsed` |
 | `callout` | one of `title` / `detail` | `icon`, `tone`, `color`, `actions` |
 | `bar` | `segments` | `caption` |
 | `sparkline` | `values` | `max`, `tone`, `bands`, `caption` (requires `api_version >= 13`) |
 | `columns` | `children` | |
-| `action` | `label`, plus one of `method` / `href` / `disabled` | `icon`, `tone`, `tooltip`, `variant` |
+| `action` | `label`, plus one of `method` / `href` / `diff` / `disabled` | `icon`, `tone`, `tooltip`, `variant` |
 | `comment` | one of `author` / `body` | `path`, `line`, `resolved`, `href` |
 
 `tone` is one of `neutral` / `info` / `success` / `warn` / `danger`. `color` is a validated `#rgb` / `#rrggbb` literal for a hue no tone names (a merged PR's purple); anything else is ignored.
 
 An `href` renders as a link only when it is an `http(s)` URL or a path starting with a single `/` and containing no backslash, tab or line break. A link to a dashboard route navigates in place; any other link opens in a new tab, including a path that normalizes to `//host` such as `/..//evil.com`, which opens on the dashboard's own origin.
 
-**`row`** lays out at most two lines: `prefix` (mono, tone-tinted) and `label` lead the first with `value` pinned right; `sublabel` leads the second with `badges` (`{ text?, icon?, tone?, tooltip? }`) pinned right. `value_tone` colors the trailing token independently of the row, and `mono` monospaces the row's text. A `method` makes the row body a button firing that worker method, and an `href` alongside it becomes a separate trailing link-out; with `href` alone the whole row is the link. `selected` marks the row as the pane's current subject.
+**`row`** lays out at most two lines: `prefix` (mono, tone-tinted) and `label` lead the first with `value` pinned right; `sublabel` leads the second with `badges` (`{ text?, icon?, tone?, tooltip? }`) pinned right. `value_tone` colors the trailing token independently of the row, and `mono` monospaces the row's text. A `method` makes the row body a button firing that worker method, and an `href` alongside it becomes a separate trailing link-out; with `href` alone the whole row is the link. `selected` marks the row as the pane's current subject. A `diff` target makes the row a button that points the diff view at a range; see [Diff targets](#diff-targets).
 
 **`section`** groups `children`, with a right-pinned `value` summary or `badges` in its header. `boxed` draws a bordered card, `scroll` caps the body height so a long list scrolls inside the section, and `collapsible` folds it via a native `<details>` (`collapsed` sets the initial state).
 
@@ -332,6 +332,21 @@ Clicking an `action` block, or a `row` carrying a `method`, POSTs to `/api/plugi
 ```
 
 The host merges in the authoritative `session_id` (a plugin cannot spoof it) and delivers the call as a **fire-and-forget JSON-RPC notification**: no reply, no return value. The worker does its work and re-pushes its UI state, and the clicked control spins until the plugin's UI revision moves, with a 15s timeout. Actions are read-write-mode only and are not passphrase gated, so treat every method as reachable by anyone who can use the dashboard.
+
+#### Diff targets
+
+With `api_version >= 14` a `row` or `action` can carry `diff: { repo?, base, head? }` instead of `method`. Clicking it shows that diff in the session's diff pane, in the clicking browser only, with no worker round trip:
+
+```json
+{ "kind": "row", "label": "auth layer", "prefix": "2/3",
+  "diff": { "base": "stack/models", "head": "stack/auth" } }
+```
+
+With `head`, the pane shows what `head` adds over `base`: the diff from their merge-base to `head`, git's `base...head`, with no working-tree changes, so each layer of a stacked branch shows alone. Without `head` it compares `base` with the working tree. `repo` names one of a multi-repo session's repos and defaults to its first. The dashboard resolves `base` and `head` as git revisions in that repo, and a ref that names no commit shows as an error in the pane.
+
+The target is the clicking browser's view state: it writes nothing to the session, leaves any saved diff base alone, and other devices keep their own view. So the dashboard, not the plugin, decides a target row's `selected`: it is set while the diff pane shows exactly that target, and a plugin's own `selected` on such a row is ignored. A `diff` target takes precedence over a `method` on the same block.
+
+Nothing fires where a target cannot be shown: a dashboard older than schema 14 and the session-less `home-pane` render a target row as plain text and drop an action whose only field is a target, and the TUI draws both inert, as it draws every pane block.
 
 The TUI renders panes read-only: it draws the text of every kind (dropping icons, hrefs, and tooltips, and stacking `columns`) but cannot fire an action, so `action` blocks appear as inert `[action] <label>` labels.
 

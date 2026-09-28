@@ -4,6 +4,8 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PluginUiEntry } from "../../../lib/api";
 import { PluginPaneBody } from "../PluginPane";
+import { DiffViewsContext, type DiffViewsApi } from "../../diff/DiffViewsContext";
+import { viewMatches, type DiffTarget } from "../../../lib/diffViews";
 import { PluginComposerActions, PluginHomePanes, PluginRowBadges } from "../PluginSlots";
 import { composerDraftOperation } from "../composerDraftOperation";
 
@@ -479,5 +481,57 @@ describe("pane blocks", () => {
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
     fireEvent.click(toggle);
     expect(body.className).toContain("line-clamp-3");
+  });
+});
+
+describe("pane diff targets", () => {
+  const LAYER = { base: "main", head: "layer" };
+  const row = (extra: Record<string, unknown> = {}) => ({ kind: "row", label: "layer", diff: LAYER, ...extra });
+
+  function renderWithViews(showing: DiffTarget | null, blocks: Record<string, unknown>[], sessionId = "s1") {
+    const openTarget = vi.fn((_: DiffTarget) => true);
+    const api: DiffViewsApi = {
+      sessionId,
+      views: [],
+      clearView: vi.fn(),
+      openTarget,
+      isShowing: (target) => showing !== null && viewMatches({ base: showing.base, head: showing.head }, target),
+    };
+    render(
+      <DiffViewsContext.Provider value={api}>
+        <PluginPaneBody entry={pane({ blocks })} />
+      </DiffViewsContext.Provider>,
+    );
+    return openTarget;
+  }
+
+  it("opens a row's range in this browser instead of calling the worker", () => {
+    const openTarget = renderWithViews(null, [row({ method: "stack.select" })]);
+    const button = screen.getByRole("button", { name: /layer/ });
+    fireEvent.click(button);
+    expect(openTarget).toHaveBeenCalledWith(LAYER);
+    expect(invokeMock).not.toHaveBeenCalled();
+  });
+
+  it("marks the row the diff pane shows, whatever the plugin says", () => {
+    renderWithViews(LAYER, [row(), row({ label: "top", diff: { base: "layer", head: "top" }, selected: true })]);
+    expect(screen.getByRole("button", { name: "layer" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "top" }).getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("opens an action block's range", () => {
+    const openTarget = renderWithViews(null, [{ kind: "action", label: "Show layer", diff: LAYER }]);
+    fireEvent.click(screen.getByTestId("plugin-pane-action"));
+    expect(openTarget).toHaveBeenCalledWith(LAYER);
+  });
+
+  it.each([
+    ["no diff pane to point", () => renderBlocks(row(), { kind: "action", label: "Show", diff: LAYER })],
+    ["another session's diff pane", () => renderWithViews(null, [row()], "s2")],
+    ["a malformed target", () => renderWithViews(null, [row({ diff: { head: "layer" } })])],
+  ])("leaves the row inert with %s", (_, draw) => {
+    draw();
+    expect(screen.getByText("layer")).toBeTruthy();
+    expect(screen.queryByRole("button")).toBeNull();
   });
 });
