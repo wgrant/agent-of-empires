@@ -75,7 +75,8 @@ fn supervisor_error_response(context: &str, err: &SupervisorError) -> Response {
             (StatusCode::SERVICE_UNAVAILABLE, err.to_string())
         }
         // The worker is mid-restart (e.g. a force stop); the client re-queues.
-        SupervisorError::Acp(AcpError::AgentExited | AcpError::NotRunning) => (
+        SupervisorError::Acp(AcpError::AgentExited | AcpError::NotRunning)
+        | SupervisorError::RunnerUnresponsive(_) => (
             StatusCode::SERVICE_UNAVAILABLE,
             format!("worker_not_ready: {context}: {err}"),
         ),

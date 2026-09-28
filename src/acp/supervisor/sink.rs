@@ -92,35 +92,37 @@ impl BroadcastSink for ChannelSink {
     }
 
     fn unresolved_approval_nonces(&self, session_id: &str) -> Vec<Nonce> {
-        self.event_store.unresolved_approval_nonces(session_id)
+        blocking_io(|| self.event_store.unresolved_approval_nonces(session_id))
     }
 
     fn unresolved_elicitation_nonces(&self, session_id: &str) -> Vec<Nonce> {
-        self.event_store.unresolved_elicitation_nonces(session_id)
+        blocking_io(|| self.event_store.unresolved_elicitation_nonces(session_id))
     }
 
     fn unresolved_background_agent_ids(&self, session_id: &str) -> Vec<String> {
-        self.event_store.unresolved_background_agent_ids(session_id)
+        blocking_io(|| self.event_store.unresolved_background_agent_ids(session_id))
     }
 
     fn unresolved_background_agent_launches(
         &self,
         session_id: &str,
     ) -> Vec<UnresolvedBackgroundAgentLaunch> {
-        self.event_store
-            .unresolved_background_agent_launches(session_id)
+        blocking_io(|| {
+            self.event_store
+                .unresolved_background_agent_launches(session_id)
+        })
     }
 
     fn unresolved_native_subagents(&self, session_id: &str) -> Vec<String> {
-        self.event_store.unresolved_native_subagents(session_id)
+        blocking_io(|| self.event_store.unresolved_native_subagents(session_id))
     }
 
     fn unfinished_async_task_ids(&self, session_id: &str) -> Vec<String> {
-        self.event_store.unfinished_async_task_ids(session_id)
+        blocking_io(|| self.event_store.unfinished_async_task_ids(session_id))
     }
 
     fn unfinished_workflow_ids(&self, session_id: &str) -> Vec<String> {
-        self.event_store.unfinished_workflow_ids(session_id)
+        blocking_io(|| self.event_store.unfinished_workflow_ids(session_id))
     }
 
     fn record_attachment(&self, session_id: &str, seq: u64, blob: &AttachmentBlob) -> bool {
