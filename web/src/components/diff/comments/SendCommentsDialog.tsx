@@ -8,6 +8,8 @@ import { reportTelemetrySeen } from "../../../lib/api";
 interface Props {
   sessionId: string;
   comments: DiffComment[];
+  /** How many of `comments` belong to a view other than the one open now. */
+  hiddenCount?: number;
   isMultiRepo: boolean;
   /** False when the session cannot drain a prompt (not structured view, or trashed). */
   sendEnabled: boolean;
@@ -27,6 +29,7 @@ interface Props {
 export function SendCommentsDialog({
   sessionId,
   comments,
+  hiddenCount = 0,
   isMultiRepo,
   sendEnabled,
   sendDisabledReason,
@@ -126,6 +129,11 @@ export function SendCommentsDialog({
           <span className="text-[11px] text-text-dim">
             {comments.length} comment{comments.length === 1 ? "" : "s"}
           </span>
+          {hiddenCount > 0 && (
+            <span className="text-[11px] text-status-waiting" data-testid="send-comments-other-views">
+              {hiddenCount} from another view; each names its view below
+            </span>
+          )}
           <button
             type="button"
             onClick={onClose}

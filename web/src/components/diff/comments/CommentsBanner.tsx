@@ -2,6 +2,8 @@ import { Tooltip } from "../../Tooltip";
 
 interface Props {
   count: number;
+  /** How many belong to a view other than the one open now, so show nowhere here. */
+  hidden?: number;
   sendEnabled: boolean;
   /** Cause plus remedy: the only place the user learns why Send is disabled. */
   sendDisabledReason: string;
@@ -10,13 +12,20 @@ interface Props {
 }
 
 /** Comment count chip above the diff list; Send is disabled for a trashed session. */
-export function CommentsBanner({ count, sendEnabled, sendDisabledReason, onSend, onDiscardAll }: Props) {
+export function CommentsBanner({ count, hidden = 0, sendEnabled, sendDisabledReason, onSend, onDiscardAll }: Props) {
   if (count === 0) return null;
   return (
     <div className="flex items-center gap-2 px-3 py-1.5 bg-brand-600/10 border-b border-brand-600/30 text-[11px] font-mono">
       <span className="text-brand-500 font-semibold">
         {count} comment{count === 1 ? "" : "s"}
       </span>
+      {hidden > 0 && (
+        <Tooltip text="Made on another range or base, so not shown in this view. They are still sent." multiline>
+          <span className="text-status-waiting" data-testid="comments-other-views">
+            {hidden} in another view
+          </span>
+        </Tooltip>
+      )}
       <span className="text-text-dim hidden sm:inline">Cmd/Ctrl+Shift+S to send</span>
       <div className="ml-auto flex items-center gap-1.5">
         <button

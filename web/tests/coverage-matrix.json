@@ -2076,9 +2076,15 @@
         "src/components/plugin/__tests__/PluginSlots.test.tsx",
         "src/components/diff/__tests__/DiffFileList.test.tsx",
         "src/components/diff/__tests__/DiffFileViewer.coverage.test.tsx",
-        "src/components/diff/comments/buildPrompt.test.ts"
+        "src/components/diff/comments/buildPrompt.test.ts",
+        "src/components/diff/comments/views.test.ts",
+        "src/components/diff/comments/anchorToContents.test.ts",
+        "src/components/diff/comments/__tests__/CommentsBanner.test.tsx",
+        "src/components/diff/comments/__tests__/SendCommentsDialog.test.tsx"
       ],
       "components": [
+        "web/src/components/diff/comments/CommentsBanner.tsx",
+        "web/src/components/diff/comments/SendCommentsDialog.tsx",
         "web/src/components/diff/DiffViewsContext.tsx",
         "web/src/components/diff/DiffFileViewer.tsx",
         "web/src/components/diff/FileContextMenu.tsx",
