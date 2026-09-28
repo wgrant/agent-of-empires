@@ -72,9 +72,10 @@ export const HOST_STATE_VARS = new Set([
   "AOE_TMUX_SOCKET",
 ]);
 
-/** Kept path variables: toolchain and system locations. XDG_RUNTIME_DIR names host sockets, not data. */
+/** Kept path variables: toolchain and system locations. XDG_RUNTIME_DIR and DBUS_SESSION_BUS_ADDRESS name host sockets, not data. */
 export const INHERITED_PATH_VARS = new Set([
   "CARGO_HOME",
+  "DBUS_SESSION_BUS_ADDRESS",
   "DYLD_FALLBACK_LIBRARY_PATH",
   "DYLD_LIBRARY_PATH",
   "LD_LIBRARY_PATH",
