@@ -323,7 +323,9 @@ impl TranscriptModel {
             }
             _ => None,
         };
-        if !event.is_ambient() && self.open_text_run.map(|(kind, _)| kind) != incoming_text_kind {
+        if !event.leaves_text_run_open()
+            && self.open_text_run.map(|(kind, _)| kind) != incoming_text_kind
+        {
             self.open_text_run = None;
         }
 
@@ -1643,6 +1645,80 @@ mod tests {
         );
     }
 
+    /// Events that show nothing leave a streamed reply or thought one row; a
+    /// hook card between two parts splits the text around it.
+    #[test]
+    fn streamed_text_rows_end_only_at_something_shown() {
+        let hook = |id: &str, status: &str, output: &str| Event::HookUpdated {
+            id: id.into(),
+            name: "PostToolUse:Edit".into(),
+            event: "PostToolUse".into(),
+            status: status.into(),
+            output: output.into(),
+            exit_code: None,
+        };
+        let msg = |text: &str| Event::AgentMessageChunk { text: text.into() };
+        let thought = |text: &str| Event::AgentThoughtChunk { text: text.into() };
+        let tokens = Event::TurnOutputTokens { tokens: 40 };
+        let usage = Event::UsageUpdated {
+            usage: crate::acp::state::SessionUsage {
+                used: 1,
+                size: 2,
+                quota: None,
+                model: None,
+                cost: None,
+            },
+        };
+        let cases: Vec<(Vec<Event>, Vec<&str>)> = vec![
+            (
+                vec![
+                    msg("sur"),
+                    tokens.clone(),
+                    msg("vi"),
+                    usage.clone(),
+                    msg("ving"),
+                ],
+                vec!["surviving"],
+            ),
+            (
+                vec![thought("pat"), tokens.clone(), thought("tern")],
+                vec!["pattern"],
+            ),
+            (
+                vec![
+                    msg("rem"),
+                    hook("quiet", "running", ""),
+                    hook("quiet", "success", ""),
+                    msg("ove"),
+                ],
+                vec!["remove"],
+            ),
+            (
+                vec![
+                    msg("before"),
+                    hook("loud", "error", "lint failed"),
+                    msg("after"),
+                ],
+                vec!["before", "after"],
+            ),
+        ];
+        for (events, want) in cases {
+            let model = fold(events.clone());
+            let texts: Vec<_> = model
+                .rows()
+                .iter()
+                .filter(|r| {
+                    matches!(
+                        r.kind,
+                        TranscriptRowKind::Message | TranscriptRowKind::Thinking
+                    )
+                })
+                .map(|r| r.text.as_str())
+                .collect();
+            assert_eq!(texts, want, "{events:?}");
+        }
+    }
+
     #[test]
     fn hooks_update_in_place_and_summaries_label_their_tools() {
         let hook = |status: &str, output: &str, exit_code| Event::HookUpdated {
@@ -1680,27 +1756,6 @@ mod tests {
                 Some("Listed files")
             );
         }
-        // A token count or summary arriving mid-reply leaves it one message.
-        let reply = fold([
-            Event::AgentMessageChunk {
-                text: "is n".into(),
-            },
-            Event::TurnOutputTokens { tokens: 40 },
-            Event::ToolUseSummarized {
-                summary: "Listed files".into(),
-                tool_call_ids: vec!["t1".into()],
-            },
-            Event::AgentMessageChunk {
-                text: "early".into(),
-            },
-        ]);
-        let messages: Vec<_> = reply
-            .rows()
-            .iter()
-            .filter(|r| r.kind == TranscriptRowKind::Message)
-            .map(|r| r.text.as_str())
-            .collect();
-        assert_eq!(messages, ["is nearly"]);
         // A silent success stays out of view, as in Claude Code.
         let quiet = HookInfo {
             status: "success".into(),

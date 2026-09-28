@@ -888,14 +888,22 @@ pub enum Event {
 }
 
 impl Event {
-    /// Reported beside a reply without interrupting it.
-    pub fn is_ambient(&self) -> bool {
-        matches!(
-            self,
+    /// Shows nothing between two parts of a streamed reply or thought, so it
+    /// leaves them one row. A hook that fails or prints something is a card
+    /// of its own and still ends the run.
+    pub fn leaves_text_run_open(&self) -> bool {
+        match self {
             Event::TurnOutputTokens { .. }
-                | Event::PromptSuggested { .. }
-                | Event::ToolUseSummarized { .. }
-        )
+            | Event::PromptSuggested { .. }
+            | Event::ToolUseSummarized { .. }
+            | Event::UsageUpdated { .. }
+            | Event::RawAgentUpdate { .. }
+            | Event::SubagentUpdate { .. } => true,
+            Event::HookUpdated { status, output, .. } => {
+                status == "running" || (status == "success" && output.trim().is_empty())
+            }
+            _ => false,
+        }
     }
 }
 
@@ -1291,6 +1299,64 @@ pub(crate) mod test_support {
 mod tests {
     use super::test_support::{prompt, stopped};
     use super::*;
+
+    #[test]
+    fn only_events_showing_nothing_leave_a_text_run_open() {
+        let hook = |status: &str, output: &str| Event::HookUpdated {
+            id: "h".into(),
+            name: "PreToolUse:Bash".into(),
+            event: "PreToolUse".into(),
+            status: status.into(),
+            output: output.into(),
+            exit_code: None,
+        };
+        let cases = [
+            (Event::TurnOutputTokens { tokens: 5 }, true),
+            (Event::PromptSuggested { text: "go".into() }, true),
+            (
+                Event::ToolUseSummarized {
+                    summary: "Read".into(),
+                    tool_call_ids: Vec::new(),
+                },
+                true,
+            ),
+            (
+                Event::UsageUpdated {
+                    usage: SessionUsage {
+                        used: 1,
+                        size: 2,
+                        quota: None,
+                        model: None,
+                        cost: None,
+                    },
+                },
+                true,
+            ),
+            (
+                Event::RawAgentUpdate {
+                    payload: serde_json::Value::Null,
+                },
+                true,
+            ),
+            (
+                Event::SubagentUpdate {
+                    id: "a".into(),
+                    event: Box::new(Event::AgentMessageChunk { text: "x".into() }),
+                },
+                true,
+            ),
+            (hook("running", ""), true),
+            (hook("success", " \n"), true),
+            (hook("success", "formatted"), false),
+            (hook("error", ""), false),
+            (hook("cancelled", ""), false),
+            (stopped("end_turn"), false),
+            (prompt("next"), false),
+        ];
+        for (event, open) in cases {
+            assert_eq!(event.leaves_text_run_open(), open, "{event:?}");
+        }
+    }
 
     fn fresh_state() -> AcpState {
         AcpState::new(
