@@ -727,6 +727,47 @@ describe("ToolGroupCard", () => {
   });
 });
 
+describe("ReviewFindingsCard", () => {
+  it("lists a review's findings with their places, verdicts and outcomes", () => {
+    const tool = makeToolCall({
+      name: "Report 2 findings",
+      kind: "think",
+      args_preview: args({
+        level: "high",
+        findings: [
+          {
+            file: "src/a.rs",
+            line: 12,
+            summary: "Leaks the `fence`",
+            failure_scenario: "A reset strands the approval",
+            verdict: "CONFIRMED",
+            outcome: "fixed",
+          },
+          { file: "src/b.rs", summary: "Unused import", failure_scenario: "Clippy warns" },
+        ],
+      }),
+    });
+    const { container, getAllByTestId } = render(<ToolCard tool={tool} result={makeCompletion()} />);
+    expect(container.textContent).toContain("2 findings");
+    expect(container.textContent).toContain("· high");
+    const rows = getAllByTestId("review-finding").map((r) => r.textContent);
+    expect(rows[0]).toContain("src/a.rs:12");
+    expect(rows[0]).toContain("Leaks the fence");
+    expect(container.querySelector('[data-testid="review-finding"] code')?.textContent).toBe("fence");
+    expect(rows[0]).toContain("A reset strands the approval");
+    expect(rows[0]).toContain("confirmed");
+    expect(rows[0]).toContain("fixed");
+    expect(rows[1]).toContain("src/b.rs");
+    const none = makeToolCall({
+      name: "Report findings: none found",
+      kind: "think",
+      args_preview: args({ findings: [] }),
+    });
+    cleanup();
+    expect(render(<ToolCard tool={none} result={makeCompletion()} />).container.textContent).toContain("No findings");
+  });
+});
+
 describe("HookCard", () => {
   const hook = (status: string, exit_code?: number) => ({ name: "Stop", event: "Stop", status, exit_code });
 

@@ -2746,6 +2746,17 @@
       ]
     },
     {
+      "id": "acp.review-findings",
+      "kind": "vitest",
+      "risk": "low",
+      "specs": [
+        "src/components/acp/ToolCards.render.test.tsx",
+        "src/components/acp/Markdown.test.tsx",
+        "src/lib/reviewFindings.test.ts"
+      ],
+      "components": ["web/src/components/acp/ReviewFindingsCard.tsx", "web/src/lib/reviewFindings.ts"]
+    },
+    {
       "id": "acp.claude-hooks",
       "kind": "vitest",
       "risk": "low",

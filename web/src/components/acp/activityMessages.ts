@@ -9,6 +9,7 @@ import { hasTodoArrayArgsText, parseJsonObject } from "../../lib/acpArgs";
 import { lastClearIndex } from "../../lib/acpHistoryWindow";
 import type { ActivityRow, CompactionInfo, HookInfo, ToolCall, ToolOutputBlock } from "../../lib/acpTypes";
 import { hookHeadline } from "../../lib/agentHooks";
+import { parseReviewFindings } from "../../lib/reviewFindings";
 import { type AgentProfile, DEFAULT_AGENT_PROFILE, isSubagentToolName } from "../../lib/agentProfiles";
 
 /** Synthetic part for a subagent Task with its child tool calls. */
@@ -466,10 +467,11 @@ function collapseToolRuns(parts: DraftPart[], todosEnabled: boolean): DraftPart[
       group(TODO_GROUP_NAME, "todogroup", run);
     } else if (
       run.length >= TOOL_GROUP_MIN_RUN &&
-      // A todo update among real work, or a subagent card, stays inline.
+      // A todo update among real work, a subagent card, or review findings stay inline.
       !run.some(
         (p) =>
           isTodo(p) ||
+          parseReviewFindings(parseJsonObject(p.argsText)) !== null ||
           p.toolName === SUBAGENT_TASK_NAME ||
           p.toolName === NATIVE_SUBAGENT_NAME ||
           p.toolName === COMPACTION_NAME,

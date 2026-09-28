@@ -188,6 +188,15 @@ describe("tool-call grouping", () => {
     });
   });
 
+  it("keeps review findings out of a folded run", () => {
+    const findings = toolStart("f1", {
+      name: "Report 1 finding",
+      kind: "think",
+      args_preview: JSON.stringify({ findings: [{ file: "a.rs", summary: "Bug", failure_scenario: "Crash" }] }),
+    });
+    expect(names(toolParts([toolStart("a1"), toolStart("a2"), findings]))).toEqual(["read", "read", "think"]);
+  });
+
   it("gives text-split runs distinct ids", () => {
     const parts = toolParts([...readRun("a", 3), message("Found it."), ...readRun("b", 3)]);
     expect(parts.map((p) => p.toolCallId)).toEqual(["group-a1", "group-b1"]);
