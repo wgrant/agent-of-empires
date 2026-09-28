@@ -273,11 +273,12 @@ impl HttpClient {
             next_cursor: None,
             has_more: false,
             rows: None,
+            removed: Vec::new(),
         })
     }
 
-    /// Server-folded transcript rows from `since`. Pages fold in isolation, so
-    /// rows are reconciled by id across page seams.
+    /// Server-folded transcript rows from `since`. Each page carries the rows
+    /// its events changed or removed, so later pages supersede earlier ones.
     pub async fn replay_rows_paged(
         &self,
         session_id: &str,
@@ -288,11 +289,11 @@ impl HttpClient {
             .collect_pages(session_id, since, page_size, true)
             .await?;
         let mut rows = Vec::new();
-        for row in pages
-            .into_iter()
-            .flat_map(|page| page.rows.unwrap_or_default())
-        {
-            crate::acp::transcript::upsert_transcript_row(&mut rows, row);
+        for page in pages {
+            for row in page.rows.unwrap_or_default() {
+                crate::acp::transcript::upsert_transcript_row(&mut rows, row);
+            }
+            rows.retain(|row| !page.removed.contains(&row.id));
         }
         Ok((rows, lost))
     }

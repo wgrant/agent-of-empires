@@ -52,100 +52,6 @@ impl EventStore {
         self.replay_page(session_id, since, None).events
     }
 
-    /// Consecutive streamed text immediately before a page whose first event
-    /// continues the same run. This preserves the run's deterministic row id.
-    pub fn replay_stream_context_before(
-        &self,
-        session_id: &str,
-        before: u64,
-        first_event: &Event,
-    ) -> Vec<StoredEvent> {
-        let Some(wanted) = stream_kind(first_event) else {
-            return Vec::new();
-        };
-        let rows = events::scan(
-            &self.conn(),
-            &self.schema,
-            session_id,
-            SeqBound::Before(before),
-            Order::Desc,
-            None,
-        );
-        let mut context = Vec::new();
-        for (seq, json, created_at) in rows {
-            let Ok(event) = serde_json::from_str::<Event>(&json) else {
-                break;
-            };
-            if stream_kind(&event) != Some(wanted) {
-                break;
-            }
-            let snapshot = matches!(
-                event,
-                Event::AgentMessageSnapshot { .. } | Event::AgentThoughtSnapshot { .. }
-            );
-            context.push(StoredEvent {
-                seq,
-                event,
-                recorded_at: recorded_at(created_at),
-            });
-            if snapshot {
-                break;
-            }
-        }
-        context.reverse();
-        context
-    }
-
-    /// The `ToolCallStarted` events before `before` for the given tool calls,
-    /// so a page that opens mid-call can fold the call's real start.
-    pub fn tool_starts_before(
-        &self,
-        session_id: &str,
-        before: u64,
-        tool_call_ids: &[String],
-    ) -> Vec<StoredEvent> {
-        if tool_call_ids.is_empty() {
-            return Vec::new();
-        }
-        let table = self.schema.events_table();
-        let placeholders = vec!["?"; tool_call_ids.len()].join(", ");
-        let sql = format!(
-            "SELECT seq, event_json, created_at FROM {table}
-             WHERE session_id = ? AND seq < ? AND discriminant = 'ToolCallStarted'
-               AND json_extract(event_json, '$.ToolCallStarted.tool_call.id') IN ({placeholders})
-             ORDER BY seq ASC"
-        );
-        let conn = self.conn();
-        let rows = conn.prepare(&sql).and_then(|mut stmt| {
-            let params = [
-                rusqlite::types::Value::from(session_id.to_string()),
-                rusqlite::types::Value::from(before as i64),
-            ]
-            .into_iter()
-            .chain(
-                tool_call_ids
-                    .iter()
-                    .cloned()
-                    .map(rusqlite::types::Value::from),
-            );
-            stmt.query_map(rusqlite::params_from_iter(params), |row| {
-                Ok((
-                    row.get::<_, i64>(0)? as u64,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, i64>(2)?,
-                ))
-            })?
-            .collect::<rusqlite::Result<Vec<_>>>()
-        });
-        match rows {
-            Ok(rows) => decode_rows(session_id, rows, None).0,
-            Err(error) => {
-                warn!(target: "acp.event_store", session = %session_id, %error, "tool_starts_before failed");
-                Vec::new()
-            }
-        }
-    }
-
     /// Up to `limit` events with `seq > since`, oldest first.
     pub fn replay_page(&self, session_id: &str, since: u64, limit: Option<usize>) -> ReplayPage {
         let page = self.page(session_id, SeqBound::After(since), Order::Asc, limit);
@@ -217,24 +123,6 @@ impl EventStore {
             highest_seq,
             lowest_seq,
         }
-    }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum StreamKind {
-    Message,
-    Thought,
-}
-
-fn stream_kind(event: &Event) -> Option<StreamKind> {
-    match event {
-        Event::AgentMessageChunk { .. } | Event::AgentMessageSnapshot { .. } => {
-            Some(StreamKind::Message)
-        }
-        Event::AgentThoughtChunk { .. } | Event::AgentThoughtSnapshot { .. } => {
-            Some(StreamKind::Thought)
-        }
-        _ => None,
     }
 }
 

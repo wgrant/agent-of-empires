@@ -309,6 +309,15 @@ describe("recent-first paging", () => {
     expect(s.pendingApprovals).toBe(approvals);
   });
 
+  it("catchup drops rows a page removed before merging its rows", () => {
+    const s = run(
+      empty(),
+      { kind: "frames", frames: [], rows: [promptRow(5, "e"), promptRow(6, "f")], oldestSeq: 5 },
+      { kind: "catchup", frames: [], rows: [promptRow(7, "g")], removed: ["user-seq-6"], reset: false },
+    );
+    expect(s.activity.map((r) => r.id)).toEqual(["user-seq-5", "user-seq-7"]);
+  });
+
   it("handshake backfills empty fields but never overwrites loaded values", () => {
     const caps: AcpFrame = {
       session_id: "s",
@@ -355,6 +364,26 @@ describe("prepend seam dedupe (#2711)", () => {
     const merged = starts(reducer(tail(), { kind: "prepend", rows: [real], oldestSeq: 5 }).activity, "call_X");
     expect(merged).toHaveLength(1);
     expect(merged[0]!.tool).toMatchObject({ name: "Read", kind: "read", started_at: "2024-01-01T00:00:00Z" });
+  });
+
+  it("moves a row the tail already holds to its older place, keeping the tail's copy", () => {
+    const spawned = (state?: string): ActivityRow => ({
+      id: "subagent-a1",
+      kind: "subagent",
+      text: "task",
+      at: "2024-01-01T00:00:00Z",
+      subagent: { id: "a1", name: "teammate", persistent: true, ...(state ? { state } : {}) },
+    });
+    const older = [
+      { id: "user-seq-1", kind: "user_prompt", text: "go", at: "2024-01-01T00:00:00Z" },
+      spawned(),
+    ] as ActivityRow[];
+    const next = reducer(
+      { ...empty(), activity: [spawned("completed"), ...tail().activity] },
+      { kind: "prepend", rows: older, oldestSeq: 1 },
+    );
+    expect(next.activity.map((r) => r.id)).toEqual(["user-seq-1", "subagent-a1", "start-call_X", "done-call_X"]);
+    expect(next.activity[1]!.subagent?.state).toBe("completed");
   });
 
   it("prepends a non-overlapping older start as its own row", () => {
