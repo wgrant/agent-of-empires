@@ -16,6 +16,8 @@ interface Props {
   onDiffRefresh: () => void;
   commentsEnabled: boolean;
   commentsCount: number;
+  /** Comments made in a view other than the one open now. */
+  commentsHiddenCount: number;
   commentsSendEnabled: boolean;
   commentsSendDisabledReason: string;
   onOpenSendDialog: () => void;
@@ -37,6 +39,7 @@ export function DiffPane({
   onDiffRefresh,
   commentsEnabled,
   commentsCount,
+  commentsHiddenCount,
   commentsSendEnabled,
   commentsSendDisabledReason,
   onOpenSendDialog,
@@ -47,6 +50,7 @@ export function DiffPane({
       {commentsEnabled && commentsCount > 0 && (
         <CommentsBanner
           count={commentsCount}
+          hidden={commentsHiddenCount}
           sendEnabled={commentsSendEnabled}
           sendDisabledReason={commentsSendDisabledReason}
           onSend={onOpenSendDialog}

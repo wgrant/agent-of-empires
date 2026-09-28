@@ -164,6 +164,7 @@ import {
   DiffViewsContext,
   type DiffViewsApi,
 } from "./components/diff/DiffViewsContext";
+import { commentInView } from "./components/diff/comments/views";
 import {
   isAbsolutePath,
   resolveToRepoRelative,
@@ -1079,6 +1080,9 @@ function AppContent({
         ? "This session is archived. Unarchive it to send comments to the agent."
         : "Terminal input is blocked in read-only mode.";
   const commentsIsMultiRepo = (activeSession?.workspace_repos.length ?? 0) > 0;
+  const commentsHiddenCount = diffComments.comments.filter(
+    (c) => !commentInView(c, viewFor(diffViews, c.repoName)),
+  ).length;
   const [sendDialogOpen, setSendDialogOpen] = useState(false);
 
   useEffect(() => {
@@ -2501,6 +2505,7 @@ function AppContent({
             onDiffRefresh={refreshDiffFiles}
             commentsEnabled={commentsEnabled}
             commentsCount={diffComments.count}
+            commentsHiddenCount={commentsHiddenCount}
             commentsSendEnabled={commentSendEnabled}
             commentsSendDisabledReason={commentSendDisabledReason}
             onOpenSendDialog={() => setSendDialogOpen(true)}
@@ -2702,6 +2707,7 @@ function AppContent({
             sessionId={activeSessionId}
             delivery={activeSession?.view === "structured" ? "structured" : "terminal"}
             comments={diffComments.comments}
+            hiddenCount={commentsHiddenCount}
             isMultiRepo={commentsIsMultiRepo}
             sendEnabled={commentSendEnabled}
             sendDisabledReason={commentSendDisabledReason}
