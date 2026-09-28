@@ -70,9 +70,10 @@ describe("SessionSettingsControl", () => {
   it("changes the mode in place and keeps the dialog open", () => {
     const { setConfigOption } = mount([MODE, MODEL]);
     fireEvent.click(trigger());
-    const modes = within(screen.getByTestId("session-mode-options"));
-    expect(modes.getByRole("radio", { name: /Default/ }).getAttribute("aria-checked")).toBe("true");
-    fireEvent.click(modes.getByRole("radio", { name: /Bypass Permissions/ }));
+    const mode = screen.getByTestId("session-mode");
+    expect(mode.getAttribute("aria-label")).toMatch(/Default/);
+    fireEvent.click(mode);
+    fireEvent.click(within(screen.getByRole("menu")).getByRole("menuitem", { name: /Bypass Permissions/ }));
     expect(setConfigOption).toHaveBeenCalledWith("mode", "bypassPermissions");
     expect(dialog()).not.toBeNull();
   });
@@ -94,16 +95,19 @@ describe("SessionSettingsControl", () => {
   it("overrides the thinking display for this session and returns it to the default", () => {
     mount([MODEL]);
     fireEvent.click(trigger());
-    const choice = (value: string) => screen.getByTestId(`thinking-display-value-${value}`);
-    expect(choice("default").getAttribute("aria-checked")).toBe("true");
-    expect(screen.getByText(/dashboard setting \(Collapsed\)/)).toBeTruthy();
+    const picker = () => screen.getByTestId("thinking-display");
+    const choose = (value: string) => {
+      fireEvent.click(picker());
+      fireEvent.click(screen.getByTestId(`thinking-display-value-${value}`));
+    };
+    expect(picker().textContent).toBe("Default (Collapsed)");
 
-    fireEvent.click(choice("hidden"));
-    expect(choice("hidden").getAttribute("aria-checked")).toBe("true");
+    choose("hidden");
+    expect(picker().textContent).toBe("Hidden");
     expect(localStorage.getItem(sessionThinkingDisplayKey("s1"))).toBe("hidden");
 
-    fireEvent.click(choice("default"));
-    expect(choice("default").getAttribute("aria-checked")).toBe("true");
+    choose("default");
+    expect(picker().textContent).toBe("Default (Collapsed)");
     expect(localStorage.getItem(sessionThinkingDisplayKey("s1"))).toBeNull();
   });
 

@@ -88,7 +88,7 @@ describe("OpenCode launch options", () => {
     render(<Harness />);
 
     fireEvent.click(screen.getByTestId("session-settings-trigger"));
-    expect(screen.getByRole("radio", { name: /Build/ }).getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByTestId("session-mode").getAttribute("aria-label")).toMatch(/Build/);
     expect(screen.getByText(/Launch options · restart required/)).toBeTruthy();
     fireEvent.click(screen.getByRole("switch", { name: /Yolo/ }));
     expect(screen.queryByTestId("session-settings-dialog")).toBeNull();

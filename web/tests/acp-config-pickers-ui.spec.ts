@@ -86,7 +86,8 @@ test("user sees model and effort pickers after the adapter advertises config opt
   const effortControl = page.getByTestId("config-option-effort");
   await expect(effortControl).toBeVisible();
   await expect(effortControl).toContainText("Default");
-  await expect(effortControl).toContainText("High");
+  await effortControl.click();
+  await expect(page.getByTestId("config-option-effort-value-high")).toBeVisible();
 });
 
 test("OpenCode's long model menu stays within the mobile viewport and scrolls", async ({ page }) => {
@@ -159,7 +160,7 @@ test("user switches the model and the chip reflects the adapter confirmation", a
   });
 });
 
-test("user picks reasoning effort and the segment becomes active", async ({ page }) => {
+test("user picks reasoning effort and the dropdown shows it once confirmed", async ({ page }) => {
   const mock = await mockAcpSession(page, {
     title: "ui-pickers-switch-effort",
     initialEvents: [snapshot("claude-opus-4-7", "default")],
@@ -171,15 +172,11 @@ test("user picks reasoning effort and the segment becomes active", async ({ page
   const effortControl = page.getByTestId("config-option-effort");
   await expect(effortControl).toBeVisible({ timeout: 15_000 });
 
-  const highSegment = page.getByTestId("config-option-effort-value-high");
-  await highSegment.click();
+  await effortControl.click();
+  await page.getByTestId("config-option-effort-value-high").click();
 
-  // After the adapter confirms, the High radio reports
-  // aria-checked=true and Default no longer does.
-  await expect(highSegment).toHaveAttribute("aria-checked", "true", {
-    timeout: 10_000,
-  });
-  await expect(page.getByTestId("config-option-effort-value-default")).toHaveAttribute("aria-checked", "false");
+  // The label follows the adapter's confirmation, not the click.
+  await expect(effortControl).toHaveAttribute("aria-label", /High/, { timeout: 10_000 });
 });
 
 test("model menu stays on-screen and scrollable on a short viewport", async ({ page }) => {
@@ -199,7 +196,7 @@ test("model menu stays on-screen and scrollable on a short viewport", async ({ p
   await expect(modelChip).toBeVisible({ timeout: 15_000 });
   await modelChip.click();
 
-  const menu = page.locator('[id^="config-option-menu-model"]');
+  const menu = page.locator('[id^="config-option-model-menu"]');
   await expect(menu).toBeVisible();
 
   const viewportSize = page.viewportSize();
