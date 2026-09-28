@@ -4,8 +4,8 @@
 mod range;
 
 pub use range::{
-    file_at_commit, file_at_revision, range_changed_files, range_file_contents, resolve_range,
-    CommitRange, ResolvedRange,
+    file_at_commit, file_at_revision, is_checked_out, range_changed_files, range_file_contents,
+    resolve_range, CommitRange, ResolvedRange,
 };
 
 use std::collections::HashMap;

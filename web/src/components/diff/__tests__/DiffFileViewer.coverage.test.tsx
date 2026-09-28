@@ -265,8 +265,9 @@ describe("DiffFileViewer comments", () => {
     expect(screen.queryByTestId("comment-form")).toBeNull();
   });
 
-  it("in a range, anchors only that range's comments and records it on new ones", () => {
+  it("in a range, anchors only that range's comments and records its commits on new ones", () => {
     const range = { base: "main", head: "layer" };
+    mock.contents = { ...baseContents, range_commits: { head: "abc", from: "def", head_checked_out: false } };
     const store = {
       ...commentsStore(),
       comments: [
@@ -289,7 +290,40 @@ describe("DiffFileViewer comments", () => {
     expect(mock.anchorInput.map((c) => c.id)).toEqual(["ranged"]);
     fireEvent.click(screen.getByTestId("select-line"));
     fireEvent.click(screen.getByText("form-save"));
-    expect(store.addComment).toHaveBeenCalledWith(expect.objectContaining({ range }));
+    expect(store.addComment).toHaveBeenCalledWith(
+      expect.objectContaining({
+        range: { ...range, headCommit: "abc", fromCommit: "def", headCheckedOut: false },
+      }),
+    );
+  });
+
+  it("on another base, shares new-side comments with the working tree and records no base for them", () => {
+    const store = {
+      ...commentsStore(),
+      comments: [
+        { id: "live", filePath: "a.ts", side: "new", startLine: 1, endLine: 1 },
+        { id: "old-default", filePath: "a.ts", side: "old", startLine: 1, endLine: 1 },
+        { id: "old-here", filePath: "a.ts", side: "old", startLine: 1, endLine: 1, base: "layer" },
+      ],
+    } as unknown as UseDiffCommentsResult;
+    const api: DiffViewsApi = {
+      sessionId: "s1",
+      views: [{ base: "layer" }],
+      clearView: vi.fn(),
+      openTarget: vi.fn(() => true),
+      isShowing: () => true,
+    };
+    render(
+      <DiffViewsContext.Provider value={api}>
+        <DiffFileViewer sessionId="s1" filePath="a.ts" commentsEnabled commentsStore={store} />
+      </DiffViewsContext.Provider>,
+    );
+    expect(mock.anchorInput.map((c) => c.id)).toEqual(["live", "old-here"]);
+    fireEvent.click(screen.getByTestId("select-line"));
+    fireEvent.click(screen.getByText("form-save"));
+    const made = (store.addComment as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    expect(made).not.toHaveProperty("base");
+    expect(made).not.toHaveProperty("range");
   });
 
   it("leaves line selection off when comments are disabled and find is closed", () => {

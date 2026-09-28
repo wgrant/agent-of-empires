@@ -222,6 +222,13 @@ export interface RepoBase {
   error?: string;
 }
 
+/** The commits a range file's contents came from. */
+export interface RangeCommits {
+  head: string;
+  from: string;
+  head_checked_out: boolean;
+}
+
 export interface RichDiffFilesResponse {
   files: RichDiffFile[];
   /** One entry per repo; workspace members can have different defaults. */
@@ -253,6 +260,8 @@ export interface RichFileContentsResponse {
   is_binary: boolean;
   /** Too large to send inline; contents are empty. */
   truncated: boolean;
+  /** Set for a file shown in a commit range. */
+  range_commits?: RangeCommits;
 }
 
 export type WorkspaceStatus = "active" | "idle";

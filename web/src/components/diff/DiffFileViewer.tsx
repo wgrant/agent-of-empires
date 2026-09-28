@@ -8,6 +8,7 @@ import { useWebSettings } from "../../hooks/useWebSettings";
 import { useShikiTheme } from "../../hooks/useShikiTheme";
 import type { UseDiffCommentsResult } from "../../hooks/useDiffComments";
 import { anchorCommentsToContents } from "./comments/anchorToContents";
+import { commentInView, headMoved } from "./comments/views";
 import { extractSnippetFromContents } from "./comments/extractSnippetFromContents";
 import { extensionToLanguage } from "./comments/language";
 import { CommentCard } from "./comments/CommentCard";
@@ -80,11 +81,8 @@ export function DiffFileViewer({
   const view = viewFor(useDiffViews()?.views ?? [], repoName);
   const viewBase = view?.base;
   const viewHead = view?.head;
-  const commentRange = useMemo(
-    () => (viewBase && viewHead ? { base: viewBase, head: viewHead } : undefined),
-    [viewBase, viewHead],
-  );
   const { contents, loading, error } = useFileContents(sessionId, filePath, repoName, revision, view);
+  const rangeCommits = contents?.range_commits;
   const { theme } = useShikiTheme();
   const { settings } = useWebSettings();
 
@@ -138,14 +136,15 @@ export function DiffFileViewer({
   // Each view anchors only its own comments; the rest still count and send.
   const comments = useMemo(
     () =>
-      (commentsStore?.comments ?? []).filter(
-        (c) => c.range?.base === commentRange?.base && c.range?.head === commentRange?.head,
+      (commentsStore?.comments ?? []).filter((c) =>
+        commentInView(c, viewBase || viewHead ? { base: viewBase, head: viewHead } : undefined),
       ),
-    [commentsStore, commentRange],
+    [commentsStore, viewBase, viewHead],
   );
+  const headCommit = rangeCommits?.head;
   const anchored = useMemo(
-    () => anchorCommentsToContents(comments, filePath, repoName, oldContent, newContent),
-    [comments, filePath, repoName, oldContent, newContent],
+    () => anchorCommentsToContents(comments, filePath, repoName, oldContent, newContent, headCommit),
+    [comments, filePath, repoName, oldContent, newContent, headCommit],
   );
   const staleComments = useMemo(() => anchored.filter((a) => a.status === "stale"), [anchored]);
 
@@ -196,11 +195,27 @@ export function DiffFileViewer({
         body,
         capturedSnippet: draft.snippet,
         language: extensionToLanguage(filePath),
-        ...(commentRange ? { range: commentRange } : {}),
+        ...(viewBase && viewHead
+          ? {
+              range: {
+                base: viewBase,
+                head: viewHead,
+                ...(rangeCommits
+                  ? {
+                      headCommit: rangeCommits.head,
+                      fromCommit: rangeCommits.from,
+                      headCheckedOut: rangeCommits.head_checked_out,
+                    }
+                  : {}),
+              },
+            }
+          : viewBase && draft.side === "old"
+            ? { base: viewBase }
+            : {}),
       });
       clearDraft();
     },
-    [draft, commentsStore, repoName, filePath, clearDraft, commentRange],
+    [draft, commentsStore, repoName, filePath, clearDraft, viewBase, viewHead, rangeCommits],
   );
 
   const renderAnnotation = useCallback(
@@ -353,7 +368,11 @@ export function DiffFileViewer({
           <div className="px-3 py-2 bg-status-error/5 border-b border-status-error/30 shrink-0 overflow-auto max-h-48">
             <div className="text-[11px] font-mono text-status-error mb-2">
               {staleComments.length} stale comment
-              {staleComments.length === 1 ? "" : "s"} (line range no longer in current diff)
+              {staleComments.length === 1 ? "" : "s"} (
+              {staleComments.some((a) => headMoved(a.comment, headCommit))
+                ? "made on an earlier commit of this range, or its lines are gone"
+                : "line range no longer in current diff"}
+              )
             </div>
             {staleComments.map((a) => (
               <CommentCard key={`stale-${a.comment.id}`} anchored={a} onSave={handleSave} onDelete={handleDelete} />

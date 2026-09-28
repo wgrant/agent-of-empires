@@ -125,6 +125,14 @@ pub fn file_at_commit(repo_path: &Path, commit: git2::Oid, path: &Path) -> Resul
     Ok(get_blob_bytes(&repo, &tree, path))
 }
 
+/// Whether the repository's checked-out HEAD is `commit`.
+pub fn is_checked_out(repo_path: &Path, commit: git2::Oid) -> bool {
+    crate::git::open_repo_at(repo_path)
+        .ok()
+        .and_then(|repo| repo.head().ok()?.peel_to_commit().ok().map(|c| c.id()))
+        == Some(commit)
+}
+
 /// A file as the commit `rev` names has it, if it is a blob there.
 pub fn file_at_revision(repo_path: &Path, rev: &str, path: &Path) -> Result<Option<Vec<u8>>> {
     let commit = revision(&crate::git::open_repo_at(repo_path)?, rev)?;

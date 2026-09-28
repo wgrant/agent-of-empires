@@ -41,3 +41,16 @@ describe("anchorCommentsToContents", () => {
     expect(out.map((a) => a.comment.id)).toEqual(["keep"]);
   });
 });
+
+describe("a range comment whose head moved", () => {
+  const range = (headCommit?: string) => ({ base: "main", head: "layer", ...(headCommit ? { headCommit } : {}) });
+  it.each<[string, string | undefined, string | undefined, "active" | "stale"]>([
+    ["head still names its commit", "aaa", "aaa", "active"],
+    ["head now names another commit, though the lines still fit", "aaa", "bbb", "stale"],
+    ["made before commits were recorded", undefined, "bbb", "active"],
+    ["the view's commit is not known yet", "aaa", undefined, "active"],
+  ])("is %s", (_, made, now, status) => {
+    const out = anchorCommentsToContents([comment({ range: range(made) })], "a.ts", undefined, OLD, NEW, now);
+    expect(out.map((a) => a.status)).toEqual([status]);
+  });
+});

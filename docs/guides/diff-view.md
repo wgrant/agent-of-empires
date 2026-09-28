@@ -58,7 +58,7 @@ Override the branch a repo diffs against when the eventual PR target differs fro
 
 The web diff view can also show a commit range: what one commit adds over another, from their merge-base (git's `base...head`), with no working-tree changes. For a stacked branch this shows one layer's changes alone. A [plugin pane](../plugin-api.md#diff-targets) opens a range when you click one of its rows; the diff header then reads `base...head`, and **Working tree** returns to the usual view. In a multi-repo workspace a range applies to one repo, and the others stay live.
 
-A range is this browser's view only: other devices keep their own, and the session's base override is untouched. **Open file** opens the file as `head` has it. Comments made on a range name it in the prompt, so the agent knows the lines are `head`'s rather than the working tree's, and show inline only while that range is open.
+A range is this browser's view only: other devices keep their own, and the session's base override is untouched. **Open file** opens the file as `head` has it. A comment made on a range records the commit `head` named and the merge-base, and the prompt names them, adding when `head` is not the worktree's checked-out commit so the agent does not edit the working tree for it. If `head` later names another commit, after a new commit or a rebase, the comment turns stale rather than landing on whatever lines now share its numbers. Old-side comments made against another base record that base. Comments show inline only in the view they were made in; the comments banner and the send dialog count the ones in other views, and each comment in the prompt names its view.
 
 ## Configuration
 

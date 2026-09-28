@@ -1,3 +1,4 @@
+import { commentViewLabel } from "./views";
 import { useEffect, useState } from "react";
 import { CommentMarkdown } from "./CommentMarkdown";
 import { compareComments, type DiffCommentsCardPayload } from "./buildPrompt";
@@ -107,7 +108,7 @@ function CommentHeader({ comment, isMultiRepo }: { comment: DiffComment; isMulti
       <span>·</span>
       <span>{range}</span>
       <span>·</span>
-      <span>{comment.range ? `${comment.side} · ${comment.range.base}...${comment.range.head}` : comment.side}</span>
+      <span>{comment.range || comment.base ? commentViewLabel(comment).replaceAll("`", "") : comment.side}</span>
     </div>
   );
 }
