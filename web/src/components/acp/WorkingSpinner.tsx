@@ -128,7 +128,7 @@ export function WorkingSpinner({
       <span>{label}</span>
       {outputTokens != null && outputTokens > 0 && !cancelling && (
         <span data-testid="acp-working-tokens" className="not-italic text-text-dim">
-          · ↓ {formatTokens(outputTokens)} tokens
+          · ↓ {formatTokens(outputTokens)} {outputTokens === 1 ? "token" : "tokens"}
         </span>
       )}
     </div>
