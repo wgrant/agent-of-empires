@@ -110,6 +110,29 @@ describe("ConversationLifecycleNotice", () => {
     }
   });
 
+  // A retired session's worktree is gone, so its archive banner offers no way back.
+  it("shows a retired session's banner without an Unarchive action", () => {
+    const incident: SessionIncident = {
+      kind: "archived",
+      action: "unarchive",
+      title: "Session archived",
+      detail: "Unarchive this session before it can run an agent again.",
+    };
+    for (const retired of [false, true]) {
+      const result = render(
+        <ConversationLifecycleNotice
+          sessionId="session-1"
+          incident={incident}
+          retired={retired}
+          onUnarchive={vi.fn()}
+        />,
+      );
+      expect(result.queryByText("Session retired") !== null).toBe(retired);
+      expect(result.queryByRole("button", { name: "Unarchive" }) !== null).toBe(!retired);
+      result.unmount();
+    }
+  });
+
   it("surfaces an absent unstarted agent with one explicit start action", async () => {
     const fetchSpy = vi.fn<typeof fetch>().mockResolvedValue(new Response("{}", { status: 202 }));
     vi.stubGlobal("fetch", fetchSpy);

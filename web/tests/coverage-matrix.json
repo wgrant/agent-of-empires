@@ -1480,6 +1480,22 @@
       "components": ["web/src/lib/sessionColors.ts", "web/src/components/WorkspaceSidebar.tsx"]
     },
     {
+      "id": "sidebar.retire",
+      "kind": "vitest",
+      "risk": "high",
+      "specs": [
+        "src/components/__tests__/SessionRowTriage.test.tsx",
+        "src/components/acp/ConversationLifecycleNotice.test.tsx",
+        "src/lib/__tests__/sidebarSort.test.ts"
+      ],
+      "components": [
+        "web/src/components/sidebar/RetireSessionDialog.tsx",
+        "web/src/components/sidebar/SessionRowMenu.tsx",
+        "web/src/components/sidebar/RowBadges.tsx",
+        "web/src/components/acp/SessionBanners.tsx"
+      ]
+    },
+    {
       "id": "sidebar.background-waiting-status",
       "kind": "vitest",
       "risk": "medium",

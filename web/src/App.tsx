@@ -2556,6 +2556,7 @@ function AppContent({
                         clearAliases={activeSession.clear_aliases}
                         yoloMode={activeSession.yolo_mode}
                         archivedAt={activeSession.archived_at ?? null}
+                        retiredAt={activeSession.retired_at ?? null}
                         snoozedUntil={activeSession.snoozed_until ?? null}
                         trashedAt={activeSession.trashed_at ?? null}
                         onRestore={

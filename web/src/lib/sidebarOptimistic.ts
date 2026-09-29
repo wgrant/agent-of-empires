@@ -31,10 +31,12 @@ export const EMPTY_OPTIMISTIC: OptimisticTriage = Object.freeze({
 export function serverTriageOf(ws: Workspace): {
   isPinned: boolean;
   isArchived: boolean;
+  isRetired: boolean;
   snoozedUntil: string | null;
   unread: boolean;
 } {
   return {
+    isRetired: ws.sessions.some((s) => s.retired_at != null),
     isPinned: ws.sessions.some((s) => s.pinned_at != null),
     isArchived: ws.sessions.some((s) => s.archived_at != null),
     snoozedUntil: ws.sessions.find((s) => s.snoozed_until)?.snoozed_until ?? null,

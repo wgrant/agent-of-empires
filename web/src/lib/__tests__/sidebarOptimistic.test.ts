@@ -46,7 +46,7 @@ it("effective resolvers let a defined override win and fall through to the serve
   expect(effectiveUnreadOf(override({ unread: true }), false)).toBe(true);
 });
 
-it("serverTriageOf aggregates pin/archive/unread with `.some` and snooze with the first match", () => {
+it("serverTriageOf aggregates pin/archive/retire/unread with `.some` and snooze with the first match", () => {
   const w = ws("w", [
     { pinned_at: null, archived_at: null, snoozed_until: null, unread: true },
     { pinned_at: "2026-01-01T00:00:00Z", archived_at: null, snoozed_until: "2099-01-01T00:00:00Z" },
@@ -54,6 +54,7 @@ it("serverTriageOf aggregates pin/archive/unread with `.some` and snooze with th
   expect(serverTriageOf(w)).toEqual({
     isPinned: true,
     isArchived: false,
+    isRetired: false,
     snoozedUntil: "2099-01-01T00:00:00Z",
     unread: true,
   });

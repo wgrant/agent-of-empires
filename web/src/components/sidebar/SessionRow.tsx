@@ -6,6 +6,7 @@ import {
   attachSessionProject,
   createSession,
   renameSession,
+  retireSession,
   setSessionColor,
   setSessionNotifications,
   setWorktreeName,
@@ -35,9 +36,10 @@ import { SnoozeModal } from "./SnoozeModal";
 import type { RowActivate, RowBulkApi, RowContextScope } from "./types";
 import { useLongPress } from "./useLongPress";
 import { usePendingSetting } from "./usePendingSetting";
+import { RetireSessionDialog } from "./RetireSessionDialog";
 import { WorkdirNameModal } from "./WorkdirNameModal";
 
-type Modal = "snooze" | "workdir" | "addProject" | "group" | null;
+type Modal = "snooze" | "workdir" | "addProject" | "group" | "retire" | null;
 
 export interface SessionRowProps {
   workspace: Workspace;
@@ -365,6 +367,7 @@ function buildRowActions(
     start: after(() => first && props.onStart?.(first.id)),
     pin: () => props.onPinToggle(workspace, !model.effectivePinned),
     archive: after(() => props.onArchiveToggle(workspace, !model.effectiveArchived)),
+    retire: after(() => setModal("retire")),
     openSnooze: after(() => setModal("snooze")),
     unsnooze: after(() => {
       setModal(null);
@@ -413,6 +416,23 @@ function RowModals({
           const res = await setWorktreeName(sessionId, name, renameBranch);
           if (res.ok) close();
           return res;
+        }}
+      />,
+      document.body,
+    );
+  }
+  if (modal === "retire") {
+    return createPortal(
+      <RetireSessionDialog
+        sessionTitle={label}
+        branch={model.branchLabel}
+        onCancel={close}
+        onConfirm={async () => {
+          const result = await retireSession(sessionId);
+          if (!result.ok) return result.message;
+          close();
+          reportInfo("Session retired; the sidebar updates shortly");
+          return null;
         }}
       />,
       document.body,
