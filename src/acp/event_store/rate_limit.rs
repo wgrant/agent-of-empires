@@ -65,14 +65,21 @@ impl EventStore {
                 Some(Event::RateLimit { info }) => (seq, Some(info), created_at),
                 _ => (seq, None, created_at),
             },
-            // Retention may have pruned the `RateLimit` row while its stop survives.
+            // Retention may have pruned the `RateLimit` row while its stop
+            // survives. Only the newest stop that is not a cap can anchor the
+            // park, since any other would supersede an older rate-limited one,
+            // so this reads back from the newest stop rather than every stop.
             None => conn
                 .query_row(
-                    "SELECT seq, created_at FROM acp_events
-                     WHERE session_id = ?1 AND discriminant = 'Stopped'
-                       AND json_extract(event_json, '$.Stopped.reason') = 'rate_limited'
-                     ORDER BY seq DESC LIMIT 1",
-                    params![session_id],
+                    "SELECT seq, created_at FROM (
+                       SELECT seq, created_at,
+                              json_extract(event_json, '$.Stopped.reason') AS reason
+                       FROM acp_events
+                       WHERE session_id = ?1 AND discriminant = 'Stopped'
+                         AND json_extract(event_json, '$.Stopped.reason') != ?2
+                       ORDER BY seq DESC LIMIT 1)
+                     WHERE reason = 'rate_limited'",
+                    params![session_id, RATE_LIMIT_EXHAUSTED_RETRIES_REASON],
                     |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
                 )
                 .optional()
@@ -478,6 +485,28 @@ mod tests {
         let cap_only = store.rate_limit_park("s-cap-only").expect("cap park");
         assert!(cap_only.cap_reached && cap_only.info.is_none());
         assert!(store.rate_limit_park("never-limited").is_none());
+
+        // With the RateLimit row pruned, the stops alone decide the park:
+        // (stops, parked, cap).
+        let exhausted = RATE_LIMIT_EXHAUSTED_RETRIES_REASON;
+        let cases: [(&[&str], bool, bool); 6] = [
+            (&["rate_limited"], true, false),
+            (&["user_stopped", "rate_limited"], true, false),
+            (&["rate_limited", "user_stopped"], false, false),
+            (&["rate_limited", exhausted], true, true),
+            (&["user_stopped", "rate_limited", exhausted], true, true),
+            (&["rate_limited", exhausted, "user_stopped"], false, false),
+        ];
+        for (i, (stops, parked, cap)) in cases.into_iter().enumerate() {
+            let id = format!("pruned-{i}");
+            record_from(&store, &id, 1, stops.iter().map(|reason| stopped(reason)));
+            let got = store.rate_limit_park(&id);
+            assert_eq!(
+                got.as_ref().map(|park| park.cap_reached),
+                parked.then_some(cap),
+                "{stops:?}"
+            );
+        }
 
         // The interrupted prompt, and the latest limit event, are read back.
         let (_tmp, store) = open_store(1000);
