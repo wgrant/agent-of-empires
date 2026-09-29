@@ -1,8 +1,4 @@
-// Structured view working indicator: braille spinner frames plus empire-themed verbs that rotate during long turns.
-
-export const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const;
-
-export const SPINNER_INTERVAL_MS = 80;
+// Structured view working indicator: empire-themed verbs that rotate during long turns.
 
 export const VERB_INTERVAL_MS = 18_000;
 
