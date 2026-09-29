@@ -18,24 +18,10 @@ use crate::server::{login, session_service};
 
 pub(super) const ACP_CHANNEL_CAPACITY: usize = 256;
 
-/// Per-profile cleanup defaults with a refresh timestamp.
-pub struct CleanupDefaultsCache {
-    pub refreshed_at: std::time::Instant,
-    pub entries: std::collections::HashMap<String, crate::daemon::CleanupDefaults>,
-}
-
-pub const CLEANUP_DEFAULTS_TTL: std::time::Duration = std::time::Duration::from_secs(30);
-
 /// How long attachment bytes buffered for a queued prompt live before the hourly sweep
 /// reclaims them.
 pub(super) const PENDING_ATTACHMENT_TTL: std::time::Duration =
     std::time::Duration::from_secs(24 * 60 * 60);
-
-impl CleanupDefaultsCache {
-    pub fn stale(&self) -> bool {
-        self.refreshed_at.elapsed() >= CLEANUP_DEFAULTS_TTL
-    }
-}
 
 /// A cached branch-diff scan (`compute_changed_files`) with its refresh timestamp.
 pub(super) struct ChangedFilesEntry {
@@ -147,9 +133,8 @@ pub struct AppState {
         Arc<RwLock<std::collections::HashMap<String, Arc<tokio::sync::Mutex<()>>>>>,
     /// Hook progress of in-flight web creates, keyed by `idempotency_key`.
     pub create_progress: super::create_progress::CreateProgressRegistry,
-    /// Disk config resolutions performed by `list_sessions`, one per unique `(profile,
-    /// project_path)` per request, accumulated monotonically.
-    pub list_sessions_resolver_misses: std::sync::atomic::AtomicUsize,
+    /// Resolved profile and repo config, reused until a file behind it changes.
+    pub resolved_config: crate::session::config::resolved_cache::ResolvedConfigCache,
     /// Session ids with an in-flight smart-rename one-shot, so a burst of rapid first
     /// prompts cannot spawn concurrent title generators for the same session.
     pub smart_rename_inflight: std::sync::Mutex<std::collections::HashSet<String>>,
@@ -175,9 +160,6 @@ pub struct AppState {
     /// Held across requests because CPU is a delta against the previous
     /// sample: a fresh sampler reports CPU as unknown until its second tick.
     pub(crate) metrics_sampler: tokio::sync::Mutex<crate::process::metrics::MetricsSampler>,
-    /// Cached per-profile cleanup defaults for the delete dialog, with a timestamp so we
-    /// re-resolve after config changes (see `CLEANUP_DEFAULTS_TTL`).
-    pub cleanup_defaults_cache: RwLock<CleanupDefaultsCache>,
     /// Cached (owner, host-scoped key) per repo path.
     pub remote_owner_cache: RwLock<std::collections::HashMap<String, Option<(String, String)>>>,
     /// Short-TTL cache of `compute_changed_files` keyed by `(repo_path,

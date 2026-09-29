@@ -123,7 +123,7 @@ fn build_test_app_state_impl(
         instance_locks,
         idempotency_locks,
         create_progress: Default::default(),
-        list_sessions_resolver_misses: std::sync::atomic::AtomicUsize::new(0),
+        resolved_config: Default::default(),
         smart_rename_inflight: std::sync::Mutex::new(std::collections::HashSet::new()),
         smart_rename_attempted: std::sync::Mutex::new(std::collections::HashSet::new()),
         smart_rename_semaphore: tokio::sync::Semaphore::new(
@@ -137,10 +137,6 @@ fn build_test_app_state_impl(
         mutation_epoch: Arc::clone(&mutation_epoch),
         recovery_pending: crate::session::recovery::new_recovery_pending(),
         metrics_sampler: tokio::sync::Mutex::new(Default::default()),
-        cleanup_defaults_cache: RwLock::new(CleanupDefaultsCache {
-            refreshed_at: std::time::Instant::now(),
-            entries: HashMap::new(),
-        }),
         changed_files_cache: std::sync::RwLock::new(std::collections::HashMap::new()),
         range_files_cache: Default::default(),
         remote_owner_cache: RwLock::new(HashMap::new()),

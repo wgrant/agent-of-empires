@@ -76,10 +76,14 @@ fn resolved_repo_config_path(project_path: &Path) -> Option<PathBuf> {
     if project_path.as_os_str().is_empty() {
         return None;
     }
-    [REPO_CONFIG_PATH, LEGACY_REPO_CONFIG_PATH]
+    repo_config_files(project_path)
         .into_iter()
-        .map(|rel| project_path.join(rel))
         .find(|path| path.exists())
+}
+
+/// The files [`load_repo_config`] may read under `source_path`, in order.
+pub(crate) fn repo_config_files(source_path: &Path) -> [PathBuf; 2] {
+    [REPO_CONFIG_PATH, LEGACY_REPO_CONFIG_PATH].map(|rel| source_path.join(rel))
 }
 
 /// Loads `.agent-of-empires/config.toml`, falling back to the legacy
@@ -269,8 +273,13 @@ pub fn resolve_config_with_repo(profile: &str, project_path: &Path) -> Result<Co
 /// profile config and a bad profile config to defaults.
 pub fn resolve_config_with_repo_or_warn(profile: &str, project_path: &Path) -> Config {
     let base = profile_config::resolve_config_or_warn(profile);
-    let config_path = repo_config_source_path(project_path);
-    let mut merged = match load_repo_config(&config_path) {
+    merge_repo_config_or_warn(base, &repo_config_source_path(project_path))
+}
+
+/// Merges the repo config at `config_path` (a [`repo_config_source_path`])
+/// over `base`, keeping `base` when it is absent or bad.
+pub(crate) fn merge_repo_config_or_warn(base: Config, config_path: &Path) -> Config {
+    let mut merged = match load_repo_config(config_path) {
         Ok(Some(repo_config)) => merge_repo_config(base, &repo_config),
         Ok(None) => base,
         Err(e) => {

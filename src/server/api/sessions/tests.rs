@@ -565,38 +565,81 @@ async fn force_smart_rename_preflight_skips_name_gate_and_sees_only_user_overrid
     }
 }
 
-#[tokio::test]
+/// Listing resolves each distinct (profile, project) once, not once per
+/// request, and holds the registry only while it copies the rows: a writer
+/// gets in while the listing waits on SQLite.
+#[tokio::test(flavor = "multi_thread")]
 #[serial_test::serial]
-async fn list_sessions_shares_config_resolution_across_overlays() {
-    use std::sync::atomic::Ordering;
+async fn list_sessions_caches_config_and_releases_the_registry_for_row_io() {
+    use crate::session::config::resolved_cache::Resolutions;
+    use std::time::{Duration, Instant};
 
     let tmp_home = tempfile::tempdir().expect("tempdir HOME");
     let _home = crate::session::test_support::isolate_app_dir_at(tmp_home.path());
-
-    let mk = |profile: &str, project_path: &str| {
+    let mk = |project_path: &str| {
         let mut inst = Instance::new("test-session", project_path);
         inst.tool = "custom-tool-2603".to_string();
-        inst.source_profile = profile.to_string();
+        inst.source_profile = "default".to_string();
+        inst.view = crate::session::View::Structured;
         inst
     };
-    let a = mk("default", "/tmp/repo-a-2603");
-    let a2 = mk("default", "/tmp/repo-a-2603");
-    let b = mk("default", "/tmp/repo-b-2603");
+    // The cache lives on this state, so no concurrent test can bump it.
+    let state = crate::server::test_support::build_test_app_state(vec![
+        mk("/tmp/repo-a-2603"),
+        mk("/tmp/repo-a-2603"),
+        mk("/tmp/repo-b-2603"),
+    ]);
+    let list = |state: Arc<AppState>| async move {
+        list_sessions(
+            axum::extract::State(state),
+            axum::extract::Query(ListSessionsQuery { state: None }),
+        )
+        .await
+        .0
+        .sessions
+        .len()
+    };
 
-    // The counter lives on this state, so no concurrent test can bump it.
-    let state = crate::server::test_support::build_test_app_state(vec![a, a2, b]);
-
-    let _envelope = list_sessions(
-        axum::extract::State(state.clone()),
-        axum::extract::Query(ListSessionsQuery { state: None }),
-    )
-    .await;
-    let misses = state.list_sessions_resolver_misses.load(Ordering::Relaxed);
-
+    for _ in 0..3 {
+        assert_eq!(list(state.clone()).await, 3);
+    }
     assert_eq!(
-        misses, 2,
-        "shared cache must resolve once per unique (profile, project_path) across both overlays; got {misses}",
+        state.resolved_config.resolutions(),
+        Resolutions {
+            profiles: 1,
+            repos: 2
+        }
     );
+
+    // A config edit makes the next listing resolve again. It does so before
+    // any SQLite lookup, which a held connection then parks.
+    let global = crate::session::get_app_dir().unwrap().join("config.toml");
+    std::fs::write(&global, "[session]\n").unwrap();
+    let (held_tx, held_rx) = tokio::sync::oneshot::channel();
+    let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+    let store = Arc::clone(&state.acp_event_store);
+    let holder = std::thread::spawn(move || {
+        let _conn = store.hold_connection();
+        held_tx.send(()).unwrap();
+        release_rx.recv().unwrap();
+    });
+    held_rx.await.unwrap();
+    let listing = tokio::spawn(list(state.clone()));
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while state.resolved_config.resolutions().profiles < 2 {
+        assert!(Instant::now() < deadline, "listing never resolved config");
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    let writer = tokio::time::timeout(Duration::from_secs(10), state.instances.write()).await;
+    assert!(
+        writer.is_ok(),
+        "the registry stayed locked while the listing waited on SQLite"
+    );
+    assert!(!listing.is_finished());
+    drop(writer);
+    release_tx.send(()).unwrap();
+    holder.join().unwrap();
+    assert_eq!(listing.await.unwrap(), 3);
 }
 
 #[tokio::test]

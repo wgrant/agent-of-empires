@@ -1,5 +1,8 @@
 //! Listing, recent projects, and workspace ordering endpoints.
 
+use std::collections::HashSet;
+use std::path::Path;
+
 use super::*;
 
 #[derive(serde::Serialize)]
@@ -26,24 +29,50 @@ pub async fn list_sessions(
     State(state): State<Arc<AppState>>,
     axum::extract::Query(query): axum::extract::Query<ListSessionsQuery>,
 ) -> Json<SessionsEnvelope> {
-    let instances = state.instances.read().await;
-    let claude_fullscreen = crate::claude_settings::read_tui_fullscreen();
-    // Snapshot the supervisor's worker lifecycle map once per request
-    // rather than locking it per row. See #1088.
-    let worker_states = state.acp_supervisor.worker_states_snapshot().await;
-    // Filtered once up front; every positional zip with `instances` below must
-    // walk this same filtered view so indices stay aligned with `sessions`.
-    let scoped_instances: Vec<&Instance> = instances
+    // The registry is released before any per-row I/O: a writer queued
+    // behind this read would stall every later reader, including each ACP
+    // connect, for as long as the listing runs.
+    let rows: Vec<Instance> = state
+        .instances
+        .read()
+        .await
         .iter()
         // CityHall only creates structured sessions, so a plain session from
         // the TUI or another client must not be visible or actionable to a
         // locked-down client. The lifecycle routes apply the matching gate (#7).
         .filter(|inst| !state.cityhall_mode || inst.is_structured())
         .filter(|inst| crate::session::SessionScope::matches(query.state, inst))
+        .cloned()
         .collect();
-    let mut sessions: Vec<SessionResponse> = scoped_instances
+    // Snapshot the supervisor's worker lifecycle map once per request
+    // rather than locking it per row. See #1088.
+    let worker_states = state.acp_supervisor.worker_states_snapshot().await;
+    // Config files, SQLite and git are all blocking I/O.
+    match tokio::task::spawn_blocking(move || list_rows(&state, &rows, &worker_states)).await {
+        Ok(envelope) => Json(envelope),
+        Err(e) => std::panic::resume_unwind(e.into_panic()),
+    }
+}
+
+/// The listing of `rows`, which is parallel to the `sessions` it returns.
+fn list_rows(
+    state: &AppState,
+    rows: &[Instance],
+    worker_states: &HashMap<String, crate::daemon::AcpWorkerState>,
+) -> SessionsEnvelope {
+    let claude_fullscreen = crate::claude_settings::read_tui_fullscreen();
+    let resolved_before = state.resolved_config.resolutions();
+    let configs: Vec<_> = rows
         .iter()
-        .copied()
+        .map(|inst| {
+            state
+                .resolved_config
+                .with_repo(&inst.source_profile, Path::new(&inst.project_path))
+        })
+        .collect();
+
+    let mut sessions: Vec<SessionResponse> = rows
+        .iter()
         .map(|inst| {
             let plan_summary = if inst.is_structured() {
                 state
@@ -114,259 +143,110 @@ pub async fn list_sessions(
                             last_active_at: activity.last_active_at.map(|at| at.to_rfc3339()),
                         });
             }
+            // A live worker is never parked, so only workerless sessions pay
+            // for the probe.
+            if structured_live {
+                session.rate_limit = (acp_worker_state != crate::daemon::AcpWorkerState::Running)
+                    .then(|| {
+                        state.acp_event_store.rate_limit_park(&inst.id).map(|park| {
+                            park.info
+                                .unwrap_or_else(crate::acp::state::RateLimitInfo::undated)
+                        })
+                    })
+                    .flatten();
+            }
             session
         })
         .collect();
 
-    // Share resolved config between the ACP-capability and smart-rename
-    // overlays, halving disk reads when a profile/project pair repeats in the
-    // 3s sidebar poll (#2603). Monotonic, so the delta below is this request's
-    // own count and no reset can race a concurrent request.
-    let misses_before = state
-        .list_sessions_resolver_misses
-        .load(std::sync::atomic::Ordering::Relaxed);
-    let mut session_cfg_cache = SessionCfgCache::new(&state.list_sessions_resolver_misses);
     let mut project_override_cache = ProjectRegistryCache::new();
-
-    // Overlay custom-agent ACP capability; built-ins were resolved in the
-    // constructor. Distinct `(profile, project_path)` pairs resolve once via
-    // the shared cache.
-    for (resp, inst) in sessions.iter_mut().zip(scoped_instances.iter().copied()) {
-        if resp.acp_capable {
-            continue;
+    let inflight: HashSet<String> = state
+        .smart_rename_inflight
+        .lock()
+        .map(|g| g.clone())
+        .unwrap_or_default();
+    let attempted: HashSet<String> = state
+        .smart_rename_attempted
+        .lock()
+        .map(|g| g.clone())
+        .unwrap_or_default();
+    for ((resp, inst), cfg) in sessions.iter_mut().zip(rows).zip(&configs) {
+        // Built-in agents' ACP capability was resolved in the constructor.
+        if !resp.acp_capable {
+            resp.acp_capable = custom_agent_acp_capable(&cfg.session, &inst.tool);
         }
-        let cfg = session_cfg_cache.resolve(&inst.source_profile, &inst.project_path);
-        resp.acp_capable = custom_agent_acp_capable(cfg, &inst.tool);
-    }
 
-    // Resolve per-profile cleanup defaults with a TTL cache on AppState
-    let cache = {
-        let guard = state.cleanup_defaults_cache.read().await;
-        if guard.stale() {
-            None
-        } else {
-            Some(guard.entries.clone())
-        }
-    };
-
-    let defaults_map = if let Some(cached) = cache {
-        cached
-    } else {
-        use std::collections::HashMap;
-        let mut fresh: HashMap<String, CleanupDefaults> = HashMap::new();
-        for session in &sessions {
-            fresh.entry(session.profile.clone()).or_insert_with(|| {
-                let cfg = crate::session::config::profile_config::resolve_config_or_warn(
-                    &session.profile,
-                );
-                CleanupDefaults {
-                    delete_worktree: cfg.worktree.auto_cleanup,
-                    delete_branch: cfg.worktree.should_delete_branch_on_cleanup(),
-                    delete_sandbox: cfg.sandbox.auto_cleanup,
-                    delete_to_trash: cfg.session.delete_to_trash,
-                }
-            });
-        }
-        *state.cleanup_defaults_cache.write().await = crate::server::CleanupDefaultsCache {
-            refreshed_at: std::time::Instant::now(),
-            entries: fresh.clone(),
+        let profile_cfg = state.resolved_config.profile(&resp.profile);
+        resp.cleanup_defaults = CleanupDefaults {
+            delete_worktree: profile_cfg.worktree.auto_cleanup,
+            delete_branch: profile_cfg.worktree.should_delete_branch_on_cleanup(),
+            delete_sandbox: profile_cfg.sandbox.auto_cleanup,
+            delete_to_trash: profile_cfg.session.delete_to_trash,
         };
-        fresh
-    };
-
-    // Overlay the per-profile tie setting (#1927) so the sidebar can collapse
-    // the standalone workdir action. Resolved once per distinct profile.
-    {
-        use std::collections::HashMap;
-        let mut tie_cache: HashMap<String, bool> = HashMap::new();
-        for session in &mut sessions {
-            if !session.has_managed_worktree {
-                continue;
-            }
-            let tied = *tie_cache.entry(session.profile.clone()).or_insert_with(|| {
-                crate::session::config::profile_config::resolve_config_or_warn(&session.profile)
-                    .session
-                    .tie_workdir_to_name
-            });
-            session.tie_workdir_to_name = tied;
+        // Lets the sidebar collapse the standalone workdir action (#1927).
+        if resp.has_managed_worktree {
+            resp.tie_workdir_to_name = profile_cfg.session.tie_workdir_to_name;
         }
-    }
+        if inst.is_structured() && !inst.is_archived() && !inst.is_trashed() {
+            resp.rate_limit_auto_resume = Some(
+                state
+                    .resolved_config
+                    .profile(&inst.source_profile)
+                    .acp
+                    .rate_limit_auto_resume,
+            );
+        }
 
-    // Inputs for the rate-limit park overlay, snapshotted so the blocking
-    // batch can run once the registry read lock is released. A live worker is
-    // never parked, so only workerless sessions pay for the probe.
-    let park_probes: Vec<(usize, String, String, bool)> = sessions
-        .iter()
-        .zip(scoped_instances.iter().copied())
-        .enumerate()
-        .filter(|(_, (_, inst))| inst.is_structured() && !inst.is_archived() && !inst.is_trashed())
-        .map(|(i, (resp, inst))| {
-            (
-                i,
-                inst.id.clone(),
-                inst.source_profile.clone(),
-                resp.acp_worker_state != crate::daemon::AcpWorkerState::Running,
-            )
-        })
-        .collect();
-
-    // Overlay the smart-rename indicator. `Running` comes from the live
-    // in-flight set, `Pending` from the shared eligibility predicate, so the
-    // indicator cannot drift from the runtime gate.
-    {
+        // The smart-rename indicator: `Running` from the live in-flight set,
+        // `Pending` from the shared eligibility predicate, so it cannot drift
+        // from the runtime gate.
         use crate::session::smart_rename::{
             check_eligible_resolved, resolve_smart_rename_config, SmartRenameState,
         };
-        use std::collections::HashSet;
-        let inflight: HashSet<String> = state
-            .smart_rename_inflight
-            .lock()
-            .map(|g| g.clone())
-            .unwrap_or_default();
-        let attempted: HashSet<String> = state
-            .smart_rename_attempted
-            .lock()
-            .map(|g| g.clone())
-            .unwrap_or_default();
-        for (resp, inst) in sessions.iter_mut().zip(scoped_instances.iter().copied()) {
-            resp.default_name = crate::session::civilizations::is_default_civ_name(&inst.title);
-            if inflight.contains(&inst.id) {
-                resp.smart_rename = SmartRenameState::Running;
-                continue;
-            }
-            // A session whose one-shot already ran, and failed since the name
-            // is still default, will not retry, so it is not pending either.
-            if attempted.contains(&inst.id) {
-                continue;
-            }
-            let session_cfg = session_cfg_cache.resolve(&inst.source_profile, &inst.project_path);
-            let smart_rename_override = project_override_cache.smart_rename_override(
-                &inst.source_profile,
-                inst.scratch,
-                inst.repo_path(),
-                session_cfg,
-            );
-            let cfg = resolve_smart_rename_config(session_cfg, smart_rename_override);
-            let eligible = check_eligible_resolved(
-                inst.is_structured(),
-                cfg.setting_on,
-                false,
-                &inst.title,
-                &inst.tool,
-                cfg.rename_agent,
-                inst.is_sandboxed(),
-                &inst.command,
-                cfg.overrides,
-            )
-            .is_ok();
-            if eligible {
-                resp.smart_rename = SmartRenameState::Pending;
-            }
+        resp.default_name = crate::session::civilizations::is_default_civ_name(&inst.title);
+        if inflight.contains(&inst.id) {
+            resp.smart_rename = SmartRenameState::Running;
+            continue;
+        }
+        // A session whose one-shot already ran, and failed since the name
+        // is still default, will not retry, so it is not pending either.
+        if attempted.contains(&inst.id) {
+            continue;
+        }
+        let smart_rename_override = project_override_cache.smart_rename_override(
+            &inst.source_profile,
+            inst.scratch,
+            inst.repo_path(),
+            &cfg.session,
+        );
+        let rename = resolve_smart_rename_config(&cfg.session, smart_rename_override);
+        let eligible = check_eligible_resolved(
+            inst.is_structured(),
+            rename.setting_on,
+            false,
+            &inst.title,
+            &inst.tool,
+            rename.rename_agent,
+            inst.is_sandboxed(),
+            &inst.command,
+            rename.overrides,
+        )
+        .is_ok();
+        if eligible {
+            resp.smart_rename = SmartRenameState::Pending;
         }
     }
 
-    // Both overlays have run, so the count is final for this request.
-    let resolver_misses = state
-        .list_sessions_resolver_misses
-        .load(std::sync::atomic::Ordering::Relaxed)
-        .saturating_sub(misses_before);
+    let resolved = state.resolved_config.resolutions();
     tracing::debug!(
         target: "http.api.sessions",
         rows = sessions.len(),
-        resolver_misses,
-        "list_sessions resolved session config once per unique profile/project pair"
+        profile_resolutions = resolved.profiles - resolved_before.profiles,
+        repo_resolutions = resolved.repos - resolved_before.repos,
+        "list_sessions resolved config"
     );
 
-    // The park probe touches config files and SQLite, so it runs with the
-    // session registry unlocked rather than holding writers behind it.
-    drop(scoped_instances);
-    drop(instances);
-    if !park_probes.is_empty() {
-        let store = Arc::clone(&state.acp_event_store);
-        let overlays = tokio::task::spawn_blocking(move || {
-            use std::collections::HashMap;
-            let mut auto_resume_cache: HashMap<String, bool> = HashMap::new();
-            park_probes
-                .into_iter()
-                .map(|(i, id, profile, workerless)| {
-                    let auto_resume =
-                        *auto_resume_cache.entry(profile.clone()).or_insert_with(|| {
-                            crate::session::config::profile_config::resolve_config_or_warn(&profile)
-                                .acp
-                                .rate_limit_auto_resume
-                        });
-                    let park = workerless
-                        .then(|| {
-                            store.rate_limit_park(&id).map(|park| {
-                                park.info
-                                    .unwrap_or_else(crate::acp::state::RateLimitInfo::undated)
-                            })
-                        })
-                        .flatten();
-                    (i, auto_resume, park)
-                })
-                .collect::<Vec<_>>()
-        })
-        .await
-        .unwrap_or_default();
-        for (i, auto_resume, park) in overlays {
-            sessions[i].rate_limit_auto_resume = Some(auto_resume);
-            sessions[i].rate_limit = park;
-        }
-    }
-
-    // Resolve remote owners with a permanent cache on AppState
-    {
-        let cache = state.remote_owner_cache.read().await;
-        for session in &mut sessions {
-            if let Some(defaults) = defaults_map.get(&session.profile) {
-                session.cleanup_defaults = defaults.clone();
-            }
-            let repo_path = session
-                .main_repo_path
-                .as_deref()
-                .unwrap_or(&session.project_path);
-            if let Some(resolved) = cache.get(repo_path) {
-                session.remote_owner = resolved.as_ref().map(|(owner, _)| owner.clone());
-                session.remote_owner_key = resolved.as_ref().map(|(_, key)| key.clone());
-            }
-        }
-    }
-
-    // Fill any uncached repo paths
-    let uncached: Vec<String> = sessions
-        .iter()
-        .filter(|s| s.remote_owner.is_none())
-        .map(|s| {
-            s.main_repo_path
-                .clone()
-                .unwrap_or_else(|| s.project_path.clone())
-        })
-        .collect::<std::collections::HashSet<_>>()
-        .into_iter()
-        .collect();
-
-    if !uncached.is_empty() {
-        let mut cache = state.remote_owner_cache.write().await;
-        for path in &uncached {
-            if !cache.contains_key(path.as_str()) {
-                let resolved = crate::git::get_remote_owner_with_key(std::path::Path::new(path));
-                cache.insert(path.clone(), resolved);
-            }
-        }
-        for session in &mut sessions {
-            let repo_path = session
-                .main_repo_path
-                .as_deref()
-                .unwrap_or(&session.project_path);
-            if session.remote_owner.is_none() {
-                if let Some(resolved) = cache.get(repo_path) {
-                    session.remote_owner = resolved.as_ref().map(|(owner, _)| owner.clone());
-                    session.remote_owner_key = resolved.as_ref().map(|(_, key)| key.clone());
-                }
-            }
-        }
-    }
+    fill_remote_owners(state, &mut sessions);
 
     let workspace_ordering =
         merge_workspace_ordering(&sessions, state.read_only).unwrap_or_else(|e| {
@@ -374,11 +254,45 @@ pub async fn list_sessions(
             Vec::new()
         });
 
-    Json(SessionsEnvelope {
+    SessionsEnvelope {
         sessions,
         workspace_ordering,
-    })
+    }
 }
+
+/// Each session's remote owner, from a cache that lasts the process.
+fn fill_remote_owners(state: &AppState, sessions: &mut [SessionResponse]) {
+    let repo_of = |s: &SessionResponse| {
+        s.main_repo_path
+            .clone()
+            .unwrap_or_else(|| s.project_path.clone())
+    };
+    let uncached: HashSet<String> = {
+        let cache = state.remote_owner_cache.blocking_read();
+        sessions
+            .iter()
+            .map(repo_of)
+            .filter(|path| !cache.contains_key(path))
+            .collect()
+    };
+    // Resolved before taking the write lock, so readers are not held behind git.
+    let resolved: Vec<_> = uncached
+        .into_iter()
+        .map(|path| {
+            let owner = crate::git::get_remote_owner_with_key(Path::new(&path));
+            (path, owner)
+        })
+        .collect();
+    let mut cache = state.remote_owner_cache.blocking_write();
+    cache.extend(resolved);
+    for session in sessions {
+        if let Some(Some((owner, key))) = cache.get(&repo_of(session)) {
+            session.remote_owner = Some(owner.clone());
+            session.remote_owner_key = Some(key.clone());
+        }
+    }
+}
+
 // Workspace id derivation, mirroring `useWorkspaces.ts`: a session with a
 // branch collapses to `${repoPath}::${branch}`, a branchless one gets
 // `${repoPath}::__session__::${id}`. `repoPath` strips trailing slashes so
