@@ -267,14 +267,25 @@ fn parse_psi_some_avg10(psi: &str) -> Option<f32> {
 }
 
 /// Launches a process in its own scope under the systemd user manager, if the
-/// daemon runs as a user service. A system service's children stay with it:
-/// the user manager can stop with the user's last login.
+/// daemon runs as a user service, or as a system service whose user lingers.
+/// Without lingering the user manager stops with the user's last login and
+/// takes its scopes along, so a system service keeps its children instead.
 pub(super) fn user_scope_launcher(unit: &str) -> Option<super::OutsideServiceLauncher> {
     let cgroup = fs::read_to_string("/proc/self/cgroup").ok()?;
-    if !runs_under_user_manager(&cgroup, nix::unistd::getuid().as_raw()) {
-        return None;
+    let uid = nix::unistd::getuid();
+    // A system service has no XDG_RUNTIME_DIR of its own.
+    let runtime_dir =
+        std::env::var_os("XDG_RUNTIME_DIR").unwrap_or_else(|| format!("/run/user/{uid}").into());
+    if !runs_under_user_manager(&cgroup, uid.as_raw()) {
+        let user = nix::unistd::User::from_uid(uid).ok().flatten()?;
+        if !user_manager_lingers(
+            Path::new("/var/lib/systemd/linger"),
+            &user.name,
+            Path::new(&runtime_dir),
+        ) {
+            return None;
+        }
     }
-    let runtime_dir = std::env::var_os("XDG_RUNTIME_DIR")?;
     let (program, version) = systemd_run().as_ref()?;
     let args = scope_args(unit, *version)
         .into_iter()
@@ -320,6 +331,11 @@ fn scope_args(unit: &str, version: Option<u32>) -> Vec<String> {
     args.push(format!("--unit={unit}.scope"));
     args.push("--".into());
     args
+}
+
+/// Whether `user`'s manager runs regardless of logins and is reachable now.
+fn user_manager_lingers(linger_dir: &Path, user: &str, runtime_dir: &Path) -> bool {
+    linger_dir.join(user).exists() && runtime_dir.join("bus").exists()
 }
 
 /// Whether the cgroup v2 path lies in the user manager's tree.
@@ -530,6 +546,29 @@ mod tests {
             Some(259)
         );
         assert_eq!(systemd_version("garbage"), None);
+    }
+
+    #[test]
+    fn a_system_service_uses_the_user_manager_only_while_it_lingers() {
+        for (lingers, bus, expected) in [
+            (true, true, true),
+            (true, false, false),
+            (false, true, false),
+        ] {
+            let linger_dir = tempfile::tempdir().unwrap();
+            let runtime_dir = tempfile::tempdir().unwrap();
+            if lingers {
+                fs::write(linger_dir.path().join("alice"), "").unwrap();
+            }
+            if bus {
+                fs::write(runtime_dir.path().join("bus"), "").unwrap();
+            }
+            assert_eq!(
+                user_manager_lingers(linger_dir.path(), "alice", runtime_dir.path()),
+                expected,
+                "lingers={lingers} bus={bus}"
+            );
+        }
     }
 
     #[test]
