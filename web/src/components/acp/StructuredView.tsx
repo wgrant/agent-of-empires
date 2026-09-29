@@ -406,7 +406,8 @@ function AcpChrome({
               className="group/transcript mx-auto max-w-3xl px-4 pb-6 xl:max-w-4xl 2xl:max-w-5xl"
               style={{ paddingTop: `${24 + connectionInset}px` }}
             >
-              {!readOnly && (
+              {/* An existing conversation is empty until it loads. */}
+              {!readOnly && conversationSync === "idle" && (
                 <ThreadPrimitive.Empty>
                   <EmptyState onPick={ctx.sendPrompt} />
                 </ThreadPrimitive.Empty>
