@@ -21,6 +21,69 @@ pub struct RateLimitPark {
     pub last_resume_attempt_ms: Option<i64>,
 }
 
+#[derive(Clone, Copy)]
+struct RecentStop {
+    seq: i64,
+    created_at: i64,
+    rate_limited: bool,
+}
+
+/// The newest stops that decide a park. Every stop but a cap supersedes the
+/// ones before it, so reading stops newest first ends at the first that is
+/// not a cap, rather than reading every stop in a long session.
+struct RecentStops {
+    /// The newest cap stop, when it is newer than every other stop.
+    newest_cap: Option<i64>,
+    newest_other: Option<RecentStop>,
+}
+
+fn recent_stops(conn: &rusqlite::Connection, session_id: &str) -> RecentStops {
+    let mut stops = RecentStops {
+        newest_cap: None,
+        newest_other: None,
+    };
+    let what = "rate_limit_park stops";
+    let Some(mut stmt) = logged(
+        conn.prepare(
+            "SELECT seq, created_at, json_extract(event_json, '$.Stopped.reason')
+             FROM acp_events
+             WHERE session_id = ?1 AND discriminant = 'Stopped'
+             ORDER BY seq DESC",
+        ),
+        what,
+        session_id,
+    ) else {
+        return stops;
+    };
+    let Some(mut rows) = logged(stmt.query(params![session_id]), what, session_id) else {
+        return stops;
+    };
+    while let Some(row) = logged(rows.next(), what, session_id).flatten() {
+        let (Ok(seq), Ok(created_at), Ok(reason)) = (
+            row.get::<_, i64>(0),
+            row.get::<_, i64>(1),
+            row.get::<_, Option<String>>(2),
+        ) else {
+            continue;
+        };
+        match reason.as_deref() {
+            Some(RATE_LIMIT_EXHAUSTED_RETRIES_REASON) => {
+                stops.newest_cap.get_or_insert(seq);
+            }
+            Some(reason) => {
+                stops.newest_other = Some(RecentStop {
+                    seq,
+                    created_at,
+                    rate_limited: reason == "rate_limited",
+                });
+                break;
+            }
+            None => {}
+        }
+    }
+    stops
+}
+
 impl EventStore {
     /// The most recent `RateLimit` and the epoch ms it was recorded at.
     pub fn latest_rate_limit_event(&self, session_id: &str) -> Option<(RateLimitInfo, i64)> {
@@ -47,6 +110,7 @@ impl EventStore {
     /// (a prompt, an agent switch, a new session, or an organic stop) superseded it.
     pub fn rate_limit_park(&self, session_id: &str) -> Option<RateLimitPark> {
         let conn = self.conn();
+        let stops = recent_stops(&conn, session_id);
         let latest_rate_limit: Option<(i64, String, i64)> = conn
             .query_row(
                 "SELECT seq, event_json, created_at FROM acp_events
@@ -65,36 +129,37 @@ impl EventStore {
                 Some(Event::RateLimit { info }) => (seq, Some(info), created_at),
                 _ => (seq, None, created_at),
             },
-            // Retention may have pruned the `RateLimit` row while its stop
-            // survives. Only the newest stop that is not a cap can anchor the
-            // park, since any other would supersede an older rate-limited one,
-            // so this reads back from the newest stop rather than every stop.
-            None => conn
-                .query_row(
-                    "SELECT seq, created_at FROM (
-                       SELECT seq, created_at,
-                              json_extract(event_json, '$.Stopped.reason') AS reason
-                       FROM acp_events
-                       WHERE session_id = ?1 AND discriminant = 'Stopped'
-                         AND json_extract(event_json, '$.Stopped.reason') != ?2
-                       ORDER BY seq DESC LIMIT 1)
-                     WHERE reason = 'rate_limited'",
-                    params![session_id, RATE_LIMIT_EXHAUSTED_RETRIES_REASON],
-                    |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
-                )
-                .optional()
-                .unwrap_or(None)
-                .map_or((0, None, 0), |(seq, created_at)| (seq, None, created_at)),
+            // Retention may have pruned the `RateLimit` row while its stop survives.
+            None => match stops.newest_other {
+                Some(RecentStop {
+                    seq,
+                    created_at,
+                    rate_limited: true,
+                }) => (seq, None, created_at),
+                _ => (0, None, 0),
+            },
         };
-        let cap_seq: Option<i64> = conn
-            .query_row(
-                "SELECT MAX(seq) FROM acp_events
-                 WHERE session_id = ?1 AND seq > ?2 AND discriminant = 'Stopped'
-                   AND json_extract(event_json, '$.Stopped.reason') = ?3",
-                params![session_id, anchor_seq, RATE_LIMIT_EXHAUSTED_RETRIES_REASON],
-                |row| row.get::<_, Option<i64>>(0),
-            )
-            .unwrap_or(None);
+        let cap_seq = match (stops.newest_cap, stops.newest_other) {
+            (Some(cap), _) => (cap > anchor_seq).then_some(cap),
+            // Every cap is older than the newest other stop, which supersedes
+            // it unless that stop is itself rate-limited.
+            (None, Some(other)) if other.rate_limited && anchor_seq < other.seq => conn
+                .query_row(
+                    "SELECT MAX(seq) FROM acp_events
+                     WHERE session_id = ?1 AND seq > ?2 AND seq < ?3
+                       AND discriminant = 'Stopped'
+                       AND json_extract(event_json, '$.Stopped.reason') = ?4",
+                    params![
+                        session_id,
+                        anchor_seq,
+                        other.seq,
+                        RATE_LIMIT_EXHAUSTED_RETRIES_REASON
+                    ],
+                    |row| row.get::<_, Option<i64>>(0),
+                )
+                .unwrap_or(None),
+            _ => None,
+        };
         let park_seq = match (cap_seq, anchor_seq) {
             (Some(cap), _) => cap,
             (None, 0) => return None,
@@ -445,6 +510,15 @@ mod tests {
             (
                 "cap reached",
                 vec![stopped(RATE_LIMIT_EXHAUSTED_RETRIES_REASON)],
+                true,
+                true,
+            ),
+            (
+                "limited again after the cap",
+                vec![
+                    stopped(RATE_LIMIT_EXHAUSTED_RETRIES_REASON),
+                    stopped("rate_limited"),
+                ],
                 true,
                 true,
             ),
