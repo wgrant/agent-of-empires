@@ -328,7 +328,7 @@ pub struct OutsideServiceLauncher {
 }
 
 /// A launcher that runs a process in its own unit named `unit`, when the
-/// daemon runs as a systemd user service whose stop would otherwise kill
+/// daemon runs as a systemd service whose stop would otherwise kill
 /// everything it started; `None` to spawn it directly.
 pub fn outside_service_launcher(unit: &str) -> Option<OutsideServiceLauncher> {
     #[cfg(target_os = "linux")]
