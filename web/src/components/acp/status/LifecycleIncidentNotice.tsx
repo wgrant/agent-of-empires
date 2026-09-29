@@ -1,5 +1,5 @@
-import { RotateCcw } from "lucide-react";
 import type { ReactNode } from "react";
+import { Spinner } from "../../Spinner";
 
 export type LifecycleNoticeTone = "info" | "warning" | "error";
 export type LifecycleActionPhase = "idle" | "pending" | "accepted" | "failed";
@@ -69,7 +69,7 @@ export function LifecycleIncidentNotice({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 text-sm font-medium">
-            {working && <RotateCcw className="size-3.5 shrink-0 animate-spin" aria-hidden="true" />}
+            {working && <Spinner />}
             <span>{title}</span>
           </div>
           <div className={`mt-1 text-xs ${classes.detail}`}>{detail}</div>

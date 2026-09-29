@@ -6,6 +6,7 @@ import { GROUP_ORDER, TAB_ORDER, type PaletteTab } from "./groups";
 import type { CommandAction, CommandActionGroup } from "./types";
 import { matchCheat, type CheatEffect } from "../../lib/cheats";
 import { reportInfo } from "../../lib/toastBus";
+import { Spinner } from "../Spinner";
 
 // The cmdk item value; the pre-filter and <Command.Item> must use the same string.
 function actionValue(a: CommandAction): string {
@@ -221,7 +222,7 @@ export function CommandPalette({ open, onClose, actions, onSearchChange, searchi
                     disabled
                     className="flex items-center gap-2 px-3 h-9 rounded-md text-sm text-text-muted"
                   >
-                    <span className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-text-muted border-t-transparent" />
+                    <Spinner className="size-3" />
                     <span>Searching conversations…</span>
                   </Command.Item>
                 )}
