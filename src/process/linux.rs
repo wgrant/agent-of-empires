@@ -275,27 +275,11 @@ pub(super) fn user_scope_launcher(unit: &str) -> Option<super::OutsideServiceLau
         return None;
     }
     let runtime_dir = std::env::var_os("XDG_RUNTIME_DIR")?;
-    let (program, expands_environment) = systemd_run().as_ref()?;
-    let unit: String = unit
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect();
-    let mut args: Vec<std::ffi::OsString> = ["--user", "--scope", "--quiet", "--collect"]
-        .iter()
+    let (program, version) = systemd_run().as_ref()?;
+    let args = scope_args(unit, *version)
+        .into_iter()
         .map(Into::into)
         .collect();
-    // From systemd 254 it expands `$VAR` in the command unless told not to.
-    if *expands_environment {
-        args.push("--expand-environment=no".into());
-    }
-    args.push(format!("--unit={unit}.scope").into());
-    args.push("--".into());
     let mut env = vec![("XDG_RUNTIME_DIR".into(), runtime_dir)];
     if let Some(bus) = std::env::var_os("DBUS_SESSION_BUS_ADDRESS") {
         env.push(("DBUS_SESSION_BUS_ADDRESS".into(), bus));
@@ -307,6 +291,37 @@ pub(super) fn user_scope_launcher(unit: &str) -> Option<super::OutsideServiceLau
     })
 }
 
+/// `systemd-run` arguments for a runner's scope, given its systemd version.
+fn scope_args(unit: &str, version: Option<u32>) -> Vec<String> {
+    let unit: String = unit
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let mut args: Vec<String> = ["--user", "--scope", "--quiet", "--collect"]
+        .map(String::from)
+        .into();
+    let version = version.unwrap_or(0);
+    // From systemd 254 it expands `$VAR` in the command unless told not to.
+    if version >= 254 {
+        args.push("--expand-environment=no".into());
+    }
+    // A scope stops whole when the OOM killer takes any of its processes,
+    // such as a test suite the agent ran, and the agent with it. Scopes
+    // accept the policy from systemd 253.
+    if version >= 253 {
+        args.push("--property=OOMPolicy=continue".into());
+    }
+    args.push(format!("--unit={unit}.scope"));
+    args.push("--".into());
+    args
+}
+
 /// Whether the cgroup v2 path lies in the user manager's tree.
 fn runs_under_user_manager(cgroup: &str, uid: u32) -> bool {
     let manager = format!("user@{uid}.service");
@@ -316,16 +331,16 @@ fn runs_under_user_manager(cgroup: &str, uid: u32) -> bool {
         .any(|path| path.split('/').any(|part| part == manager))
 }
 
-/// `systemd-run` on PATH, and whether it expands the environment in commands.
-fn systemd_run() -> &'static Option<(std::path::PathBuf, bool)> {
-    static FOUND: std::sync::OnceLock<Option<(std::path::PathBuf, bool)>> =
+/// `systemd-run` on PATH, and its systemd version when it reports one.
+fn systemd_run() -> &'static Option<(std::path::PathBuf, Option<u32>)> {
+    static FOUND: std::sync::OnceLock<Option<(std::path::PathBuf, Option<u32>)>> =
         std::sync::OnceLock::new();
     FOUND.get_or_init(|| {
         let program = std::env::split_paths(&std::env::var_os("PATH")?)
             .map(|dir| dir.join("systemd-run"))
             .find(|path| path.is_file())?;
         let version = super::command_output(program.to_str()?, &["--version"])?;
-        Some((program, systemd_version(&version).is_some_and(|v| v >= 254)))
+        Some((program, systemd_version(&version)))
     })
 }
 
@@ -515,6 +530,30 @@ mod tests {
             Some(259)
         );
         assert_eq!(systemd_version("garbage"), None);
+    }
+
+    #[test]
+    fn scope_arguments_follow_the_systemd_version() {
+        let flags = |version| {
+            scope_args("aoe acp/s1", version)
+                .into_iter()
+                .filter(|arg| arg.starts_with("--expand") || arg.starts_with("--property"))
+                .collect::<Vec<_>>()
+        };
+        let oom = "--property=OOMPolicy=continue";
+        let expand = "--expand-environment=no";
+        for (version, want) in [
+            (None, vec![]),
+            (Some(252), vec![]),
+            (Some(253), vec![oom]),
+            (Some(259), vec![expand, oom]),
+        ] {
+            assert_eq!(flags(version), want, "{version:?}");
+        }
+        assert_eq!(
+            scope_args("aoe acp/s1", None)[4..],
+            ["--unit=aoe_acp_s1.scope", "--"]
+        );
     }
 
     #[test]
