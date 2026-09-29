@@ -2,6 +2,7 @@ import { useMemo } from "react";
 
 const IS_MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad|iPod/.test(navigator.platform);
 import type { SessionResponse } from "../lib/types";
+import { displayStatus } from "../lib/session";
 import type { ConversationSearchHit } from "../lib/api";
 import type { CommandAction } from "../components/command-palette/types";
 
@@ -31,7 +32,7 @@ export function buildConversationActions(
         title: state ? `${title} · ${state}` : title,
         subtitle: `${hit.snippet}${count}`,
         group: "Conversations" as const,
-        status: session.status,
+        status: displayStatus(session),
         statusCreatedAt: session.created_at,
       },
     ];
@@ -219,7 +220,7 @@ export function useCommandActions({
         subtitle: subtitleParts.join(" · "),
         group: "Sessions",
         keywords: [s.tool, s.status, s.branch ?? "", repo, s.group_path].filter(Boolean) as string[],
-        status: s.status,
+        status: displayStatus(s),
         statusCreatedAt: s.created_at,
         perform: () => onSelectSession(s.id),
       });
