@@ -175,6 +175,9 @@ pub struct SessionResponse {
     pub snoozed_until: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub trashed_at: Option<String>,
+    /// Set once the session's worktree and container were removed; it stays archived.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub retired_at: Option<String>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub unread: bool,
     /// Single-repo worktrees only; use `has_cleanable_worktree` for delete cleanup.

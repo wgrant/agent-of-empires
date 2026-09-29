@@ -251,6 +251,10 @@ pub async fn update_session_archive(
         let Some(inst) = instances.iter().find(|i| i.id == id) else {
             return session_not_found();
         };
+        if inst.is_retired() && !body.archived {
+            let blocked = crate::session::StartBlocked::Retired;
+            return api_error(StatusCode::CONFLICT, blocked.code(), blocked.to_string());
+        }
         inst.source_profile.clone()
     };
 
@@ -358,6 +362,90 @@ pub async fn update_session_archive(
             return session_not_found();
         }
     };
+    (StatusCode::OK, Json(serde_json::json!(response))).into_response()
+}
+
+/// `POST /api/sessions/:id/retire`: remove an archived session's worktree and
+/// sandbox container, keeping its branch and transcript.
+pub async fn retire_session(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    use crate::session::retire::RetireError;
+
+    if let Some(resp) = cityhall_block_non_structured(&state, &id).await {
+        return resp;
+    }
+    if state.read_only {
+        return crate::server::api::read_only_response();
+    }
+    let Some(_submission) = state
+        .session_service
+        .prompt_submission_for_session(&id)
+        .await
+    else {
+        return session_not_found();
+    };
+    let lock = state.instance_lock(&id).await;
+    let _guard = lock.lock().await;
+    let (profile, structured) = {
+        let instances = state.instances.read().await;
+        let Some(inst) = instances.iter().find(|i| i.id == id) else {
+            return session_not_found();
+        };
+        (inst.source_profile.clone(), inst.is_structured())
+    };
+    if structured {
+        match state.acp_supervisor.shutdown(&id).await {
+            Ok(()) | Err(crate::acp::supervisor::SupervisorError::UnknownSession(_)) => {}
+            Err(error) => {
+                return api_error(
+                    StatusCode::CONFLICT,
+                    "worker_running",
+                    format!("could not stop the agent: {error}"),
+                )
+            }
+        }
+    }
+
+    let file_watch = state.file_watch.clone();
+    let work_id = id.clone();
+    let retired = tokio::task::spawn_blocking(move || {
+        let storage = Storage::new(&profile, file_watch)?;
+        crate::session::retire::retire_session(&storage, &work_id)
+    })
+    .await;
+    let retired = match retired {
+        Ok(Ok(retired)) => retired,
+        Ok(Err(RetireError::NotFound)) => return session_not_found(),
+        Ok(Err(RetireError::Refused(reason))) => {
+            return api_error(StatusCode::CONFLICT, "retire_refused", reason)
+        }
+        Ok(Err(error)) => {
+            tracing::error!(target: "http.api.sessions", session = %id, "retire failed: {error}");
+            return api_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "retire_failed",
+                error.to_string(),
+            );
+        }
+        Err(error) => {
+            tracing::error!(target: "http.api.sessions", session = %id, "retire join failed: {error}");
+            return persist_failed_response();
+        }
+    };
+    for message in &retired.messages {
+        tracing::info!(target: "http.api.sessions", session = %id, "retire: {message}");
+    }
+
+    let mut instances = state.instances.write().await;
+    let Some(inst) = instances.iter_mut().find(|i| i.id == id) else {
+        return crate::server::api::session_gone_after_persist();
+    };
+    inst.retired_at = retired.instance.retired_at;
+    inst.keep_retired_archived();
+    let response =
+        SessionResponse::from_instance(&*inst, crate::claude_settings::read_tui_fullscreen());
     (StatusCode::OK, Json(serde_json::json!(response))).into_response()
 }
 

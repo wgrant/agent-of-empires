@@ -20,11 +20,14 @@ pub enum SessionBucket {
     Trashed,
 }
 
-/// Why an archived or trashed session refuses to launch its agent or take input into a live pane.
+/// Why an archived, retired or trashed session refuses to launch its agent or take input into a
+/// live pane.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum StartBlocked {
     #[error("session is archived; unarchive it first")]
     Archived,
+    #[error("session is retired; its worktree was removed")]
+    Retired,
     #[error("session is in trash; restore it first")]
     Trashed,
 }
@@ -34,6 +37,7 @@ impl StartBlocked {
     pub fn code(self) -> &'static str {
         match self {
             StartBlocked::Archived => "session_archived",
+            StartBlocked::Retired => "session_retired",
             StartBlocked::Trashed => "session_trashed",
         }
     }
@@ -45,6 +49,7 @@ impl Instance {
     pub fn ensure_startable(&self) -> Result<(), StartBlocked> {
         match self.effective_bucket() {
             SessionBucket::Active => Ok(()),
+            SessionBucket::Archived if self.is_retired() => Err(StartBlocked::Retired),
             SessionBucket::Archived => Err(StartBlocked::Archived),
             SessionBucket::Trashed => Err(StartBlocked::Trashed),
         }
@@ -56,6 +61,7 @@ impl Instance {
         self.archived_at = None;
         self.snoozed_until = None;
         self.idle_dormant_since = None;
+        self.keep_retired_archived();
     }
 
     /// Stamp recency after input reached a live pane. Callers stamp after releasing the lock
@@ -106,13 +112,35 @@ impl Instance {
         }
     }
 
+    /// A retired session stays archived.
     pub fn unarchive(&mut self) {
         self.archived_at = None;
         self.idle_dormant_since = None;
+        self.keep_retired_archived();
     }
 
     pub fn is_archived(&self) -> bool {
         self.archived_at.is_some()
+    }
+
+    /// Mark the session retired once its worktree and container are gone.
+    pub fn retire(&mut self) {
+        self.retired_at = Some(Utc::now());
+        self.keep_retired_archived();
+    }
+
+    pub fn is_retired(&self) -> bool {
+        self.retired_at.is_some()
+    }
+
+    /// A retired session has nothing to return to, so no surfacing action
+    /// (unarchive, touch, favorite, pin) takes it out of the archive.
+    pub(crate) fn keep_retired_archived(&mut self) {
+        if let Some(retired_at) = self.retired_at {
+            self.archived_at.get_or_insert(retired_at);
+            self.favorited_at = None;
+            self.pinned_at = None;
+        }
     }
 
     /// Soft-delete the session into the trash bucket. Stops the live session (handled by the
@@ -170,6 +198,7 @@ impl Instance {
         self.favorited_at = Some(Utc::now());
         self.archived_at = None;
         self.snoozed_until = None;
+        self.keep_retired_archived();
     }
 
     pub fn unfavorite(&mut self) {
@@ -269,6 +298,7 @@ impl Instance {
         self.pinned_at = Some(Utc::now());
         self.archived_at = None;
         self.snoozed_until = None;
+        self.keep_retired_archived();
     }
 
     pub fn unpin(&mut self) {
@@ -493,6 +523,40 @@ mod tests {
                 inst.mark_idle_dormant();
             }
             assert_eq!(inst.is_shown_dormant(), shown, "{status:?} {marked}");
+        }
+    }
+
+    /// A retired session has no worktree to return to: nothing surfaces it out of the archive,
+    /// whether applied directly or written by a peer that had not seen the retire.
+    #[test]
+    fn a_retired_session_stays_archived() {
+        let actions: [(&str, fn(&mut Instance)); 4] = [
+            ("unarchive", Instance::unarchive),
+            ("touch", Instance::touch_last_accessed),
+            ("favorite", Instance::favorite),
+            ("pin", Instance::pin),
+        ];
+        for (name, action) in actions {
+            let mut archived = inst();
+            archived.archive();
+            let mut retired = archived.clone();
+            retired.retire();
+
+            let mut direct = retired.clone();
+            action(&mut direct);
+            let mut peer = archived.clone();
+            action(&mut peer);
+            let mut merged = retired.clone();
+            merged.merge_user_action_diff(&archived, &peer);
+
+            for (how, inst) in [("directly", &direct), ("merged", &merged)] {
+                assert_eq!(
+                    inst.ensure_startable(),
+                    Err(StartBlocked::Retired),
+                    "{name} {how}"
+                );
+                assert!(!inst.is_favorited() && !inst.is_pinned(), "{name} {how}");
+            }
         }
     }
 

@@ -310,6 +310,7 @@ impl Instance {
         );
         splice(&mut self.pinned_at, &pre.pinned_at, &post.pinned_at);
         splice(&mut self.trashed_at, &pre.trashed_at, &post.trashed_at);
+        splice(&mut self.retired_at, &pre.retired_at, &post.retired_at);
         splice(
             &mut self.pre_trash_project_path,
             &pre.pre_trash_project_path,
@@ -372,6 +373,7 @@ impl Instance {
             self.snoozed_until = None;
             self.idle_dormant_since = None;
         }
+        self.keep_retired_archived();
         // Final-state invariant: archive is the strongest dismiss and wins over snooze.
         if self.archived_at.is_some() {
             self.snoozed_until = None;

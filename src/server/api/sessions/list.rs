@@ -523,6 +523,7 @@ mod workspace_ordering_tests {
                 delete_to_trash: true,
             },
             trashed_at: None,
+            retired_at: None,
             remote_owner: None,
             remote_owner_key: None,
             notify_on_waiting: None,

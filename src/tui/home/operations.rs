@@ -285,27 +285,34 @@ impl HomeView {
     /// A trashed/archived row's agent was stopped deliberately, so refuse a start
     /// visibly and point at the restore key instead of swallowing the press.
     pub(in crate::tui) fn refuse_start_if_shelved(&mut self, id: &str) -> bool {
+        let key = if self.strict_hotkeys { "Z" } else { "z" };
         let shelved = self.get_instance(id).and_then(|inst| {
             // A row mid-purge gets no restore hint: it would race the in-flight delete.
             if inst.status == Status::Deleting {
                 return None;
             }
+            let stopped = |state: &str, verb: &str| {
+                format!("This session is {state}; its agent stays stopped. Press {key} to {verb} it first.")
+            };
             match inst.ensure_startable() {
-                Err(StartBlocked::Trashed) => Some(("Session in trash", "in the trash", "restore")),
-                Err(StartBlocked::Archived) => Some(("Session archived", "archived", "unarchive")),
+                Err(StartBlocked::Trashed) => {
+                    Some(("Session in trash", stopped("in the trash", "restore")))
+                }
+                Err(StartBlocked::Archived) => {
+                    Some(("Session archived", stopped("archived", "unarchive")))
+                }
+                Err(StartBlocked::Retired) => Some((
+                    "Session retired",
+                    "This session is retired: its worktree was removed, so it cannot start again."
+                        .to_string(),
+                )),
                 Ok(()) => None,
             }
         });
-        let Some((dialog_title, state, verb)) = shelved else {
+        let Some((dialog_title, message)) = shelved else {
             return false;
         };
-        let key = if self.strict_hotkeys { "Z" } else { "z" };
-        self.info_dialog = Some(InfoDialog::new(
-            dialog_title,
-            &format!(
-                "This session is {state}; its agent stays stopped. Press {key} to {verb} it first."
-            ),
-        ));
+        self.info_dialog = Some(InfoDialog::new(dialog_title, &message));
         true
     }
 

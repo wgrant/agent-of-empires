@@ -53,6 +53,7 @@ Right-click (long-press on touch) a session row:
 - **Pin** floats the workspace to the top in every sort mode. Pin is web-only and distinct from the favorite mark.
 - **Archive** tears down every tmux session the workspace owns (pass `kill_pane: false` in the API, or `--no-kill` on the CLI, to skip that) and shuts down the structured-view worker, then sinks the row into the collapsible "Snoozed & archived" footer. An archived session never starts or resumes, whether from a message, **Start**, attaching, or a daemon restart; unarchive it first.
 - **Snooze** sinks the row for a chosen duration (1h through 1w); it wakes when the timer expires, or early if you send a message.
+- **Retire…**, on an archived row with one session, frees its disk: it deletes the worktree directory, including ignored build output, and the sandbox container, but keeps the branch, the transcript and the agent's own history. It is refused while the worktree has uncommitted changes or the branch has stashes. A retired session stays archived and read-only and cannot be unarchived or started again. `aoe session retire` does the same from the CLI.
 
 Trashed sessions live behind the **Trash** control in the sidebar footer. Right-click a trashed row for **Open**, **Restore**, or **Delete permanently**. Like an archived session, a trashed one cannot start until it is restored.
 

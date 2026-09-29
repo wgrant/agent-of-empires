@@ -91,6 +91,12 @@ pub enum SessionCommands {
     /// Unarchive a session (restores it to its tier in the Attention sort)
     Unarchive(SessionIdArgs),
 
+    /// Retire an archived session: remove its worktree directory and sandbox
+    /// container to free disk space, keeping its branch and transcript. A
+    /// retired session stays archived and cannot start again. Refused while
+    /// the worktree has uncommitted changes or its branch has stashes.
+    Retire(SessionIdArgs),
+
     /// Restore a trashed session, returning it to its prior bucket with its
     /// transcript and metadata intact. See #2489.
     Restore(SessionIdArgs),
@@ -407,9 +413,8 @@ pub async fn run(profile: &str, command: SessionCommands) -> Result<()> {
         }
         SessionCommands::Color(args) => set_color_session(profile, args).await,
         SessionCommands::Archive(args) => archive_session(profile, args).await,
-        SessionCommands::Unarchive(args) => {
-            mark_session(profile, args, "Unarchived", Instance::unarchive).await
-        }
+        SessionCommands::Unarchive(args) => unarchive_session(profile, args).await,
+        SessionCommands::Retire(args) => retire_session(profile, args).await,
         SessionCommands::Restore(args) => restore_session(profile, args).await,
         SessionCommands::Import(args) => import_sessions(profile, args).await,
         SessionCommands::ListTrash => list_trash(profile).await,
@@ -495,6 +500,37 @@ async fn archive_session(profile: &str, args: ArchiveArgs) -> Result<()> {
             title
         );
     }
+}
+
+async fn unarchive_session(profile: &str, args: SessionIdArgs) -> Result<()> {
+    let storage = Storage::open_unwatched(profile)?;
+    let title = storage.update(|instances, _groups| {
+        super::patch_instance(instances, &args.identifier, |inst| {
+            if inst.is_retired() {
+                bail!(
+                    "Session {} is retired: its worktree was removed",
+                    inst.title
+                );
+            }
+            inst.unarchive();
+            Ok(inst.title.clone())
+        })
+    })?;
+    println!("Unarchived: {title}");
+    Ok(())
+}
+
+async fn retire_session(profile: &str, args: SessionIdArgs) -> Result<()> {
+    let storage = Storage::open_unwatched(profile)?;
+    let id = super::resolve_session(&args.identifier, &storage.load()?)?
+        .id
+        .clone();
+    let retired = crate::session::retire::retire_session(&storage, &id)?;
+    for message in &retired.messages {
+        println!("  {message}");
+    }
+    println!("Retired: {}", retired.instance.title);
+    Ok(())
 }
 
 async fn restore_session(profile: &str, args: SessionIdArgs) -> Result<()> {

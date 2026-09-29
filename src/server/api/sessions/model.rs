@@ -78,6 +78,7 @@ impl SessionResponse {
                 None
             },
             trashed_at: inst.trashed_at.map(|t| t.to_rfc3339()),
+            retired_at: inst.retired_at.map(|t| t.to_rfc3339()),
             // Surface the marker; the web gates the visual on the
             // `session.unread_indicator` setting.
             unread: inst.unread,

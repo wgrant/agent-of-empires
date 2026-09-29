@@ -2659,11 +2659,12 @@ async fn worker_stopping_handlers_wait_for_an_in_flight_submission() {
             )
             .await
             .into_response(),
+            "retire" => retire_session(State(state), Path(id)).await.into_response(),
             other => unreachable!("unknown handler {other}"),
         }
     }
 
-    for which in ["stop", "trash", "archive", "snooze"] {
+    for which in ["stop", "trash", "archive", "snooze", "retire"] {
         let id = format!("sess-3650-{which}");
         let state = delete_race_state(&id);
         let delivering = state.session_service.prompt_submission(&id).await;
@@ -2695,6 +2696,69 @@ async fn worker_stopping_handlers_wait_for_an_in_flight_submission() {
             .await
             .unwrap_or_else(|_| panic!("{which} must finish once the submission releases"));
     }
+}
+
+/// Only an archived session retires, and a retired one cannot be unarchived.
+#[tokio::test]
+async fn retire_needs_an_archived_session_and_is_final() {
+    let _home = crate::session::test_support::isolate_app_dir();
+    let mut inst = make_test_instance();
+    inst.source_profile = "default".to_string();
+    inst.status = Status::Idle;
+    let id = inst.id.clone();
+    crate::session::Storage::new_unwatched("default")
+        .unwrap()
+        .update(|instances, _| {
+            instances.push(inst.clone());
+            Ok(())
+        })
+        .unwrap();
+    let state = crate::server::test_support::build_test_app_state(vec![inst]);
+    let archive = |archived| {
+        let state = std::sync::Arc::clone(&state);
+        let id = id.clone();
+        async move {
+            update_session_archive(
+                State(state),
+                Path(id),
+                Ok(Json(UpdateArchiveBody {
+                    archived,
+                    kill_pane: true,
+                })),
+            )
+            .await
+            .into_response()
+        }
+    };
+    let retire = || retire_session(State(std::sync::Arc::clone(&state)), Path(id.clone()));
+    let error_of = |resp: axum::response::Response| async move {
+        let status = resp.status();
+        let body: serde_json::Value = serde_json::from_slice(
+            &axum::body::to_bytes(resp.into_body(), 64 * 1024)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        (
+            status,
+            body["error"].as_str().unwrap_or_default().to_string(),
+        )
+    };
+
+    let live = error_of(retire().await.into_response()).await;
+    assert_eq!(live, (StatusCode::CONFLICT, "retire_refused".to_string()));
+    assert_eq!(archive(true).await.status(), StatusCode::OK);
+    assert_eq!(retire().await.into_response().status(), StatusCode::OK);
+    let unarchive = error_of(archive(false).await).await;
+    assert_eq!(
+        unarchive,
+        (StatusCode::CONFLICT, "session_retired".to_string())
+    );
+    let instances = state.instances.read().await;
+    assert_eq!(
+        instances[0].ensure_startable(),
+        Err(crate::session::StartBlocked::Retired)
+    );
 }
 
 /// A direct stop sets `Stopped` on the live in-memory row without going through

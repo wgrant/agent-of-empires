@@ -60,6 +60,7 @@ pub struct ListArgs {
 pub(super) fn state_tag(inst: &Instance) -> &'static str {
     match inst.effective_bucket() {
         SessionBucket::Trashed => "trashed",
+        SessionBucket::Archived if inst.is_retired() => "retired",
         SessionBucket::Archived => "archived",
         SessionBucket::Active => "live",
     }
@@ -89,6 +90,8 @@ struct SessionJson {
     trashed_at: Option<chrono::DateTime<chrono::Utc>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     archived_at: Option<chrono::DateTime<chrono::Utc>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    retired_at: Option<chrono::DateTime<chrono::Utc>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     snoozed_until: Option<chrono::DateTime<chrono::Utc>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -138,6 +141,7 @@ fn session_json(inst: &Instance, profile: &str) -> SessionJson {
         created_at: inst.created_at,
         trashed_at: inst.trashed_at,
         archived_at: inst.archived_at,
+        retired_at: inst.retired_at,
         snoozed_until: active_snoozed_until(inst),
         pinned_at: inst.pinned_at,
         workspace_repos: workspace_repos_for(inst),
@@ -453,6 +457,13 @@ mod tests {
         assert_eq!(json.state, "archived");
         assert!(json.archived_at.is_some());
         assert!(json.trashed_at.is_none());
+
+        let mut retired = Instance::new("z", "/repo");
+        retired.archive();
+        retired.retire();
+        let json = session_json(&retired, "p");
+        assert_eq!(json.state, "retired");
+        assert!(json.retired_at.is_some() && json.archived_at.is_some());
 
         let mut trashed = Instance::new("z", "/repo");
         trashed.trash();
