@@ -1,6 +1,14 @@
 import { expect, it } from "vitest";
 
-import { countUnreadSessions, countWaitingSessions, sessionIsUnread, sessionIsWaitingForInput } from "../session";
+import {
+  countUnreadSessions,
+  countWaitingSessions,
+  displayStatus,
+  isSessionActive,
+  sessionIsUnread,
+  sessionIsWaitingForInput,
+} from "../session";
+import { sessionAttentionRank } from "../sidebarSort";
 import type { SessionResponse } from "../types";
 
 function session(overrides: Partial<SessionResponse>): SessionResponse {
@@ -25,6 +33,29 @@ it("sessionIsUnread flags an unread, settled, visible session other than the ope
     ["Starting", { unread: true, status: "Starting" }, null, false],
   ];
   for (const [name, over, open, expected] of cases) expect(sessionIsUnread(session(over), open), name).toBe(expected);
+});
+
+// An Idle session whose own background work still runs is busy, not the
+// user's turn: it ranks, counts and hides its unread marker like Running.
+it("derives Background from Idle with running background work", () => {
+  const work = (running: number) => ({ running, reporting: running });
+  const cases: [string, Partial<SessionResponse>, string, boolean, boolean, number][] = [
+    ["idle", {}, "Idle", false, true, 2],
+    ["idle, background finished", { background: work(0) }, "Idle", false, true, 2],
+    ["idle with background work", { background: work(2) }, "Background", true, false, 4],
+    ["running", { status: "Running" }, "Running", true, false, 4],
+    ["running with background work", { status: "Running", background: work(1) }, "Running", true, false, 4],
+    ["waiting with background work", { status: "Waiting", background: work(1) }, "Waiting", true, false, 0],
+  ];
+  for (const [name, over, status, active, unread, rank] of cases) {
+    const s = session({ unread: true, ...over });
+    expect([displayStatus(s), isSessionActive(s), sessionIsUnread(s, null), sessionAttentionRank(s)], name).toEqual([
+      status,
+      active,
+      unread,
+      rank,
+    ]);
+  }
 });
 
 it("sessionIsWaitingForInput is true only for a visible Waiting session", () => {

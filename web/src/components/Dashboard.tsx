@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import type { SessionResponse } from "../lib/types";
-import { getStatusTextClass, isSessionActive } from "../lib/session";
+import { BACKGROUND_STATUS_HINT, displayStatus, getStatusTextClass, isSessionActive } from "../lib/session";
 import { useIdleDecayWindowMs } from "../lib/idleDecay";
 import { useIsWideViewport } from "../hooks/useIsWideViewport";
 import { AOE_BRAND_MARK_COLORS, AOE_BRAND_MARK_TEXT_SHADOW } from "../lib/brandMark";
@@ -160,9 +160,10 @@ export function Dashboard({
                 <span
                   aria-hidden="true"
                   className={`shrink-0 font-mono text-sm leading-none ${getStatusTextClass(session, idleDecayWindowMs)}`}
+                  title={displayStatus(session) === "Background" ? BACKGROUND_STATUS_HINT : undefined}
                 >
                   <StatusGlyph
-                    status={session.status}
+                    status={displayStatus(session)}
                     createdAt={session.created_at ?? null}
                     idleEnteredAt={session.idle_entered_at}
                     dormant={session.dormant}

@@ -1,6 +1,7 @@
 import type { RepoGroup, SessionResponse, Workspace } from "./types";
 import { safeGetItem, safeSetItem } from "./safeStorage";
 import { compareSortValues, type PluginSortValue } from "./pluginUi";
+import { displayStatus } from "./session";
 
 export type SidebarSortMode = "manual" | "lastActivity" | "attention";
 
@@ -182,7 +183,7 @@ export function sessionAttentionRank(s: SessionResponse): number {
   if (s.archived_at != null || s.snoozed_until != null) {
     return ATTENTION_SINK_RANK;
   }
-  switch (s.status) {
+  switch (displayStatus(s)) {
     case "Waiting":
       return 0;
     case "Error":
@@ -192,6 +193,7 @@ export function sessionAttentionRank(s: SessionResponse): number {
     case "Unknown":
       return 3;
     case "Running":
+    case "Background":
       return 4;
     case "Stopped":
       return 5;

@@ -1,5 +1,5 @@
-import type { SessionStatus, Workspace } from "../../lib/types";
-import { getStatusTextClass, isSessionActive } from "../../lib/session";
+import type { Workspace } from "../../lib/types";
+import { displayStatus, getStatusTextClass, isSessionActive, type DisplayStatus } from "../../lib/session";
 import { workspaceAttentionCount } from "../../lib/sidebarSort";
 import {
   effectiveArchivedOf,
@@ -30,7 +30,7 @@ export function bestSession(ws: Workspace, idleDecayWindowMs: number) {
   const running = ws.sessions.find((s) => isSessionActive(s, idleDecayWindowMs));
   if (running) {
     return {
-      status: running.status,
+      status: displayStatus(running),
       createdAt: running.created_at,
       idleEnteredAt: running.idle_entered_at ?? null,
       dormant: running.dormant,
@@ -38,10 +38,10 @@ export function bestSession(ws: Workspace, idleDecayWindowMs: number) {
   }
   const error = ws.sessions.find((s) => s.status === "Error");
   if (error)
-    return { status: "Error" as SessionStatus, createdAt: error.created_at, idleEnteredAt: null, dormant: false };
+    return { status: "Error" as DisplayStatus, createdAt: error.created_at, idleEnteredAt: null, dormant: false };
   const first = ws.sessions[0];
   return {
-    status: first?.status ?? ("Unknown" as SessionStatus),
+    status: first ? displayStatus(first) : ("Unknown" as DisplayStatus),
     createdAt: first?.created_at ?? null,
     idleEnteredAt: first?.idle_entered_at ?? null,
     dormant: first?.dormant ?? false,
