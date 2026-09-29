@@ -583,6 +583,10 @@ pub struct DiffCommentRange {
 /// Terminal park reason once rate-limit auto-resume exhausts its redelivery budget.
 pub(crate) const RATE_LIMIT_EXHAUSTED_RETRIES_REASON: &str = "rate_limit_exhausted_retries";
 
+/// The connection to an agent that had started was lost, most often because
+/// its process died; the supervisor decides whether to respawn it.
+pub(crate) const AGENT_EXITED_REASON: &str = "agent_exited";
+
 /// A state mutation, persisted verbatim in the event log.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Event {

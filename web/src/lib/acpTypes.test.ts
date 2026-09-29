@@ -138,6 +138,12 @@ describe("applyEvent control state", () => {
       [prompt(), stopped("prompt_orphaned")],
       { agentOrphaned: true, workerRestarting: true, workerStopped: false, agentUnresponsive: false },
     ],
+    // A started agent went away: a respawn, not a failure to start.
+    [
+      "agent_exited",
+      [prompt(), stopped("agent_exited")],
+      { agentExited: true, workerRestarting: true, turnActive: false, startupError: null },
+    ],
     [
       "agent_unresponsive then prompt_orphaned",
       [stopped("agent_unresponsive"), stopped("prompt_orphaned")],
@@ -158,11 +164,17 @@ describe("applyEvent control state", () => {
       [stopped("prompt_orphaned"), stopped("restart_pending")],
       { agentOrphaned: false, workerRestarting: true },
     ],
-    ...["user_stopped", "restart_pending", "idle_auto_stop", "prompt_orphaned"].map(
+    ...["user_stopped", "restart_pending", "idle_auto_stop", "prompt_orphaned", "agent_exited"].map(
       (reason): [string, AcpEvent[], Partial<AcpState>] => [
         `AcpSessionAssigned clears the ${reason} banner`,
         [stopped(reason), assigned],
-        { workerStopped: false, workerRestarting: false, workerIdleStopped: false, agentOrphaned: false },
+        {
+          workerStopped: false,
+          workerRestarting: false,
+          workerIdleStopped: false,
+          agentOrphaned: false,
+          agentExited: false,
+        },
       ],
     ),
     [
