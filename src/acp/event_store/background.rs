@@ -3,7 +3,7 @@
 use std::collections::HashSet;
 
 use chrono::{DateTime, Utc};
-use rusqlite::params;
+use rusqlite::{params, OptionalExtension};
 
 use super::{logged, query_strings, EventStore};
 
@@ -82,16 +82,21 @@ impl EventStore {
         if running == 0 {
             return None;
         }
+        // The latest event by seq, which `(session_id, discriminant, seq)`
+        // finds per discriminant without reading every matching row.
         let last_ms: Option<i64> = logged(
             conn.query_row(
-                "SELECT MAX(created_at) FROM acp_events
-                 WHERE session_id = ?1
-                   AND discriminant IN ('SubagentSpawned', 'SubagentUpdate', 'AsyncTaskSpawned',
-                                        'AsyncTaskProgress', 'BackgroundAgentLaunched',
-                                        'BackgroundAgentProgress')",
+                "SELECT created_at FROM acp_events
+                 WHERE session_id = ?1 AND seq = (
+                   SELECT MAX(seq) FROM acp_events
+                   WHERE session_id = ?1
+                     AND discriminant IN ('SubagentSpawned', 'SubagentUpdate', 'AsyncTaskSpawned',
+                                          'AsyncTaskProgress', 'BackgroundAgentLaunched',
+                                          'BackgroundAgentProgress'))",
                 params![session_id],
                 |row| row.get(0),
-            ),
+            )
+            .optional(),
             "background_activity last",
             session_id,
         )
