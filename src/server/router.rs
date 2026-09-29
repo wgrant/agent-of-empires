@@ -111,6 +111,7 @@ pub(super) fn build_router(state: Arc<AppState>) -> Router {
             "/api/sessions/{id}/archive",
             patch(api::update_session_archive),
         )
+        .route("/api/sessions/{id}/retire", post(api::retire_session))
         .route(
             "/api/sessions/{id}/snooze",
             patch(api::update_session_snooze),

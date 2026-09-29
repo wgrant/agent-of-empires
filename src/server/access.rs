@@ -252,6 +252,7 @@ pub(super) const CITYHALL_MUTATION_ALLOW: &[(&str, &str)] = &[
     ("DELETE", "/api/workspaces"),
     ("PATCH", "/api/sessions/{id}"),
     ("PATCH", "/api/sessions/{id}/archive"),
+    ("POST", "/api/sessions/{id}/retire"),
     ("PATCH", "/api/sessions/{id}/color"),
     ("PATCH", "/api/sessions/{id}/diff-base"),
     ("PATCH", "/api/sessions/{id}/group"),

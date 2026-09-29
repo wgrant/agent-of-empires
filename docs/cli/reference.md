@@ -36,6 +36,7 @@ This document contains the help content for the `aoe` command-line program.
 * [`aoe session color`↴](#aoe-session-color)
 * [`aoe session archive`↴](#aoe-session-archive)
 * [`aoe session unarchive`↴](#aoe-session-unarchive)
+* [`aoe session retire`↴](#aoe-session-retire)
 * [`aoe session restore`↴](#aoe-session-restore)
 * [`aoe session import`↴](#aoe-session-import)
 * [`aoe session list-trash`↴](#aoe-session-list-trash)
@@ -410,6 +411,7 @@ Manage session lifecycle (start, stop, attach, etc.)
 * `color` — Set (or clear) a per-session color label, rendered as a colored dot in the web sidebar for at-a-glance status signaling. Intended for a running agent to flag its own state, e.g. `aoe session color $(aoe session current -q) red`. Colors: `red` (needs attention), `amber` (working), `green` (done); `none` clears it
 * `archive` — Archive a session: sink it in the Attention sort and tear down its tmux sessions. Worktree, branch, container preserved. `--no-kill` skips tmux teardown. See #1868
 * `unarchive` — Unarchive a session (restores it to its tier in the Attention sort)
+* `retire` — Retire an archived session: remove its worktree directory and sandbox container to free disk space, keeping its branch and transcript. A retired session stays archived and cannot start again. Refused while the worktree has uncommitted changes or its branch has stashes
 * `restore` — Restore a trashed session, returning it to its prior bucket with its transcript and metadata intact. See #2489
 * `import` — Import existing Claude Code sessions from disk. Scans the given path(s) (default: current directory) for Claude Code conversations whose working directory is at or under a path, and creates an AoE session for each: a terminal/tmux session that resumes the conversation with `claude --resume <id>` (default), or a structured-view session with `--structured`
 * `list-trash` — List the sessions currently in the trash
@@ -695,6 +697,18 @@ Archive a session: sink it in the Attention sort and tear down its tmux sessions
 Unarchive a session (restores it to its tier in the Attention sort)
 
 **Usage:** `aoe session unarchive <IDENTIFIER>`
+
+###### **Arguments:**
+
+* `<IDENTIFIER>` — Session ID or title
+
+
+
+## `aoe session retire`
+
+Retire an archived session: remove its worktree directory and sandbox container to free disk space, keeping its branch and transcript. A retired session stays archived and cannot start again. Refused while the worktree has uncommitted changes or its branch has stashes
+
+**Usage:** `aoe session retire <IDENTIFIER>`
 
 ###### **Arguments:**
 

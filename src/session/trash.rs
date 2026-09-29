@@ -119,7 +119,8 @@ fn is_sandboxed(inst: &Instance) -> bool {
 /// Move a freshly-trashed session's managed worktree into the holding area and repoint
 /// `project_path`, capturing the original location in `pre_trash_project_path`.
 pub fn relocate_worktree_to_trash(inst: &mut Instance) -> RelocateOutcome {
-    if !inst.is_trashed() || !is_managed_single_worktree(inst) {
+    // A retired session's worktree is already gone.
+    if !inst.is_trashed() || inst.is_retired() || !is_managed_single_worktree(inst) {
         return RelocateOutcome::Skipped;
     }
     if inst.pre_trash_project_path.is_some() {
@@ -1006,6 +1007,25 @@ mod tests {
             .arg("--version")
             .output()
             .is_ok()
+    }
+
+    #[test]
+    fn a_retired_session_is_trashed_in_place() {
+        if !git_available() {
+            return;
+        }
+        let (_tmp, mut inst) = real_worktree_instance();
+        let original = inst.project_path.clone();
+        std::fs::remove_dir_all(&original).unwrap();
+        inst.archive();
+        inst.retire();
+        inst.trash();
+        assert!(matches!(
+            relocate_worktree_to_trash(&mut inst),
+            RelocateOutcome::Skipped
+        ));
+        assert_eq!(inst.project_path, original);
+        assert!(inst.pre_trash_project_path.is_none());
     }
 
     #[test]

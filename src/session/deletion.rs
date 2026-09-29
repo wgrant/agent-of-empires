@@ -561,17 +561,18 @@ fn workspace_dir_is_aoe_owned(ws_info: &crate::session::WorkspaceInfo) -> bool {
 
 /// Whether `branch` is one of the branches git states is `main_repo`'s default, so its worktree
 /// must be preserved.
-fn is_protected_default_branch(main_repo: &Path, branch: &str) -> bool {
+pub(crate) fn is_protected_default_branch(main_repo: &Path, branch: &str) -> bool {
     GitWorktree::new(main_repo.to_path_buf())
         .and_then(|git| git.protected_default_branch_names())
         .is_ok_and(|names| names.contains(branch))
 }
 
-/// Every path a session outside `except_ids` works in or will restore to.
+/// Every path a session outside `except_ids` works in or will restore to. A
+/// retired session's worktree is gone, so its recorded path is not in use.
 fn other_sessions_paths(instances: &[Instance], except_ids: &[&str]) -> Vec<PathBuf> {
     instances
         .iter()
-        .filter(|instance| !except_ids.contains(&instance.id.as_str()))
+        .filter(|instance| !except_ids.contains(&instance.id.as_str()) && !instance.is_retired())
         .flat_map(|instance| {
             std::iter::once(instance.project_path.as_str())
                 .chain(instance.pre_trash_project_path.as_deref())
@@ -654,7 +655,7 @@ thread_local! {
 
 /// Run `f` with the paths other sessions use while every profile's storage lock is held, so no
 /// session can adopt a path between the check and whatever `f` removes.
-fn with_paths_in_use_locked<R>(except_id: &str, f: impl FnOnce(&PathsInUse) -> R) -> R {
+pub(crate) fn with_paths_in_use_locked<R>(except_id: &str, f: impl FnOnce(&PathsInUse) -> R) -> R {
     let (profiles, storages) = match all_profile_storages() {
         Ok(found) => found,
         Err(reason) => return f(&PathsInUse::Unknown(reason)),

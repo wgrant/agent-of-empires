@@ -209,6 +209,10 @@ pub struct Instance {
     pub pinned_at: Option<DateTime<Utc>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub trashed_at: Option<DateTime<Utc>>,
+    /// When the session was retired: its worktree and container were removed
+    /// and it stays archived and read-only. Its branch and transcript are kept.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retired_at: Option<DateTime<Utc>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pre_trash_project_path: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

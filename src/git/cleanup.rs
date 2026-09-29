@@ -154,26 +154,47 @@ pub fn is_not_a_worktree_error(error: &str) -> bool {
 /// entries. Empty when the path is not a repo or the status walk fails, which
 /// callers read as "no list available".
 pub fn list_dirty_files(worktree_path: &Path) -> Vec<String> {
-    let Ok(repo) = open_repo_at(worktree_path) else {
-        return Vec::new();
-    };
+    try_list_dirty_files(worktree_path).unwrap_or_default()
+}
 
+/// [`list_dirty_files`], failing when the worktree cannot be read, for a
+/// caller that must not mistake an unreadable worktree for a clean one.
+pub fn try_list_dirty_files(worktree_path: &Path) -> Result<Vec<String>, git2::Error> {
+    let repo = open_repo_at(worktree_path)?;
     let mut opts = git2::StatusOptions::new();
     opts.include_untracked(true)
         .recurse_untracked_dirs(true)
         .include_ignored(false);
+    let statuses = repo.statuses(Some(&mut opts))?;
+    Ok(statuses
+        .iter()
+        .map(|entry| {
+            let path = entry.path().unwrap_or("<unreadable path>");
+            format!("{} {}", describe_status(entry.status()), path)
+        })
+        .collect())
+}
 
-    let Ok(statuses) = repo.statuses(Some(&mut opts)) else {
-        return Vec::new();
-    };
-
-    let mut out = Vec::new();
-    for entry in statuses.iter() {
-        let path = entry.path().unwrap_or("<unreadable path>").to_string();
-        let label = describe_status(entry.status());
-        out.push(format!("{} {}", label, path));
+/// The stashes in `repo` made on `branch`, as git lists them. Stashes are
+/// shared by every worktree of a repository but record the branch they were
+/// made on.
+pub fn stashes_on_branch(repo: &Path, branch: &str) -> std::io::Result<Vec<String>> {
+    let output = super::command::run_git(repo, ["stash", "list", "--format=%gd %gs"])?;
+    if !output.status.success() {
+        return Err(std::io::Error::other(
+            String::from_utf8_lossy(&output.stderr).trim().to_string(),
+        ));
     }
-    out
+    let wip = format!("WIP on {branch}: ");
+    let on = format!("On {branch}: ");
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter(|line| {
+            line.split_once(' ')
+                .is_some_and(|(_, subject)| subject.starts_with(&wip) || subject.starts_with(&on))
+        })
+        .map(str::to_string)
+        .collect())
 }
 
 fn describe_status(status: git2::Status) -> &'static str {
