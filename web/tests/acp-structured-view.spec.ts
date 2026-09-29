@@ -18,6 +18,7 @@ import { iPhone13 } from "./helpers/viewports";
 
 const composerBox = (page: Page) => page.getByRole("textbox", { name: "Message the agent" });
 const acpViewport = (page: Page) => page.getByTestId("acp-viewport");
+const STARTER = "Ask the agent anything about this workspace.";
 
 /** The element's horizontal overflow, in px. */
 const overflowX = (locator: Locator) =>
@@ -541,5 +542,34 @@ test("a read-only server sends no telemetry seen-ping", async ({ page }) => {
   await observeFor(page, 500, async () => {
     expect(await publishedRequests(page, "/api/telemetry/seen", "POST")).toEqual([]);
     expect(mock.telemetryPings).toEqual([]);
+  });
+});
+
+// Starter prompts are for a new conversation, not an existing one still loading.
+test.describe("starter prompts", () => {
+  test("a new conversation offers them", async ({ page }) => {
+    const mock = await mockAcpSession(page, { title: "story-new", initialEvents: [] });
+    await openStructuredSession(page, mock);
+    await expect(page.getByText(STARTER)).toBeVisible({ timeout: 10_000 });
+  });
+
+  test("an existing conversation offers none while it loads", async ({ page }) => {
+    const mock = await mockAcpSession(page, {
+      title: "story-loading",
+      initialEvents: [agentMessageChunk("earlier reply"), stopped()],
+    });
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    await page.route(/\/acp\/replay(\?|$)/, async (route) => {
+      await held;
+      await route.fallback();
+    });
+    await openStructuredSession(page, mock);
+
+    await expect(page.getByText("Loading conversation…")).toBeVisible();
+    await expect(page.getByText(STARTER)).toHaveCount(0);
+    release();
+    await expect(page.getByText("earlier reply")).toBeVisible();
+    await expect(page.getByText(STARTER)).toHaveCount(0);
   });
 });
