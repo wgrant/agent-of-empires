@@ -42,6 +42,8 @@ export interface SessionResponse {
   /** Null once the snooze expires, so any non-null value is an active snooze. */
   snoozed_until?: string | null;
   trashed_at?: string | null;
+  /** Set once the worktree and container were removed; the session stays archived and cannot start. */
+  retired_at?: string | null;
   /** Needs attention (unreviewed finished turn or manual flag). */
   unread?: boolean;
   has_managed_worktree: boolean;

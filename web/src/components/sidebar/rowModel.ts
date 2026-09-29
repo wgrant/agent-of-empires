@@ -69,6 +69,7 @@ export function deriveRowModel(
   const sessionColor = sessions.map((s) => s.color).find((c) => c != null) ?? null;
   const isPinned = sessions.some((s) => s.pinned_at != null);
   const isArchived = sessions.some((s) => s.archived_at != null);
+  const isRetired = sessions.some((s) => s.retired_at != null);
   const snoozedUntil = sessions.find((s) => s.snoozed_until)?.snoozed_until ?? null;
   const effectiveSnoozedUntil = effectiveSnoozedUntilOf(optimistic, snoozedUntil);
   const effectiveArchived = effectiveArchivedOf(optimistic, isArchived);
@@ -101,6 +102,9 @@ export function deriveRowModel(
     sessionColorDot: SESSION_COLOR_OPTIONS.find((o) => o.key === sessionColor)?.dotClass ?? null,
     isPinned,
     isArchived,
+    isRetired,
+    // Retiring removes one session's worktree, which a row of several shares.
+    canRetire: sessions.length === 1 && !!firstSession?.id,
     effectivePinned: effectivePinnedOf(optimistic, isPinned),
     effectiveArchived,
     effectiveSnoozedUntil,

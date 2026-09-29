@@ -18,11 +18,13 @@ export function buildConversationActions(
     if (!session || session.id === activeSessionId) return [];
     const state = session.trashed_at
       ? "trashed"
-      : session.archived_at
-        ? "archived"
-        : session.snoozed_until
-          ? "snoozed"
-          : null;
+      : session.retired_at
+        ? "retired"
+        : session.archived_at
+          ? "archived"
+          : session.snoozed_until
+            ? "snoozed"
+            : null;
     const title = session.title || session.branch || "(untitled)";
     const count = hit.match_count > 1 ? ` (${hit.match_count} matches)` : "";
     return [
@@ -148,7 +150,7 @@ export function useCommandActions({
     if (!readOnly && activeSession) {
       const a = activeSession;
       const label = a.title || a.branch || "session";
-      const toggles: { verb: string; action: SessionStateAction; keywords: string[] }[] = [
+      const allToggles: { verb: string; action: SessionStateAction; keywords: string[] }[] = [
         a.pinned_at != null
           ? { verb: "Unpin", action: "unpin", keywords: ["pin", "favorite", "sidebar"] }
           : { verb: "Pin", action: "pin", keywords: ["pin", "favorite", "sidebar"] },
@@ -162,6 +164,10 @@ export function useCommandActions({
           ? { verb: "Untrash", action: "untrash", keywords: ["trash", "restore", "delete"] }
           : { verb: "Trash", action: "trash", keywords: ["trash", "delete", "remove"] },
       ];
+      // A retired session stays archived: only the trash applies to it.
+      const toggles = a.retired_at
+        ? allToggles.filter((t) => t.action === "trash" || t.action === "untrash")
+        : allToggles;
       for (const t of toggles) {
         actions.push({
           id: `session-state:${t.action}:${a.id}`,

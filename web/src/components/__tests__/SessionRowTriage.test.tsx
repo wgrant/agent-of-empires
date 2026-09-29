@@ -29,6 +29,7 @@ describe("SessionRow chips", () => {
   it.each([
     ["pinned", { pinned_at: PAST }, ["Pinned"], ["Archived", "Snoozed"]],
     ["archived", { archived_at: PAST }, ["Archived"], ["Pinned", "Snoozed"]],
+    ["retired", { archived_at: PAST, retired_at: PAST }, ["Retired"], ["Archived", "Pinned"]],
     // Archive wins visually when both flags surface.
     ["archived and snoozed", { archived_at: PAST, snoozed_until: "2099-01-01T00:00:00Z" }, ["Archived"], ["Snoozed"]],
     ["smart_rename pending", { view: "structured", smart_rename: "pending" }, ["Will auto-name"], ["Naming"]],
@@ -341,6 +342,38 @@ describe("SessionRow triage actions", () => {
     openRowMenu(ws());
     click("sidebar-context-menu-close");
     expect(testId("sidebar-context-menu")).toBeNull();
+  });
+
+  // A retired session stays archived, so it offers neither unarchive nor another retire.
+  it.each([
+    ["live", {}, ["archive"], ["retire"]],
+    ["archived", { archived_at: PAST }, ["archive", "retire"], []],
+    ["retired", { archived_at: PAST, retired_at: PAST }, [], ["archive", "retire", "pin", "snooze"]],
+  ] as [string, Partial<SessionResponse>, string[], string[]][])("a %s row's menu", (_n, over, present, absent) => {
+    openRowMenu(ws(over));
+    for (const id of present) expect(testId(`sidebar-context-menu-${id}`)).not.toBeNull();
+    for (const id of absent) expect(testId(`sidebar-context-menu-${id}`)).toBeNull();
+  });
+
+  it("Retire… asks first, then POSTs and shows why it was refused", async () => {
+    fetchSpy.mockResolvedValue(
+      new Response(JSON.stringify({ error: "retire_refused", message: "the worktree has uncommitted changes" }), {
+        status: 409,
+      }),
+    );
+    openRowMenu(ws({ id: "sess-retire", archived_at: PAST }));
+    click("sidebar-context-menu-retire");
+    expect(testId("retire-session-dialog")).not.toBeNull();
+    expect(fetchSpy).not.toHaveBeenCalled();
+
+    click("retire-session-confirm");
+    await vi.waitFor(() =>
+      expect(testId("retire-session-error")?.textContent).toBe("the worktree has uncommitted changes"),
+    );
+    const [url, init] = fetchSpy.mock.calls[0]!;
+    expect([url, init?.method]).toEqual(["/api/sessions/sess-retire/retire", "POST"]);
+    expect(testId("retire-session-dialog")).not.toBeNull();
+    await vi.waitFor(() => expect((testId("retire-session-confirm") as HTMLButtonElement).disabled).toBe(false));
   });
 
   it("Snooze… opens the modal without a request", () => {

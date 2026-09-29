@@ -164,13 +164,26 @@ describe("triage", () => {
     expect(triageStateOf({ isPinned, isArchived, isSnoozed })).toBe(expected);
   });
 
+  it("triageStateOf puts a retired session in its own state", () => {
+    expect(triageStateOf({ isPinned: false, isArchived: true, isSnoozed: false, isRetired: true })).toBe("retired");
+  });
+
   it.each([
     ["live", ["showPin", "showArchive", "showSnooze"]],
     ["pinned", ["showUnpin", "showArchive", "showSnooze"]],
-    ["archived", ["showUnarchive"]],
+    ["archived", ["showUnarchive", "showRetire"]],
+    ["retired", []],
     ["snoozed", ["showUnsnooze"]],
   ] as const)("triageMenuShape(%s) offers only %o", (state, shown) => {
-    const all = ["showPin", "showUnpin", "showArchive", "showUnarchive", "showSnooze", "showUnsnooze"] as const;
+    const all = [
+      "showPin",
+      "showUnpin",
+      "showArchive",
+      "showUnarchive",
+      "showSnooze",
+      "showUnsnooze",
+      "showRetire",
+    ] as const;
     expect(triageMenuShape(state)).toMatchObject(Object.fromEntries(all.map((k) => [k, shown.includes(k as never)])));
   });
 

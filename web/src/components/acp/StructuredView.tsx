@@ -92,6 +92,8 @@ interface Props {
   clearAliases?: readonly string[];
   yoloMode?: boolean;
   archivedAt: string | null;
+  /** A retired session is archived for good: its worktree is gone. */
+  retiredAt?: string | null;
   snoozedUntil: string | null;
   /** Trashed sessions are read-only: no composer or queue strips. */
   trashedAt: string | null;
@@ -374,6 +376,7 @@ function AcpChrome({
         acpWorkerState={acpWorkerState}
         trashedAt={view.trashedAt}
         archivedAt={view.archivedAt}
+        retired={!!view.retiredAt}
         snoozedUntil={view.snoozedUntil}
         sessionStatus={view.sessionStatus}
         lastError={view.lastError ?? null}
