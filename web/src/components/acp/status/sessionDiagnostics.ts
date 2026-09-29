@@ -3,6 +3,9 @@ import type { SessionStatus } from "../../../lib/types";
 
 export type AcpWorkerLifecycleState = "absent" | "resuming" | "running" | "stopping";
 
+/** Why the daemon is replacing a running agent. */
+export type RestartReason = "manual_restart" | "cancel_unresponsive" | "prompt_orphaned" | "agent_exited";
+
 export type AgentTransitionOperation = "start" | "wake" | "restart" | "recover" | "stop";
 
 export type PendingAgentOperation = {
@@ -21,7 +24,7 @@ export type AgentRuntime =
   | { kind: "dormant"; reason: "idle_auto_stop" }
   | {
       kind: "restarting";
-      reason: "manual_restart" | "cancel_unresponsive" | "prompt_orphaned";
+      reason: RestartReason;
     }
   | { kind: "stopped"; reason: "user_stopped" }
   | { kind: "blocked"; reason: "rate_limited" }
@@ -47,7 +50,7 @@ export type AgentState =
   | {
       kind: "transitioning";
       operation: AgentTransitionOperation;
-      reason: "manual_restart" | "cancel_unresponsive" | "prompt_orphaned" | null;
+      reason: RestartReason | null;
       startedAt: string | null;
       operationId: string | null;
     }
@@ -93,6 +96,7 @@ function deriveTransition(
   state: AcpState,
 ): Pick<Extract<AgentState, { kind: "transitioning" }>, "operation" | "reason"> {
   if (state.agentOrphaned) return { operation: "recover", reason: "prompt_orphaned" };
+  if (state.agentExited) return { operation: "recover", reason: "agent_exited" };
   if (state.agentUnresponsive) return { operation: "recover", reason: "cancel_unresponsive" };
   if (state.workerRestarting) return { operation: "restart", reason: "manual_restart" };
   return { operation: "start", reason: null };

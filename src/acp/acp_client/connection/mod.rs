@@ -15,7 +15,7 @@ mod tests;
 
 use crate::acp::agent_compat::ExpectedAgent;
 use crate::acp::agent_profiles::AgentProfile;
-use crate::acp::state::Event;
+use crate::acp::state::{Event, AGENT_EXITED_REASON};
 use agent_client_protocol::schema::v1::{
     CreateElicitationRequest, CreateElicitationResponse, CreateTerminalRequest,
     CreateTerminalResponse, ElicitationScope, KillTerminalRequest, KillTerminalResponse, McpServer,
@@ -238,7 +238,7 @@ pub(super) async fn run_connection_task<W, R>(
                 if let Some(control) = control {
                     control.shutdown();
                 }
-                Err(acp_internal_error("agent transport closed".into()))
+                Err(acp_internal_error(AGENT_TRANSPORT_CLOSED.into()))
             }
         })
         .on_receive_notification(
@@ -467,6 +467,8 @@ pub(super) async fn run_connection_task<W, R>(
     }
 }
 
+const AGENT_TRANSPORT_CLOSED: &str = "agent transport closed";
+
 async fn report_connection_error(
     e: &agent_client_protocol::Error,
     shared: &Shared,
@@ -518,6 +520,14 @@ async fn report_connection_error(
         let _ = event_tx
             .send(Event::Stopped {
                 reason: "stored_session_rejected".into(),
+            })
+            .await;
+    } else if e.message == AGENT_TRANSPORT_CLOSED
+        && shared.session_established.load(Ordering::Relaxed)
+    {
+        let _ = event_tx
+            .send(Event::Stopped {
+                reason: AGENT_EXITED_REASON.into(),
             })
             .await;
     } else {

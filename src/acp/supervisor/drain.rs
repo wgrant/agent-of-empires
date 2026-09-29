@@ -24,7 +24,7 @@ use crate::acp::acp_client::{AcpError, SpawnConfig};
 use crate::acp::runner_lifecycle::{
     InstallError, Lease, LifecycleTable, ProcessControl, RunnerIdentity,
 };
-use crate::acp::state::{AcpSessionId, Event};
+use crate::acp::state::{AcpSessionId, Event, AGENT_EXITED_REASON};
 use crate::process::worker_registry;
 
 impl<S: BroadcastSink> Supervisor<S> {
@@ -154,20 +154,21 @@ impl<S: BroadcastSink> Drain<S> {
         while let Some(event) = inbound.recv().await {
             // Killing a runner for a restart the daemon asked for, such as a
             // drained build-stale respawn, ends its connection too: that is a
-            // restart, not a failure to start.
-            let event = match event {
-                Event::AgentStartupError { .. }
-                    if established
-                        && crate::process::worker_registry::peek_restart_marker(
-                            &self.session_id,
-                        )
-                        .is_some() =>
-                {
-                    Event::Stopped {
-                        reason: "restart_pending".into(),
-                    }
+            // restart, not the agent failing.
+            let lost = match &event {
+                Event::AgentStartupError { .. } => true,
+                Event::Stopped { reason } => reason == AGENT_EXITED_REASON,
+                _ => false,
+            };
+            let event = if lost
+                && established
+                && crate::process::worker_registry::peek_restart_marker(&self.session_id).is_some()
+            {
+                Event::Stopped {
+                    reason: "restart_pending".into(),
                 }
-                event => event,
+            } else {
+                event
             };
             match &event {
                 Event::Stopped { reason } => match reason.as_str() {
@@ -1007,10 +1008,10 @@ mod tests {
     }
 
     /// A drained stale-build respawn kills the runner under a restart marker;
-    /// the dropped connection shows as that restart, not a startup error.
+    /// the dropped connection shows as that restart, not as the agent exiting.
     #[tokio::test]
     #[serial_test::serial]
-    async fn a_requested_restart_is_not_reported_as_a_startup_error() {
+    async fn a_requested_restart_is_not_reported_as_the_agent_exiting() {
         let (_home, _temp) = isolate_home();
         let id = "s-planned-restart";
         let sink = VecSink::new();
@@ -1023,8 +1024,8 @@ mod tests {
             Event::AcpSessionAssigned {
                 acp_session_id: "acp-1".into(),
             },
-            Event::AgentStartupError {
-                message: "ACP connection failed: agent transport closed".into(),
+            Event::Stopped {
+                reason: AGENT_EXITED_REASON.into(),
             },
         ] {
             inbound_tx.send(event).await.unwrap();
@@ -1048,7 +1049,9 @@ mod tests {
             "{published:?}"
         );
         assert!(
-            !published.iter().any(|ev| matches!(ev, Event::AgentStartupError { message } if message.contains("transport closed"))),
+            !published
+                .iter()
+                .any(|ev| matches!(ev, Event::Stopped { reason } if reason == AGENT_EXITED_REASON)),
             "{published:?}"
         );
     }
