@@ -25,7 +25,7 @@ aoe serve --remote --read-only  # Monitor without sending keystrokes
 
 The server prints a URL carrying an auth token; the token becomes a cookie on first visit. `--open` is suppressed with `--daemon`, `--remote`, and whenever no browser you could see is reachable (SSH without `DISPLAY`, a Linux host with no display server); setting `BROWSER` overrides that check except on macOS.
 
-Structured view agents keep running while the server restarts, and the new server reattaches to them. Under a systemd user service (`systemctl --user`) each agent starts in its own scope, so the default `KillMode` works. A system service with `User=` cannot give them scopes of their own, so set `KillMode=process` there, or stopping the unit kills every agent with it.
+Structured view agents keep running while the server restarts, and the new server reattaches to them. Under a systemd user service (`systemctl --user`) each agent starts in its own scope, so the default `KillMode` works and an OOM kill of something an agent ran takes only that process. A system service with `User=` cannot give them scopes of their own, so set `KillMode=process` and `OOMPolicy=continue` there, or stopping the unit, or the kernel OOM-killing a test suite an agent ran, stops every agent with it.
 
 In `--remote` mode the token rotates every 4 hours, so a URL captured at startup eventually stops working. `aoe url` prints the live one against a running daemon (`--all` for every labeled URL, `--token-only` for scripted login), and `--remote` prints a QR code for phone pairing.
 
