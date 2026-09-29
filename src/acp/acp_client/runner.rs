@@ -124,7 +124,7 @@ pub(super) fn spawn_runner_detached(
             (None, None) => (config.spec.command.clone(), Vec::new()),
         };
 
-    // Under a systemd user service the runner gets its own scope, so
+    // Under a systemd service the runner gets its own scope where it can, so
     // restarting the service does not kill it before a new daemon can reattach.
     let launcher = crate::process::outside_service_launcher(&format!(
         "aoe-runner-{session_id}-{}",
