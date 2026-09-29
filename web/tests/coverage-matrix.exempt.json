@@ -18,6 +18,10 @@
       "reason": "Catch-all boundary; runtime fallback not exercised by any specific user flow"
     },
     {
+      "path": "web/src/components/Spinner.tsx",
+      "reason": "Pure presentational busy indicator; rendered by the components that show one"
+    },
+    {
       "path": "web/src/components/StatusGlyph.tsx",
       "reason": "Pure presentational; rendered as a child of WorkspaceSidebar entries"
     },

@@ -17,7 +17,8 @@ import {
   toneTextClass,
 } from "../../lib/pluginUi";
 import { PluginPaneBody } from "./PluginPane";
-import { BadgeChip, Spinner } from "./SlotChrome";
+import { BadgeChip } from "./SlotChrome";
+import { Spinner } from "../Spinner";
 import { objectList, renderIcon } from "./slotPayload";
 
 export interface ComposerActionSnapshot {
