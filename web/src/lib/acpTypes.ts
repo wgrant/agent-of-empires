@@ -709,6 +709,8 @@ export interface AcpState {
   pendingConfigOption: { configId: string; value: string } | null;
   /** The adapter finished streaming but never sent `PromptResponse`; the runner is respawning. */
   agentOrphaned: boolean;
+  /** The agent went away after it started, such as its process dying; the runner is respawning. */
+  agentExited: boolean;
   /** Async sub-agents launched this session, oldest first. */
   backgroundAgents: BackgroundAgent[];
   /** Agent-pushed advisories for the current turn, oldest first. */
@@ -1110,6 +1112,7 @@ export function emptyAcpState(): AcpState {
     rejectedPrompts: [],
     agentUnresponsive: false,
     agentOrphaned: false,
+    agentExited: false,
     backgroundAgents: [],
     asyncTasks: [],
     modeSwitchFailed: null,
@@ -1142,6 +1145,7 @@ function applyNewTurnResets(next: AcpState): void {
   next.turnOutputTokens = null;
   next.agentUnresponsive = false;
   next.agentOrphaned = false;
+  next.agentExited = false;
   // A mid-wait user prompt is not the /loop wake; only clear once the wake time has passed.
   if (next.nextWakeupAt) {
     const wakeAt = new Date(next.nextWakeupAt).getTime();
@@ -1337,21 +1341,31 @@ export function applyEvent(state: AcpState, frame: AcpFrame): AcpState {
       next.workerRestarting = false;
       next.agentUnresponsive = false;
       next.agentOrphaned = false;
+      next.agentExited = false;
     } else if (event.Stopped.reason === "restart_pending") {
       next.workerRestarting = true;
       next.workerStopped = false;
       next.agentUnresponsive = false;
       next.agentOrphaned = false;
+      next.agentExited = false;
     } else if (event.Stopped.reason === "agent_unresponsive") {
       next.workerRestarting = true;
       next.workerStopped = false;
       next.agentUnresponsive = true;
       next.agentOrphaned = false;
+      next.agentExited = false;
     } else if (event.Stopped.reason === "prompt_orphaned") {
       next.workerRestarting = true;
       next.workerStopped = false;
       next.agentUnresponsive = false;
       next.agentOrphaned = true;
+      next.agentExited = false;
+    } else if (event.Stopped.reason === "agent_exited") {
+      next.workerRestarting = true;
+      next.workerStopped = false;
+      next.agentUnresponsive = false;
+      next.agentOrphaned = false;
+      next.agentExited = true;
     } else if (event.Stopped.reason === "idle_auto_stop") {
       next.workerIdleStopped = true;
       next.workerStopped = false;
@@ -1423,6 +1437,7 @@ export function applyEvent(state: AcpState, frame: AcpFrame): AcpState {
     next.workerIdleStopped = false;
     next.agentUnresponsive = false;
     next.agentOrphaned = false;
+    next.agentExited = false;
     next.rateLimit = null;
     next.rateLimitParked = false;
     return next;
@@ -1844,6 +1859,7 @@ export function normaliseTurnState(
     rejectedPrompts?: RejectedPrompt[];
     agentUnresponsive?: boolean;
     agentOrphaned?: boolean;
+    agentExited?: boolean;
     usageBaseline?: { cost: number } | null;
     configOptions?: ConfigOptionDescriptor[];
     configOptionSwitchFailed?: ConfigOptionSwitchFailure | null;
@@ -1862,6 +1878,7 @@ export function normaliseTurnState(
   const rejectedPrompts = Array.isArray(state.rejectedPrompts) ? state.rejectedPrompts : [];
   const agentUnresponsive = typeof state.agentUnresponsive === "boolean" ? state.agentUnresponsive : false;
   const agentOrphaned = typeof state.agentOrphaned === "boolean" ? state.agentOrphaned : false;
+  const agentExited = typeof state.agentExited === "boolean" ? state.agentExited : false;
   const usageBaseline = state.usageBaseline === undefined ? null : state.usageBaseline;
   const configOptions = Array.isArray(state.configOptions) ? state.configOptions : [];
   const configOptionSwitchFailed = state.configOptionSwitchFailed === undefined ? null : state.configOptionSwitchFailed;
@@ -1884,6 +1901,7 @@ export function normaliseTurnState(
     rejectedPrompts,
     agentUnresponsive,
     agentOrphaned,
+    agentExited,
     usageBaseline,
     configOptions,
     configOptionSwitchFailed,

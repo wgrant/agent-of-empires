@@ -68,6 +68,9 @@ pub(super) struct Shared {
     pub(super) rate_limit_rejections: std::sync::Mutex<HashMap<String, i64>>,
     /// A stored-session rejection already emitted its context reset.
     pub(super) context_reset_emitted: AtomicBool,
+    /// An `AcpSessionAssigned` went out: the agent started, so losing it
+    /// later is not a failure to start.
+    pub(super) session_established: AtomicBool,
     /// Scoped to one turn; see `AgentMessageDedup` (#2281).
     pub(super) agent_msg_dedup: std::sync::Mutex<AgentMessageDedup>,
     compaction: std::sync::Mutex<CompactionTracker>,
@@ -114,6 +117,7 @@ impl Shared {
             between_prompt: BetweenPromptTracker::default(),
             rate_limit_rejections: Default::default(),
             context_reset_emitted: AtomicBool::new(false),
+            session_established: AtomicBool::new(false),
             agent_msg_dedup: Default::default(),
             compaction: Default::default(),
             tool_context_cache: Arc::new(std::sync::Mutex::new(ToolCallContextCache::default())),
@@ -124,6 +128,9 @@ impl Shared {
     }
 
     pub(super) async fn emit(&self, event: Event) {
+        if matches!(event, Event::AcpSessionAssigned { .. }) {
+            self.session_established.store(true, Ordering::Relaxed);
+        }
         let _ = self.event_tx.send(event).await;
     }
 

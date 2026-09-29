@@ -3,7 +3,7 @@ import {
   type ConnectionDiagnostics,
   type ConnectionStatusSnapshot,
 } from "./connectionStatus";
-import type { AgentState, SessionDiagnostics } from "./sessionDiagnostics";
+import type { AgentState, RestartReason, SessionDiagnostics } from "./sessionDiagnostics";
 
 export interface SelectedSessionDiagnostics {
   sessionId: string;
@@ -56,13 +56,15 @@ export type SessionIncident =
   | (SessionIncidentBase & {
       kind: "restarting";
       action: "wait";
-      reason: "manual_restart" | "cancel_unresponsive" | "prompt_orphaned";
+      reason: RestartReason;
     });
 
 function restartDetail(reason: NonNullable<Extract<AgentState, { kind: "transitioning" }>["reason"]>): string {
   switch (reason) {
     case "prompt_orphaned":
       return "Agent finished but didn't notify the daemon. Restarting worker; your transcript will be preserved.";
+    case "agent_exited":
+      return "The agent exited unexpectedly. Restarting it; your transcript will be preserved.";
     case "cancel_unresponsive":
       return "Agent stopped responding to cancel. Restarting worker; your transcript will be preserved.";
     case "manual_restart":

@@ -50,6 +50,11 @@ describe("conversation diagnostics selectors", () => {
         reason: "prompt_orphaned",
         detail: "Agent finished but didn't notify the daemon. Restarting worker; your transcript will be preserved.",
       },
+      {
+        state: { ...emptyAcpState(), workerRestarting: true, agentExited: true },
+        reason: "agent_exited",
+        detail: "The agent exited unexpectedly. Restarting it; your transcript will be preserved.",
+      },
     ] as const;
     for (const { state, reason, detail } of restartCases) {
       expect(deriveSessionIncident(snapshot({ state, workerState: "resuming" }))).toMatchObject({

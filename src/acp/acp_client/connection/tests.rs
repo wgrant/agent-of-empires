@@ -294,6 +294,73 @@ async fn update_follows(request: &'static str) {
     let _ = tokio::join!(agent, connection);
 }
 
+/// An agent lost after its session was assigned had started, so its loss is
+/// an exit; lost during the handshake, it failed to start.
+#[tokio::test]
+async fn losing_the_agent_after_its_session_is_an_exit_not_a_startup_failure() {
+    for answer_session in [true, false] {
+        let (daemon_write, agent_read) = tokio::io::duplex(64 * 1024);
+        let (agent_write, daemon_read) = tokio::io::duplex(64 * 1024);
+        let (transport, (params, mut event_rx, _cmd_tx, ready_rx, _temp)) =
+            connection_params("s-exit", daemon_write, daemon_read);
+        let connection = tokio::spawn(run_connection_task(transport, params));
+        // Answers the handshake, then drops both pipes as a dying process would.
+        let agent = tokio::spawn(async move {
+            let agent_write: SharedWrite = Arc::new(Mutex::new(agent_write));
+            let mut reader = BufReader::new(agent_read);
+            let mut line = String::new();
+            while reader.read_line(&mut line).await.unwrap_or(0) > 0 {
+                let msg: serde_json::Value = serde_json::from_str(line.trim()).unwrap_or_default();
+                let id = &msg["id"];
+                match msg["method"].as_str() {
+                    Some("initialize") => {
+                        let reply = format!(
+                            r#"{{"jsonrpc":"2.0","id":{id},"result":{{"protocolVersion":1,"agentCapabilities":{{}}}}}}"#
+                        );
+                        write_line(&agent_write, &reply).await;
+                    }
+                    Some("session/new") => {
+                        if answer_session {
+                            let reply = format!(
+                                r#"{{"jsonrpc":"2.0","id":{id},"result":{{"sessionId":"s-exit"}}}}"#
+                            );
+                            write_line(&agent_write, &reply).await;
+                        }
+                        break;
+                    }
+                    _ => {}
+                }
+                line.clear();
+            }
+        });
+        agent.await.unwrap();
+        let ready = tokio::time::timeout(Duration::from_secs(10), ready_rx)
+            .await
+            .expect("the spawn settles")
+            .unwrap();
+        let mut events = Vec::new();
+        while let Some(event) = tokio::time::timeout(Duration::from_secs(10), event_rx.recv())
+            .await
+            .expect("the connection ends")
+        {
+            events.push(event);
+        }
+        connection.await.unwrap();
+        let exited = events
+            .iter()
+            .any(|e| matches!(e, Event::Stopped { reason } if reason == AGENT_EXITED_REASON));
+        let startup_error = events
+            .iter()
+            .any(|e| matches!(e, Event::AgentStartupError { .. }));
+        assert!(ready.is_ok());
+        assert_eq!(
+            (exited, startup_error),
+            (answer_session, !answer_session),
+            "answer_session={answer_session}: {events:?}"
+        );
+    }
+}
+
 /// A new adapter process clears the previous process's identity before it can
 /// report its own; a reattach to the surviving process keeps it.
 #[tokio::test]
