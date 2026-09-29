@@ -1,6 +1,7 @@
 import { useId, useState } from "react";
 import {
   Archive,
+  ArchiveX,
   ArrowLeftRight,
   ChevronRight,
   CircleDot,
@@ -100,6 +101,7 @@ export interface SingleRowActions {
   color: (color: string | null) => void;
   pin: () => void;
   archive: () => void;
+  retire: () => void;
   openSnooze: () => void;
   unsnooze: () => void;
   unread: () => void;
@@ -345,6 +347,7 @@ function TriageRow({
       isPinned: model.effectivePinned,
       isArchived: model.effectiveArchived,
       isSnoozed: model.effectiveSnoozed,
+      isRetired: model.isRetired,
     }),
   );
   const glyph = (Icon: typeof Pin, className = "") => <Icon className={`h-4 w-4 ${className}`.trim()} />;
@@ -359,6 +362,11 @@ function TriageRow({
         <QuickAction onClick={a.archive} testId="sidebar-context-menu-archive" glyph={glyph(Archive)}>
           {shape.showArchive ? "Archive" : "Unarchive"}
         </QuickAction>
+      )}
+      {shape.showRetire && model.canRetire && (
+        <MenuItem onClick={a.retire} testId="sidebar-context-menu-retire" icon={icon(ArchiveX)} indent>
+          Retire…
+        </MenuItem>
       )}
       {shape.showSnooze && (
         <QuickAction onClick={a.openSnooze} testId="sidebar-context-menu-snooze" glyph={glyph(Moon)}>

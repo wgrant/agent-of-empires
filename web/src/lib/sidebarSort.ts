@@ -102,7 +102,7 @@ export function resolveEffectiveSnoozedUntil(
 }
 
 /** The server keeps pinned/archived/snoozed mutually exclusive. */
-export type TriageState = "live" | "pinned" | "archived" | "snoozed";
+export type TriageState = "live" | "pinned" | "archived" | "retired" | "snoozed";
 
 /** If an aggregate surfaces several states: pinned > archived > snoozed > live. */
 export interface TriageMenuShape {
@@ -112,9 +112,17 @@ export interface TriageMenuShape {
   showUnarchive: boolean;
   showSnooze: boolean;
   showUnsnooze: boolean;
+  showRetire: boolean;
 }
 
-export function triageStateOf(input: { isPinned: boolean; isArchived: boolean; isSnoozed: boolean }): TriageState {
+export function triageStateOf(input: {
+  isPinned: boolean;
+  isArchived: boolean;
+  isSnoozed: boolean;
+  isRetired?: boolean;
+}): TriageState {
+  // A retired session stays archived and cannot be pinned, unarchived or snoozed.
+  if (input.isRetired) return "retired";
   if (input.isPinned) return "pinned";
   if (input.isArchived) return "archived";
   if (input.isSnoozed) return "snoozed";
@@ -132,6 +140,7 @@ export function triageMenuShape(state: TriageState): TriageMenuShape {
         showUnarchive: false,
         showSnooze: true,
         showUnsnooze: false,
+        showRetire: false,
       };
     case "archived":
       return {
@@ -141,6 +150,17 @@ export function triageMenuShape(state: TriageState): TriageMenuShape {
         showUnarchive: true,
         showSnooze: false,
         showUnsnooze: false,
+        showRetire: true,
+      };
+    case "retired":
+      return {
+        showPin: false,
+        showUnpin: false,
+        showArchive: false,
+        showUnarchive: false,
+        showSnooze: false,
+        showUnsnooze: false,
+        showRetire: false,
       };
     case "snoozed":
       return {
@@ -150,6 +170,7 @@ export function triageMenuShape(state: TriageState): TriageMenuShape {
         showUnarchive: false,
         showSnooze: false,
         showUnsnooze: true,
+        showRetire: false,
       };
     case "live":
       return {
@@ -159,6 +180,7 @@ export function triageMenuShape(state: TriageState): TriageMenuShape {
         showUnarchive: false,
         showSnooze: true,
         showUnsnooze: false,
+        showRetire: false,
       };
   }
 }

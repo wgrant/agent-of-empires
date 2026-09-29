@@ -133,7 +133,7 @@ function RateLimitBadge({ sessions }: { sessions: SessionResponse[] }) {
 
 /** Badges after the row label; hidden in the compact rail. */
 export function RowTrailingBadges({ workspace, model }: { workspace: Workspace; model: RowModel }) {
-  const { firstSession: first, effectiveArchived, effectiveSnoozedUntil } = model;
+  const { firstSession: first, effectiveArchived, effectiveSnoozedUntil, isRetired: retired } = model;
   const rowTag = computeSessionRowTag(workspace, useSessionRowTagMode());
   const baseBranch = first?.base_branch ?? null;
   const sessionIds = useMemo(() => workspace.sessions.map((s) => s.id), [workspace.sessions]);
@@ -171,9 +171,13 @@ export function RowTrailingBadges({ workspace, model }: { workspace: Workspace; 
       )}
       <RateLimitBadge sessions={workspace.sessions} />
       {effectiveArchived && (
-        <Chip title="Archived" label="Archived" className={`${CHIP} gap-0.5 ${MUTED}`}>
+        <Chip
+          title={retired ? "Retired: worktree removed" : "Archived"}
+          label={retired ? "Retired" : "Archived"}
+          className={`${CHIP} gap-0.5 ${MUTED}`}
+        >
           <Archive className="h-3 w-3" />
-          <span className="hidden sm:inline">archived</span>
+          <span className="hidden sm:inline">{retired ? "retired" : "archived"}</span>
         </Chip>
       )}
       {!effectiveArchived && effectiveSnoozedUntil && (

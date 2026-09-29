@@ -1692,8 +1692,18 @@ export function stopSession(id: string): Promise<SessionResponse | null> {
   return sessionUpdate(id, "stop", jsonInit("POST"));
 }
 
-/** A 409 code for a start refused because the session is archived or trashed. */
-export const isStartRefusal = (code: string | undefined) => code === "session_archived" || code === "session_trashed";
+/** A 409 code for a start refused because the session is archived, retired or trashed. */
+export const isStartRefusal = (code: string | undefined) =>
+  code === "session_archived" || code === "session_retired" || code === "session_trashed";
+
+export type RetireSessionResult = { ok: true; session: SessionResponse } | { ok: false; message: string };
+
+/** Remove an archived session's worktree and container, keeping its branch and transcript. */
+export async function retireSession(id: string): Promise<RetireSessionResult> {
+  const reply = await send(`/api/sessions/${id}/retire`, jsonInit("POST")).catch(() => null);
+  if (reply?.ok && reply.payload) return { ok: true, session: reply.payload as unknown as SessionResponse };
+  return { ok: false, message: stringField(reply?.payload, "message") ?? "Could not retire the session." };
+}
 
 export type StartSessionResult =
   | { ok: true; session: SessionResponse }

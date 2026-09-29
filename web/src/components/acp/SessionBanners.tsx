@@ -26,6 +26,7 @@ export function SessionBanners({
   acpWorkerState,
   trashedAt,
   archivedAt,
+  retired = false,
   snoozedUntil,
   sessionStatus,
   lastError,
@@ -45,6 +46,7 @@ export function SessionBanners({
   acpWorkerState: "absent" | "resuming" | "running" | "stopping";
   trashedAt: string | null;
   archivedAt: string | null;
+  retired?: boolean;
   snoozedUntil: string | null;
   sessionStatus: SessionStatus;
   lastError: string | null;
@@ -86,6 +88,7 @@ export function SessionBanners({
           <ConversationLifecycleNotice
             sessionId={sessionId}
             incident={incident}
+            retired={retired}
             onRestore={onRestore}
             onUnarchive={onUnarchive}
             onUnsnooze={onUnsnooze}
@@ -115,6 +118,7 @@ export function SessionBanners({
 export function ConversationLifecycleNotice({
   sessionId,
   incident,
+  retired = false,
   onRestore,
   onUnarchive,
   onUnsnooze,
@@ -128,6 +132,7 @@ export function ConversationLifecycleNotice({
 }: {
   sessionId: string;
   incident: SessionIncident | null;
+  retired?: boolean;
   onRestore?: () => Promise<boolean> | void;
   onUnarchive?: () => Promise<boolean> | void;
   onUnsnooze?: () => Promise<boolean> | void;
@@ -171,7 +176,7 @@ export function ConversationLifecycleNotice({
   }
   if (incident.kind === "trashed") return <TrashedWorkerStoppedBanner sessionId={sessionId} onRestore={onRestore} />;
   if (incident.kind === "archived") {
-    return <ArchivedWorkerStoppedBanner sessionId={sessionId} onUnarchive={onUnarchive} />;
+    return <ArchivedWorkerStoppedBanner sessionId={sessionId} retired={retired} onUnarchive={onUnarchive} />;
   }
   if (incident.kind === "snoozed") {
     return (
@@ -390,12 +395,24 @@ export function TrashedWorkerStoppedBanner({
 
 export function ArchivedWorkerStoppedBanner({
   sessionId,
+  retired = false,
   onUnarchive,
 }: {
   sessionId: string;
+  retired?: boolean;
   onUnarchive?: () => Promise<boolean> | void;
 }) {
   const action = useSessionRecoveryAction("Unarchive", "Unarchiving…", "Could not unarchive session.", onUnarchive);
+  if (retired) {
+    return (
+      <LifecycleIncidentNotice
+        title="Session retired"
+        detail="This session's worktree and container were removed. Its transcript is kept here read-only, and it cannot be started again."
+        tone="warning"
+        testId={`acp-retired-banner-${sessionId}`}
+      />
+    );
+  }
   return (
     <LifecycleIncidentNotice
       title="Session archived"

@@ -37,6 +37,7 @@ export function bucketSelectionForBulk(
       isPinned: effectivePinnedOf(o, server.isPinned),
       isArchived: effectiveArchivedOf(o, server.isArchived),
       isSnoozed: effectiveSnoozedUntilOf(o, server.snoozedUntil) != null,
+      isRetired: server.isRetired,
     });
     switch (state) {
       case "live":
@@ -52,6 +53,8 @@ export function bucketSelectionForBulk(
         break;
       case "archived":
         buckets.unarchivable.push(ws);
+        break;
+      case "retired":
         break;
       case "snoozed":
         buckets.unsnoozable.push(ws);
