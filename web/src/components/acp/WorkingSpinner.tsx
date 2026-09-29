@@ -1,13 +1,9 @@
 import { useEffect, useState } from "react";
 
 import { useNow } from "../../hooks/useNow";
-import {
-  SPINNER_FRAMES,
-  SPINNER_INTERVAL_MS,
-  VERB_INTERVAL_MS,
-  chooseVerb,
-  deriveSpinnerState,
-} from "../../lib/acpRattle";
+import { useRattle } from "../../hooks/useRattle";
+import { VERB_INTERVAL_MS, chooseVerb, deriveSpinnerState } from "../../lib/acpRattle";
+import { RATTLES } from "../../lib/rattles";
 import { formatTokens } from "../../lib/turnUsage";
 
 // Streaming silence before the "waiting on" label.
@@ -43,16 +39,9 @@ export function WorkingSpinner({
   outputTokens?: number | null;
   lastActivityRef: React.RefObject<number>;
 }) {
-  const [frame, setFrame] = useState(0);
+  const glyph = useRattle(RATTLES.working);
   const [seed, setSeed] = useState(() => Math.floor(Math.random() * 0xffffffff));
   const [stalledSecs, setStalledSecs] = useState(0);
-
-  useEffect(() => {
-    const t = window.setInterval(() => {
-      setFrame((f) => (f + 1) % SPINNER_FRAMES.length);
-    }, SPINNER_INTERVAL_MS);
-    return () => window.clearInterval(t);
-  }, []);
 
   useEffect(() => {
     const t = window.setInterval(() => {
@@ -123,7 +112,7 @@ export function WorkingSpinner({
   return (
     <div data-testid="acp-working-spinner" className="flex items-center gap-2 text-sm italic text-text-muted">
       <span className="inline-block w-3 text-center font-mono text-brand-500" aria-hidden="true">
-        {SPINNER_FRAMES[frame]}
+        {glyph}
       </span>
       <span>{label}</span>
       {outputTokens != null && outputTokens > 0 && !cancelling && (
