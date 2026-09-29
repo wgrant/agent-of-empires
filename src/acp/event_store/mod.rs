@@ -106,6 +106,12 @@ impl EventStore {
         self.conn.lock().unwrap_or_else(|p| p.into_inner())
     }
 
+    /// The connection, held so a test can park other callers mid-query.
+    #[cfg(test)]
+    pub(crate) fn hold_connection(&self) -> MutexGuard<'_, Connection> {
+        self.conn()
+    }
+
     /// Append one event (a duplicate seq is ignored), then prune past the retention cap.
     pub fn record(&self, session_id: &str, seq: u64, event: &Event) -> Result<()> {
         let json = serde_json::to_string(event)

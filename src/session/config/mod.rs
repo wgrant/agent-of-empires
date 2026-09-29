@@ -4,6 +4,7 @@
 pub(crate) mod container_config;
 pub mod profile_config;
 pub mod repo_config;
+pub mod resolved_cache;
 pub mod settings_schema;
 
 use self::repo_config::{HooksConfig, HostHooksConfig};

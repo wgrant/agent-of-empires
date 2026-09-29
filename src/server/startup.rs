@@ -23,10 +23,7 @@ use super::serve_snapshot::{
     spawn_serve_snapshot_loop, FormFactorCounters, StructuredTelemetryCounters,
 };
 use super::startup_recovery::{daemon_startup_recovery_cascade, daemon_startup_recovery_mark};
-use super::state::{
-    AppState, CleanupDefaultsCache, ACP_CHANNEL_CAPACITY, CLEANUP_DEFAULTS_TTL,
-    PENDING_ATTACHMENT_TTL,
-};
+use super::state::{AppState, ACP_CHANNEL_CAPACITY, PENDING_ATTACHMENT_TTL};
 use super::status_poll::status_poll_loop;
 use super::token::{
     load_or_generate_token, test_token_grace_override, test_token_lifetime_override,
@@ -642,7 +639,7 @@ pub async fn start_server(config: ServerConfig<'_>) -> anyhow::Result<()> {
         instance_locks,
         idempotency_locks,
         create_progress: Default::default(),
-        list_sessions_resolver_misses: std::sync::atomic::AtomicUsize::new(0),
+        resolved_config: Default::default(),
         smart_rename_inflight: std::sync::Mutex::new(std::collections::HashSet::new()),
         smart_rename_attempted: std::sync::Mutex::new(std::collections::HashSet::new()),
         smart_rename_semaphore: tokio::sync::Semaphore::new(
@@ -656,12 +653,6 @@ pub async fn start_server(config: ServerConfig<'_>) -> anyhow::Result<()> {
         mutation_epoch: Arc::clone(&mutation_epoch),
         recovery_pending: crate::session::recovery::new_recovery_pending(),
         metrics_sampler: tokio::sync::Mutex::new(Default::default()),
-        cleanup_defaults_cache: RwLock::new(CleanupDefaultsCache {
-            // Seed with an already-stale timestamp so the first request
-            // forces a fresh resolve instead of handing out an empty map.
-            refreshed_at: std::time::Instant::now() - CLEANUP_DEFAULTS_TTL,
-            entries: std::collections::HashMap::new(),
-        }),
         remote_owner_cache: RwLock::new(std::collections::HashMap::new()),
         changed_files_cache: std::sync::RwLock::new(std::collections::HashMap::new()),
         range_files_cache: Default::default(),
