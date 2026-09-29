@@ -91,7 +91,9 @@ pub fn reconcile_and_persist(
     // A trashed session's directory belongs to [`crate::session::trash`], which relocates the
     // checkout into a holding dir and back and keeps its own pre-trash marker alongside
     // `project_path`.
-    if inst.is_trashed() {
+    // A retired session's worktree was removed on purpose; a later checkout of its kept branch
+    // belongs to whoever made it.
+    if inst.is_trashed() || inst.is_retired() {
         return Ok(WorktreePathResolution::Current);
     }
     let recorded = PathBuf::from(&inst.project_path);
