@@ -14,6 +14,8 @@ export const RATTLES = {
   breathe: { frames: BREATHE, interval: 180 },
   /** `breathe`, slowed for a freshly stopped session. */
   exhale: { frames: BREATHE, interval: 280 },
+  /** `dots` slowed, for a session waiting on its own background work. */
+  drift: { frames: DOTS, interval: 660 },
   /** `dots` at the pace of a structured turn's working line. */
   working: { frames: DOTS, interval: 80 },
 } satisfies Record<string, Rattle>;

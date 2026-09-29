@@ -14,7 +14,7 @@ import {
   summarizeSession,
   updateSessionGroup,
 } from "../../lib/api";
-import { isSessionActive } from "../../lib/session";
+import { BACKGROUND_STATUS_HINT, isSessionActive } from "../../lib/session";
 import { useIdleDecayWindowMs } from "../../lib/idleDecay";
 import { useUnreadIndicatorEnabled } from "../../lib/unreadIndicator";
 import { sessionRowChromeClass } from "../../lib/sessionRowChrome";
@@ -181,7 +181,14 @@ export const SessionRow = memo(function SessionRow(props: SessionRowProps) {
               attention ? "motion-safe:animate-pulse font-semibold" : ""
             }`}
             data-attention={attention ? "true" : undefined}
-            aria-label={attention ? `${model.status} · ${model.attentionHint}` : undefined}
+            title={model.status === "Background" ? BACKGROUND_STATUS_HINT : undefined}
+            aria-label={
+              attention
+                ? `${model.status} · ${model.attentionHint}`
+                : model.status === "Background"
+                  ? BACKGROUND_STATUS_HINT
+                  : undefined
+            }
           >
             {model.showUnreadGlyph ? (
               <span title="Unread" aria-label="Unread" data-testid="sidebar-unread-dot">

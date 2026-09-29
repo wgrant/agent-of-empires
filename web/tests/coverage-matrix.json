@@ -1433,6 +1433,18 @@
       "components": ["web/src/lib/sessionColors.ts", "web/src/components/WorkspaceSidebar.tsx"]
     },
     {
+      "id": "sidebar.background-waiting-status",
+      "kind": "vitest",
+      "risk": "medium",
+      "specs": ["src/lib/__tests__/session.test.ts"],
+      "components": [
+        "web/src/lib/session.ts",
+        "web/src/lib/sidebarSort.ts",
+        "web/src/components/sidebar/rowModel.ts",
+        "web/src/components/StatusGlyph.tsx"
+      ]
+    },
+    {
       "id": "sidebar.dormant-dot",
       "kind": "vitest",
       "risk": "low",

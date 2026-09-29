@@ -1,20 +1,21 @@
-import type { SessionStatus } from "../lib/types";
-import { isFreshIdle } from "../lib/session";
+import { isFreshIdle, type DisplayStatus } from "../lib/session";
 import { useIdleDecayWindowMs } from "../lib/idleDecay";
 import { RATTLES } from "../lib/rattles";
 import { useRattle } from "../hooks/useRattle";
 
 /** Which statuses get animated spinners vs static glyphs */
-const STATUS_RATTLE: Partial<Record<SessionStatus, keyof typeof RATTLES>> = {
+const STATUS_RATTLE: Partial<Record<DisplayStatus, keyof typeof RATTLES>> = {
   Running: "dots",
+  Background: "drift",
   Waiting: "orbit",
   Starting: "breathe",
   Creating: "orbit",
 };
 
 /** Static glyphs for non-animated statuses (braille family) */
-const STATIC_GLYPH: Record<SessionStatus, string> = {
+const STATIC_GLYPH: Record<DisplayStatus, string> = {
   Running: "⠋",
+  Background: "⠋",
   Waiting: "⠃",
   Idle: "⠒",
   Error: "✕",
@@ -35,7 +36,7 @@ export function StatusGlyph({
   idleEnteredAt,
   dormant = false,
 }: {
-  status: SessionStatus;
+  status: DisplayStatus;
   createdAt: string | null;
   idleEnteredAt?: string | null;
   dormant?: boolean;
