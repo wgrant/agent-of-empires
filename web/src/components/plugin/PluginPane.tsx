@@ -2,7 +2,7 @@ import type { PluginUiEntry } from "../../lib/api";
 import { usePluginUiRefreshing } from "../../lib/pluginUiContext";
 import { lucideIcon, payloadStr, toneTextClass, validTone } from "../../lib/pluginUi";
 import { DetailBlock } from "./paneBlocks";
-import { Spinner } from "./SlotChrome";
+import { Spinner } from "../Spinner";
 import { isObject, objectList, renderIcon, str, type Obj } from "./slotPayload";
 
 /** The scrollable body of one plugin pane: a `blocks` list or the simple

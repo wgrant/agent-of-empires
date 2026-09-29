@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ChevronDown, LoaderCircle, RotateCcw, X } from "lucide-react";
+import { ChevronDown, RotateCcw, X } from "lucide-react";
 
 import {
   connectionStatusCompactLabel,
@@ -13,6 +13,7 @@ import type {
   ConnectionEdgeState,
   ConnectionHopState,
 } from "../acp/status/connectionStatus";
+import { Spinner } from "../Spinner";
 
 function stateTextClass(state: ConnectionHopState | ConnectionEdgeState) {
   if (state === "failed" || state === "blocked") return "text-status-error";
@@ -58,9 +59,7 @@ function ConnectionEdge({ state, label }: { state: ConnectionEdgeState; label: s
       data-testid={`connection-edge-${label.toLowerCase().replaceAll(" ", "-")}`}
     >
       <span className={`w-full border-t ${lineClass}`} aria-hidden="true" />
-      {state === "working" && (
-        <LoaderCircle className="absolute size-3 animate-spin bg-surface-900 text-status-warning" aria-hidden="true" />
-      )}
+      {state === "working" && <Spinner className="absolute size-3 bg-surface-900 text-status-warning" />}
     </span>
   );
 }
@@ -255,7 +254,7 @@ export function GlobalConnectionStatusButton({
       >
         <span className="flex h-8 items-center gap-1.5 rounded-md px-2 transition-colors hover:bg-surface-700/60 xl:ml-1">
           {presentation.working ? (
-            <LoaderCircle className="size-3 animate-spin" />
+            <Spinner className="size-3" />
           ) : (
             <span
               className={`size-2 rounded-full ${

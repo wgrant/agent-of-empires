@@ -1,7 +1,7 @@
 // Composer footer controls: toolbar, usage hint, attachments, send/stop, popover list.
 
 import { ComposerPrimitive, useAui } from "@assistant-ui/react";
-import { LoaderCircle, Paperclip, ShieldCheck, Square, X } from "lucide-react";
+import { Paperclip, ShieldCheck, Square, X } from "lucide-react";
 
 import { useMinuteClock } from "../../hooks/useMinuteClock";
 import { useNow } from "../../hooks/useNow";
@@ -19,6 +19,7 @@ import { TOUR_ANCHORS, tourAnchor } from "../../lib/tourSteps";
 import { ProvenanceBadge } from "../ProvenanceBadge";
 import { Tooltip } from "../Tooltip";
 import type { ComposerAvailability } from "./status/conversationDiagnostics";
+import { Spinner } from "../Spinner";
 
 /** Flat item list shared by the `@` and `/` popovers; `/` passes a skill index for provenance badges. */
 export function PopoverItems({ trigger, skillIndex }: { trigger: string; skillIndex?: SkillIndex }) {
@@ -300,7 +301,7 @@ export function SendButton({
       disabled={disabled}
       className={sendButtonClass(disabled)}
     >
-      {preparing ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden /> : <PaperPlaneIcon />}
+      {preparing ? <Spinner /> : <PaperPlaneIcon />}
     </button>
   );
 }
@@ -391,7 +392,7 @@ export function QueueSendButton({
       disabled={disabled}
       className={sendButtonClass(disabled, "relative ")}
     >
-      {preparing ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden /> : <PaperPlaneIcon />}
+      {preparing ? <Spinner /> : <PaperPlaneIcon />}
     </button>
   );
 }

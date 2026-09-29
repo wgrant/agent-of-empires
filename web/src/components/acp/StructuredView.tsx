@@ -3,7 +3,7 @@
 
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ThreadPrimitive } from "@assistant-ui/react";
-import { ChevronDown, LoaderCircle, RotateCcw } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 
 import { useAgentView } from "../../hooks/useAgentView";
 import { useHasMessageMargin } from "../../hooks/useHasMessageMargin";
@@ -64,6 +64,7 @@ import { AssistantMessage, UserMessage } from "./ThreadMessages";
 import { ToolDensityToggle, ToolDisplayModeProvider, useToolDensityPref } from "./ToolDisplayMode";
 import { useTranscriptScroll } from "./useTranscriptScroll";
 import { WorkingSpinner } from "./WorkingSpinner";
+import { Spinner } from "../Spinner";
 
 type WorkerState = "absent" | "resuming" | "running" | "stopping";
 
@@ -472,7 +473,7 @@ function AcpChrome({
               )}
               {conversationNextStep?.kind === "catching_up" && conversationSync !== "initial" && (
                 <div className="mt-3">
-                  <ConversationNextStepNotice icon={<LoaderCircle className="size-3.5 animate-spin" />}>
+                  <ConversationNextStepNotice icon={<Spinner />}>
                     {conversationSync === "history" ? "Loading earlier messages…" : "Catching up with new activity…"}
                   </ConversationNextStepNotice>
                 </div>
@@ -680,7 +681,7 @@ function ConversationAvailabilityNotice({ label }: { label: string }) {
       className="flex items-center gap-1.5 border-b border-surface-800/70 px-3 py-1.5 text-[11px] text-text-secondary"
       role="status"
     >
-      <RotateCcw className="size-3 shrink-0 animate-spin text-text-muted" aria-hidden="true" />
+      <Spinner className="size-3 text-text-muted" />
       {label}
     </div>
   );
