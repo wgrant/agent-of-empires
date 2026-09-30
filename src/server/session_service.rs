@@ -2099,7 +2099,6 @@ mod tests {
                     size: 10,
                 }],
                 None,
-                "t0".into(),
             )
             .await
             .expect("session exists");
