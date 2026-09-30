@@ -23,18 +23,22 @@ describe("AssistantReasoning", () => {
     expect(screen.getByText("Inspect the hidden constraint.")).toBeTruthy();
   });
 
-  it.each<[ThinkingDisplay, boolean | null]>([
-    ["hidden", null],
-    ["collapsed", false],
-    ["expanded", true],
-  ])("renders the trace per display %s", (display, open) => {
+  // Expanded, the trace is inline text with no disclosure to open.
+  it.each<[ThinkingDisplay, "none" | "closed" | "inline"]>([
+    ["hidden", "none"],
+    ["collapsed", "closed"],
+    ["expanded", "inline"],
+  ])("renders the trace per display %s", (display, shown) => {
     render(
       <ThinkingDisplayContext.Provider value={display}>
         <AssistantReasoning text="Weigh both options." />
       </ThinkingDisplayContext.Provider>,
     );
     const disclosure = screen.queryByText("Thinking trace")?.closest("details") ?? null;
-    expect(disclosure === null ? null : disclosure.hasAttribute("open")).toBe(open);
+    const inline = screen.queryByTestId("reasoning-inline");
+    const got = inline ? "inline" : disclosure && !disclosure.hasAttribute("open") ? "closed" : "none";
+    expect(got).toBe(shown);
+    if (inline) expect(inline.textContent).toBe("Weigh both options.");
   });
 });
 
