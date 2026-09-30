@@ -269,6 +269,11 @@ html[data-ios-standalone]:not([data-editing]) {
      rendered outside the structured-view root (e.g. the skills manager). */
   font-size: var(--acp-conversation-font-size, 0.875rem);
 }
+/* Thinking shown in the transcript sits a step below the reply. */
+.acp-reasoning,
+.acp-reasoning .acp-markdown-body {
+  font-size: calc(var(--acp-conversation-font-size, 0.875rem) * 0.875);
+}
 .acp-markdown p {
   margin: 0.5rem 0;
 }
