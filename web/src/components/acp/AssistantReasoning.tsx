@@ -1,5 +1,6 @@
 // A reasoning part, shown per the thinking display setting.
 
+import { Brain } from "lucide-react";
 import { useContext } from "react";
 
 import { ThinkingDisplayContext } from "../../lib/thinkingDisplay";
@@ -24,9 +25,12 @@ export function AssistantReasoning({ text }: { text: string }) {
   // Titles alone say all there is; a box around them only adds noise.
   if (headings.length > 0 && !hasBody) {
     return (
-      <ul data-testid="reasoning-summary" className="my-1.5 space-y-0.5 text-xs italic text-text-dim">
+      <ul data-testid="reasoning-summary" className="my-1.5 space-y-0.5 px-3 text-[0.875em] text-text-muted">
         {headings.map((heading, i) => (
-          <li key={i}>{heading}</li>
+          <li key={i} className="flex items-baseline gap-2">
+            <Brain className="h-3.5 w-3.5 shrink-0 translate-y-0.5 text-text-dim" aria-hidden />
+            <span className="min-w-0">{heading}</span>
+          </li>
         ))}
       </ul>
     );
