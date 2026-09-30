@@ -103,16 +103,20 @@ function StatusDot({ status, neutral }: { status: Status; neutral?: boolean }) {
 function StatusBadge({ status }: { status: Status }) {
   if (status === "running") {
     return (
-      <span className="inline-flex items-center gap-1 text-[11px] text-text-dim">
+      <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-[11px] text-text-dim">
         <span className="h-1.5 w-1.5 rounded-full bg-brand-400 animate-pulse" />
         running
       </span>
     );
   }
   if (status === "err") {
-    return <span className="text-[11px] text-status-error">failed</span>;
+    return <span className="shrink-0 whitespace-nowrap text-[11px] text-status-error">failed</span>;
   }
-  return <span className="text-[11px] text-text-dim">{status === "stopped" ? "stopped" : "done"}</span>;
+  return (
+    <span className="shrink-0 whitespace-nowrap text-[11px] text-text-dim">
+      {status === "stopped" ? "stopped" : "done"}
+    </span>
+  );
 }
 
 interface CardChromeProps {
@@ -177,16 +181,18 @@ export function CardChrome({
         ].join(" ")}
       >
         <StatusDot status={status} neutral={showNeutral} />
-        <span className="text-text-dim">{icon}</span>
-        <span className="text-[11px] uppercase tracking-wider text-text-dim">{label}</span>
+        <span className="shrink-0 text-text-dim">{icon}</span>
+        <span className="shrink-0 whitespace-nowrap text-[11px] uppercase tracking-wider text-text-dim">{label}</span>
         <span className="min-w-0 flex-1 truncate font-mono text-xs text-text-secondary">{primary}</span>
         {meta}
         {showToolDurations && startedAt && <DurationLabel startedAt={startedAt} endedAt={endedAt} />}
         {!showNeutral && <StatusBadge status={status} />}
-        {onToggle && navigate && <ArrowUpRight className="h-3.5 w-3.5 text-text-dim" />}
+        {onToggle && navigate && <ArrowUpRight className="h-3.5 w-3.5 shrink-0 text-text-dim" />}
         {onToggle && !navigate && (
           <ChevronDown
-            className={["h-3.5 w-3.5 text-text-dim transition-transform", expanded ? "rotate-180" : ""].join(" ")}
+            className={["h-3.5 w-3.5 shrink-0 text-text-dim transition-transform", expanded ? "rotate-180" : ""].join(
+              " ",
+            )}
           />
         )}
       </Header>
@@ -213,7 +219,7 @@ function DurationLabel({ startedAt, endedAt }: { startedAt: string; endedAt?: st
     "counts from the agent's first tool_call frame, which can fire before the subprocess actually starts (upstream limitation)";
   return (
     <span
-      className="text-[11px] text-text-dim tabular-nums"
+      className="shrink-0 whitespace-nowrap text-[11px] text-text-dim tabular-nums"
       title={running ? `running ${text}; ${caveat}` : `${text}; ${caveat}`}
     >
       {text}
