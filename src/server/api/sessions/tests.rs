@@ -4709,6 +4709,8 @@ async fn a_retry_across_a_restart_is_fenced_before_profile_validation() {
     assert_eq!(status, axum::http::StatusCode::CONFLICT, "{refused}");
     assert_eq!(refused["error"], "create_outcome_unknown");
     assert_eq!(effects(), 1);
+}
+
 /// A client's diff view: another base, or a commit range, per repo, without
 /// touching the saved override.
 mod diff_views {
