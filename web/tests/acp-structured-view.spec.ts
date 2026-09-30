@@ -202,6 +202,40 @@ test.describe("edit card diff scroll", () => {
   });
 });
 
+test.describe("tool card header at narrow mobile widths", () => {
+  test.use({ viewport: { width: 360, height: 740 }, hasTouch: true });
+
+  test("keeps elapsed time and status atomic while the command truncates", async ({ page }) => {
+    const running = toolCallStarted({
+      id: "tc-running-1",
+      name: "Bash",
+      kind: "execute",
+      args_preview: JSON.stringify({
+        command: "n=6 tests/unit/platform/an_extremely_long_test_name_that_must_truncate.py",
+      }),
+    });
+    running.ToolCallStarted.tool_call.started_at = new Date(Date.now() - 84_000).toISOString();
+    const mock = await mockAcpSession(page, {
+      title: "story-running-tool-header",
+      initialEvents: [running],
+    });
+    await openStructuredSession(page, mock);
+
+    const header = page.getByRole("button").filter({ hasText: "BASH" }).first();
+    await expect(header).toBeVisible({ timeout: 10_000 });
+    const duration = header.locator('span[title^="running 1m "]');
+    const status = header.getByText("running", { exact: true });
+    await expect(duration).toBeVisible();
+    await expect(status).toBeVisible();
+
+    expect(await duration.evaluate((el) => getComputedStyle(el).whiteSpace)).toBe("nowrap");
+    expect(await status.evaluate((el) => getComputedStyle(el).whiteSpace)).toBe("nowrap");
+    expect(await duration.evaluate((el) => el.getClientRects().length)).toBe(1);
+    expect(await status.evaluate((el) => el.getClientRects().length)).toBe(1);
+    await expect.poll(() => overflowX(header)).toBeLessThanOrEqual(0);
+  });
+});
+
 // ─────────────────────────── composer ────────────────────────────
 // Narrow viewport: the populated left cluster is wider than the row.
 test.use({ viewport: { width: 360, height: 740 } });
