@@ -15,12 +15,13 @@ describe("AssistantReasoning", () => {
   it("keeps a thinking trace collapsed until requested", () => {
     render(<AssistantReasoning text="Inspect the hidden constraint." />);
 
-    const disclosure = screen.getByText("Thinking trace").closest("details");
+    const label = screen.getByText("Inspect the hidden constraint.", { selector: "summary span" });
+    const disclosure = label.closest("details");
     expect(disclosure?.hasAttribute("open")).toBe(false);
 
-    fireEvent.click(screen.getByText("Thinking trace"));
+    fireEvent.click(label);
     expect(disclosure?.hasAttribute("open")).toBe(true);
-    expect(screen.getByText("Inspect the hidden constraint.")).toBeTruthy();
+    expect(screen.getAllByText("Inspect the hidden constraint.")).toHaveLength(2);
   });
 
   // Expanded, the trace is inline text with no disclosure to open.
@@ -34,7 +35,8 @@ describe("AssistantReasoning", () => {
         <AssistantReasoning text="Weigh both options." />
       </ThinkingDisplayContext.Provider>,
     );
-    const disclosure = screen.queryByText("Thinking trace")?.closest("details") ?? null;
+    const disclosure =
+      screen.queryByText("Weigh both options.", { selector: "summary span" })?.closest("details") ?? null;
     const inline = screen.queryByTestId("reasoning-inline");
     const got = inline ? "inline" : disclosure && !disclosure.hasAttribute("open") ? "closed" : "none";
     expect(got).toBe(shown);
@@ -51,7 +53,21 @@ describe("AssistantReasoning summaries", () => {
 
   it("labels a summary with prose by its first title", () => {
     render(<AssistantReasoning text={"**Checking the build**\n\nThe log shows a linker error."} />);
-    expect(screen.getByText("Checking the build").closest("summary")).toBeTruthy();
+    const title = screen.getByText("Checking the build");
+    expect(title.closest("summary")).toBeTruthy();
+    expect(screen.getByText("The log shows a linker error.").textContent).not.toContain("Checking the build");
+  });
+
+  it("prefixes an expanded summary title without repeating it in the body", () => {
+    render(
+      <ThinkingDisplayContext.Provider value="expanded">
+        <AssistantReasoning text={"**Checking the build**\n\nThe log shows a linker error."} />
+      </ThinkingDisplayContext.Provider>,
+    );
+    const inline = screen.getByTestId("reasoning-inline");
+    expect(screen.getByText("Checking the build").previousElementSibling?.tagName).toBe("svg");
+    expect(screen.getByText("The log shows a linker error.").textContent).not.toContain("Checking the build");
+    expect(inline.textContent).toBe("Checking the buildThe log shows a linker error.");
   });
 });
 
