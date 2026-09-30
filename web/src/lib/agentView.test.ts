@@ -92,6 +92,24 @@ describe("agent views", () => {
     // An agent with no known task opens straight on its own rows.
     const untasked = rows.map((r) => (r.id === "subagent-r" ? { ...r, text: "" } : r));
     expect(agentActivity(untasked, "r").map((r) => r.text)).toEqual(["bugs found"]);
+    // Its calls drop the link to the spawning call outside the view, but keep one to a call inside it.
+    const tool = (id: string, parent: string) => ({
+      id,
+      name: id,
+      kind: "other",
+      args_preview: "{}",
+      started_at: AT,
+      parent_tool_call_id: parent,
+    });
+    const tooled = [
+      ...rows,
+      row("spawn", "tool_start", "", { subagentId: "r", tool: tool("spawn", "task-r") }),
+      row("child", "tool_start", "", { subagentId: "r", tool: tool("child", "spawn") }),
+    ];
+    expect(agentActivity(tooled, "r").flatMap((r) => (r.tool ? [r.tool.parent_tool_call_id] : []))).toEqual([
+      undefined,
+      "spawn",
+    ]);
   });
 
   it("parses who a teammate message is from, and maps a later run to its agent", () => {

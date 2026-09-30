@@ -97,7 +97,7 @@ export function partitionAgents(
 
 /**
  * One agent's rows as a main-flow transcript: its task opens it as a message,
- * its own rows lose their scope, and the agents it spawned keep theirs so they
+ * its own rows lose their scope and their link to its spawning call, and the agents it spawned keep theirs so they
  * still render as cards. Everything else in the session drops out.
  */
 export function agentActivity(rows: readonly ActivityRow[], agentId: string): ActivityRow[] {
@@ -110,9 +110,16 @@ export function agentActivity(rows: readonly ActivityRow[], agentId: string): Ac
     if (row.kind === "subagent" && row.subagent) subtree.add(row.subagent.id);
     return [row.subagentId === agentId ? { ...row, subagentId: undefined } : row];
   });
-  if (!header.text.trim()) return own;
+  // Calls under the agent's spawning tool, which this view leaves out, are simply its own.
+  const toolIds = new Set(own.flatMap((row) => row.tool?.id ?? []));
+  const unlinked = own.map((row) =>
+    !row.subagentId && row.tool?.parent_tool_call_id && !toolIds.has(row.tool.parent_tool_call_id)
+      ? { ...row, tool: { ...row.tool, parent_tool_call_id: undefined } }
+      : row,
+  );
+  if (!header.text.trim()) return unlinked;
   const task: ActivityRow = { id: `task-${agentId}`, kind: "subagent_woken", text: header.text, at: header.at };
-  return [task, ...own];
+  return [task, ...unlinked];
 }
 
 /** When each subagent last recorded anything, counting the agents it spawned. */
