@@ -2687,6 +2687,7 @@
       "kind": "mocked-playwright",
       "risk": "medium",
       "specs": [
+        "src/components/__tests__/Tooltip.test.tsx",
         "src/components/acp/Composer.test.tsx",
         "src/components/acp/Composer.usageHint.test.tsx",
         "src/lib/quota.test.ts",

@@ -216,8 +216,9 @@ export function UsageHint({
   return (
     // Flex, so the text centres in its row rather than sitting on a baseline.
     <span className="flex min-w-0 items-center">
-      <Tooltip text={explanation} multiline>
-        <span
+      <Tooltip text={explanation} multiline tapToToggle>
+        <button
+          type="button"
           data-testid="composer-usage"
           className={`inline-flex items-center gap-1 ${compact ? "text-[10px]" : "text-[11px]"} tabular-nums text-text-dim`}
           aria-label={explanation}
@@ -241,7 +242,7 @@ export function UsageHint({
           ))}
           {/* Quota says more than spend on a subscription; cost stays in the tooltip then. */}
           {cost && windows.length === 0 ? <span className="opacity-70">· {cost}</span> : null}
-        </span>
+        </button>
       </Tooltip>
     </span>
   );

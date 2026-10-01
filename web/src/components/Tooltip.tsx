@@ -7,11 +7,13 @@ export function Tooltip({
   text,
   children,
   multiline = false,
+  tapToToggle = false,
 }: {
   text: string;
   children: ReactNode;
   // Single-line callers (sidebar, sort picker) keep the default `whitespace-nowrap` pill.
   multiline?: boolean;
+  tapToToggle?: boolean;
 }) {
   const triggerRef = useRef<HTMLSpanElement>(null);
   const tipRef = useRef<HTMLSpanElement>(null);
@@ -58,19 +60,40 @@ export function Tooltip({
     };
   }, [open]);
 
+  useEffect(() => {
+    if (!open || !tapToToggle) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!triggerRef.current?.contains(event.target as Node)) hide();
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") hide();
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open, tapToToggle]);
+
   return (
     <span
       ref={triggerRef}
       className="inline-flex"
-      // A tap fires emulated mouseenter and focus but never the leave, stranding the
-      // tooltip over whatever opens next; a touch-started interaction shows nothing.
+      // Suppress emulated hover/focus; informational controls can opt into explicit taps.
       onPointerDown={(e) => {
         touchRef.current = e.pointerType !== "mouse";
-        // A touch entry event can open it before this lands; a tap never shows it.
-        if (touchRef.current) hide();
+        if (touchRef.current && !tapToToggle) hide();
       }}
       onPointerEnter={(e) => {
         if (e.pointerType === "mouse") touchRef.current = false;
+        else touchRef.current = true;
+      }}
+      onClick={() => {
+        if (tapToToggle && touchRef.current) {
+          if (open) hide();
+          else show();
+        }
       }}
       onMouseEnter={() => !touchRef.current && show()}
       onMouseLeave={hide}

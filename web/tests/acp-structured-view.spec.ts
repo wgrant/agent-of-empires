@@ -317,6 +317,38 @@ test("mobile composer footer keeps the Send action reachable when config control
   }
 });
 
+test.describe("usage details on touch devices", () => {
+  test.use({ viewport: { width: 360, height: 740 }, hasTouch: true });
+
+  test("tapping usage toggles details without opening the keyboard", async ({ page }) => {
+    const mock = await mockAcpSession(page, {
+      title: "story-usage-tap",
+      initialEvents: [usageUpdated({ used: 120_000, size: 200_000, cost: { amount: 0.42, currency: "USD" } })],
+    });
+    await openStructuredSession(page, mock);
+    const status = page.getByTestId("composer-mobile-status");
+    const usage = status.getByTestId("composer-usage");
+    await usage.tap();
+    const tooltip = page.getByRole("tooltip");
+    await expect(tooltip).toBeVisible();
+    await expect(tooltip).toContainText("Context window: 120,000 of 200,000 tokens used (60%)");
+    await expect(tooltip).toContainText("cumulative session spend");
+    await expect(status).toBeVisible();
+    await expect(page.getByRole("textbox", { name: "Message the agent", includeHidden: true })).not.toBeFocused();
+    const box = (await tooltip.boundingBox())!;
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.y).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(360);
+    expect(box.y + box.height).toBeLessThanOrEqual(740);
+    await usage.tap();
+    await expect(tooltip).toHaveCount(0);
+    await usage.tap();
+    await expect(tooltip).toBeVisible();
+    await page.locator("body").tap({ position: { x: 180, y: 150 } });
+    await expect(tooltip).toHaveCount(0);
+  });
+});
+
 test("mobile composer shows a compact usage hint inside the viewport", async ({ page }) => {
   const mock = await mockAcpSession(page, {
     title: "story-usage-mobile",

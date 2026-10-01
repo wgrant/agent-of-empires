@@ -8,6 +8,30 @@ import { Tooltip } from "../Tooltip";
 afterEach(cleanup);
 
 describe("Tooltip", () => {
+  it("toggles an informational tooltip on taps and dismisses it outside or with Escape", () => {
+    render(
+      <Tooltip text="Context usage" tapToToggle>
+        <button type="button">60%</button>
+      </Tooltip>,
+    );
+    const button = screen.getByRole("button");
+    const tap = () => {
+      fireEvent.pointerDown(button, { pointerType: "touch" });
+      fireEvent.focus(button);
+      fireEvent.click(button);
+    };
+    tap();
+    expect(screen.getByRole("tooltip").textContent).toBe("Context usage");
+    tap();
+    expect(screen.queryByRole("tooltip")).toBeNull();
+    tap();
+    fireEvent.pointerDown(document.body);
+    expect(screen.queryByRole("tooltip")).toBeNull();
+    tap();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("tooltip")).toBeNull();
+  });
+
   it("portals the popup to document.body on hover and removes it on leave", () => {
     const { container } = render(
       <Tooltip text="New session">
