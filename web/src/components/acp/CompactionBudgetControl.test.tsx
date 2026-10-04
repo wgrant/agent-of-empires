@@ -65,7 +65,7 @@ it("requires explicit restart confirmation and can restore the native default", 
 it("validates bounds and never offers to wake a dormant session", async () => {
   mockSettings({ running: false, applied_known: false });
   await screen.findByLabelText("Auto-compaction");
-  expect(screen.getByRole("status").textContent).toContain("next agent start");
+  expect(screen.queryByRole("status")).toBeNull();
   fireEvent.change(await screen.findByLabelText("Auto-compaction"), { target: { value: "custom" } });
   fireEvent.change(screen.getByLabelText("Working context budget (tokens)"), { target: { value: "50000" } });
   expect(screen.getByRole("alert").textContent).toContain("100,000");
@@ -138,4 +138,17 @@ it("clears a recovered load error but preserves a rejected save through refresh"
   });
   expect(screen.getByRole("alert").textContent).toBe("Save rejected");
   expect(screen.getByRole("status").textContent).toBe("Unsaved changes.");
+});
+
+it("keeps the applied default quiet while retaining pending default actions", async () => {
+  mockSettings();
+  await screen.findByLabelText("Auto-compaction");
+  expect(screen.getByText("Uses the agent’s default compaction policy.")).toBeTruthy();
+  expect(screen.queryByRole("status")).toBeNull();
+  expect(screen.queryByRole("button")).toBeNull();
+  expect(screen.queryByText(/lose detail/)).toBeNull();
+  cleanup();
+  mockSettings({ applied_tokens: 200000 });
+  expect(await screen.findByText(/Saved. Restart the agent/)).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Apply and restart…" })).toBeTruthy();
 });
