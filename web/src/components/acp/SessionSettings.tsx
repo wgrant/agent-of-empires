@@ -43,6 +43,7 @@ interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   dialogContainer?: HTMLElement | null;
+  turnActive: boolean;
 }
 
 /** The permission segment is tinted by mode id so destructive modes stand out without opening the dialog. */
@@ -104,7 +105,7 @@ export function SessionSettingsControl(props: Props) {
         }
       : props.summary;
   const summaryText = composerStatusText(summary);
-  const label = `Session settings: ${summaryText}${pending.length ? `. ${pending.length} settings pending` : ""}`;
+  const label = `Session settings: ${summaryText}${pending.length ? `. ${pending.length} settings pending. ${pending.map((setting) => `${setting.name}: ${applicationText(setting.application)}`).join(". ")}` : ""}`;
 
   return (
     <>
@@ -129,7 +130,7 @@ export function SessionSettingsControl(props: Props) {
         </span>
         <Settings2 className="h-3 w-3 shrink-0 opacity-70" aria-hidden />
         {pending.length > 0 && (
-          <Clock3 data-testid="session-settings-pending" className="h-3 w-3 shrink-0 text-text-dim" aria-hidden />
+          <Clock3 data-testid="session-settings-pending" className="h-3 w-3 shrink-0 text-brand-400" aria-hidden />
         )}
       </button>
       {open &&
@@ -144,6 +145,7 @@ export function SessionSettingsControl(props: Props) {
             loadError={settings.error}
             save={settings.save}
             launchOptions={launchOptions}
+            turnActive={props.turnActive}
             onClose={() => setOpen(false)}
           />,
           props.dialogContainer ?? document.body,
@@ -195,6 +197,7 @@ function SessionSettingsDialog({
   loadError,
   save,
   launchOptions,
+  turnActive,
   onClose,
 }: {
   sessionId: string;
@@ -206,6 +209,7 @@ function SessionSettingsDialog({
   loadError: string | null;
   save: (patch: AgentSettingsPatch) => Promise<void>;
   launchOptions: AgentLaunchOption[];
+  turnActive: boolean;
   onClose: () => void;
 }) {
   const doneRef = useRef<HTMLButtonElement | null>(null);
@@ -214,8 +218,10 @@ function SessionSettingsDialog({
   const [yoloDraft, setYoloDraft] = useState<boolean | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [confirmRestart, setConfirmRestart] = useState(false);
+  const thinking = useSessionThinkingDisplay(sessionId);
+  const [thinkingDraft, setThinkingDraft] = useState<ThinkingDisplay | null>(thinking.override);
+  const thinkingChanged = thinkingDraft !== thinking.override;
   const savedValue = (id: string, fallback: string) =>
     snapshot?.selectors.find((selector) => selector.config_id === id)?.value ?? fallback;
   const draftOptions = configOptions.map((option) => ({
@@ -240,7 +246,8 @@ function SessionSettingsDialog({
   const budgetChanged = budgetDraft !== null && budget != null && budgetValue !== (budget.tokens?.toString() ?? null);
   const yoloValue = yoloDraft ?? snapshot?.yolo_mode.enabled ?? launchOptions[0]?.enabled ?? false;
   const yoloChanged = yoloDraft !== null && yoloValue !== snapshot?.yolo_mode.enabled;
-  const dirty = changedSelectors.length > 0 || budgetChanged || yoloChanged;
+  const agentDirty = changedSelectors.length > 0 || budgetChanged || yoloChanged;
+  const dirty = agentDirty || thinkingChanged;
   const validBudget =
     budgetValue === null ||
     (budgetValue !== "" &&
@@ -248,11 +255,22 @@ function SessionSettingsDialog({
       Number.isSafeInteger(Number(budgetValue)) &&
       Number(budgetValue) >= budget.bounds[0] &&
       Number(budgetValue) <= budget.bounds[1]);
-  const canRestart = snapshot?.running && (dirty || pending.length > 0);
+  const nextBudget = budgetValue === null ? null : Number(budgetValue);
+  const budgetNeedsRestart =
+    budget?.bounds &&
+    (budget.applied_known
+      ? nextBudget !== budget.applied_tokens
+      : budgetChanged || pending.some((setting) => setting.id === "auto_compaction"));
+  const yoloNeedsRestart =
+    launchOptions.length > 0 &&
+    (snapshot?.yolo_mode.applied_known
+      ? yoloValue !== snapshot.yolo_mode.applied_enabled
+      : yoloChanged || pending.some((setting) => setting.id === "yolo_mode"));
+  const canRestart =
+    snapshot?.running &&
+    (budgetNeedsRestart || yoloNeedsRestart || pending.some((setting) => setting.application === "rejected"));
   const dismiss = () => {
-    if (saving) return;
-    if (dirty) setConfirmDiscard(true);
-    else onClose();
+    if (!saving) onClose();
   };
   const saveChanges = async (restart: boolean) => {
     const config = changedSelectors
@@ -269,13 +287,11 @@ function SessionSettingsDialog({
     setSaving(true);
     setSaveError(null);
     try {
-      await save(patch);
-      setDraft({});
-      setBudgetDraft(null);
-      setYoloDraft(null);
-      setConfirmRestart(false);
+      if (agentDirty || restart) await save(patch);
+      if (thinkingChanged) thinking.setOverride(thinkingDraft);
+      onClose();
     } catch (e) {
-      setSaveError(e instanceof Error ? e.message : "Could not save agent settings");
+      setSaveError(e instanceof Error ? e.message : "Could not apply settings");
     } finally {
       setSaving(false);
     }
@@ -289,201 +305,200 @@ function SessionSettingsDialog({
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || document.querySelector(`[data-testid="${DIALOG_ID}"] [role="menu"]`)) return;
       if (!saving) {
-        if (dirty) setConfirmDiscard(true);
+        if (confirmRestart) setConfirmRestart(false);
         else onClose();
       }
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [dirty, saving, onClose]);
+  }, [confirmRestart, saving, onClose]);
   const button =
     "min-h-8 rounded-md border border-surface-700 px-2 py-1 text-xs text-text-secondary disabled:opacity-50";
   return (
     <Dialog
       id={DIALOG_ID}
-      title="Session settings"
+      title={confirmRestart ? "Restart the agent?" : "Session settings"}
       bodyClassName="flex max-h-[65dvh] flex-col gap-4 overflow-y-auto px-5 py-4"
       onDismiss={dismiss}
       footer={
         <>
-          {dirty && (
-            <button type="button" className={button} disabled={saving} onClick={() => setConfirmDiscard(true)}>
-              Discard…
-            </button>
-          )}
           <button
             type="button"
             ref={doneRef}
-            className={`${button} ${dirty ? BRAND_BUTTON : ""}`}
-            disabled={saving || (dirty && (!snapshot || !validBudget))}
-            onClick={() => (dirty ? void saveChanges(false) : dismiss())}
+            className={button}
+            disabled={saving}
+            onClick={() => (confirmRestart ? setConfirmRestart(false) : dismiss())}
           >
-            {saving ? "Saving…" : dirty ? "Save changes" : "Close"}
+            {confirmRestart ? "Back" : dirty ? "Cancel" : "Close"}
           </button>
+          {!confirmRestart && dirty && (
+            <button
+              type="button"
+              className={`${button} ${BRAND_BUTTON}`}
+              disabled={saving || (agentDirty && !snapshot) || !validBudget}
+              onClick={() => void saveChanges(false)}
+            >
+              {saving ? "Applying…" : "Apply"}
+            </button>
+          )}
+          {canRestart && (
+            <button
+              type="button"
+              className={`${button} ${confirmRestart ? BRAND_BUTTON : ""}`}
+              disabled={saving || !validBudget}
+              onClick={() => {
+                if (!confirmRestart && turnActive) {
+                  setConfirmRestart(true);
+                  doneRef.current?.focus();
+                } else void saveChanges(true);
+              }}
+            >
+              {saving ? "Applying…" : "Apply & restart"}
+            </button>
+          )}
         </>
       }
     >
-      <Section label="Agent">
-        <div className="flex items-center justify-between gap-3">
-          <span data-testid="session-settings-agent" className="text-xs font-medium text-text-primary">
-            {agent}
-          </span>
-          <button
-            type="button"
-            disabled={dirty || saving}
-            title={dirty ? "Save or discard changes before switching agents." : undefined}
-            onClick={() => {
-              onClose();
-              requestSwitchAgent(sessionId);
-            }}
-            className={button}
-          >
-            <ArrowLeftRight className="mr-1 inline h-3 w-3 opacity-70" aria-hidden />
-            Switch agent…
-          </button>
-        </div>
-      </Section>
-      <fieldset disabled={saving} className="flex min-w-0 flex-col gap-4">
-        <Section label="Agent settings">
-          <div className="flex flex-col gap-2">
-            {channel && (
-              <ConfigRow label={channel.label}>
-                <ChoiceDropdown
-                  label={channel.label}
-                  choices={channel.modes.map((mode) => ({
-                    value: mode.id,
-                    name: mode.name,
-                    description: mode.description,
-                  }))}
-                  current={draft[modeKey] ?? savedMode}
-                  onSelect={(value) => setDraft((previous) => ({ ...previous, [modeKey]: value }))}
-                  testId="session-mode"
-                  selectedLabel="Selected"
-                />
-              </ConfigRow>
-            )}
-            {hasSessionConfigControls(draftOptions) && (
-              <SessionConfigControls
-                configOptions={draftOptions}
-                pendingConfigOption={null}
-                selectedLabel="Selected"
-                onSetConfigOption={(id, value) => setDraft((previous) => ({ ...previous, [id]: value }))}
-              />
-            )}
-            {launchOptions.map((option) => (
-              <div key={option.id} className="flex flex-col gap-1">
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={yoloValue}
-                  onClick={() => setYoloDraft(!yoloValue)}
-                  className="flex min-h-8 items-center justify-between gap-2 rounded-md px-2 py-1 text-left text-xs hover:bg-surface-700/40"
-                >
-                  <span>{option.name}</span>
-                  <span
-                    className={`h-3 w-3 rounded-sm border ${yoloValue ? "border-brand-500 bg-brand-500" : "border-surface-600"}`}
-                  />
-                </button>
-                <p className="text-[11px] text-text-dim">
-                  {option.description}.{" "}
-                  {snapshot?.running ? "Changes require a restart." : "Applies when the agent starts."}
-                </p>
-                {yoloChanged && yoloValue && <p className="text-[11px] text-status-warning">{option.warning}</p>}
-              </div>
-            ))}
-            {budget && (
-              <div className="flex flex-col gap-1">
-                <CompactionBudgetControl
-                  state={budget}
-                  value={budgetValue}
-                  disabled={saving}
-                  onChange={(value) => setBudgetDraft({ value })}
-                />
-                {budget.bounds && (budgetChanged || pending.some((setting) => setting.id === "auto_compaction")) && (
-                  <p className="text-[11px] text-text-dim">
-                    {snapshot?.running ? "Changes require a restart." : "Applies when the agent starts."}
-                  </p>
-                )}
-                {snapshot?.running && budget.bounds && !budget.applied_known && (
-                  <p className="text-[11px] text-text-dim">The running agent’s compaction budget is unknown.</p>
-                )}
-              </div>
-            )}
-          </div>
-        </Section>
-        <Section label="Display">
-          <ThinkingDisplayRow sessionId={sessionId} />
-        </Section>
-      </fieldset>
-      {dirty && (
-        <p role="status" className="text-xs text-text-dim">
-          Unsaved changes.
-        </p>
-      )}
-      {pending.length > 0 && (
-        <section aria-label="Pending settings" className="flex flex-col gap-1 text-xs">
-          <h3 className="font-medium text-text-primary">
-            {pending.length} {pending.length === 1 ? "setting" : "settings"} pending
-          </h3>
-          {pending.map((setting) => (
-            <p key={setting.id} className="text-text-dim">
-              {setting.name}: {applicationText(setting.application)}
-              {setting.reason ? `. ${setting.reason}` : ""}
-            </p>
-          ))}
-        </section>
-      )}
-      {!snapshot && !loadError && <p className="text-xs text-text-dim">Loading agent settings…</p>}
-      {[loadError, saveError].map(
-        (error, index) =>
-          error && (
-            <p key={index} role="alert" className="text-xs text-status-error">
-              {error}
-            </p>
-          ),
-      )}
-      {canRestart && !confirmRestart && (
-        <button
-          type="button"
-          className={button}
-          disabled={saving || !validBudget}
-          onClick={() => setConfirmRestart(true)}
-        >
-          {dirty ? "Save and restart…" : "Restart agent…"}
-        </button>
-      )}
-      {confirmRestart && (
-        <section className="flex flex-col gap-2 text-xs">
-          <p className="text-status-warning">
-            Restarting interrupts any turn in progress. The conversation is retained.
+      {confirmRestart ? (
+        <>
+          <p className="text-xs text-status-warning">
+            This interrupts the current turn. Your conversation is retained.
           </p>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              className={button}
-              disabled={saving || !validBudget}
-              onClick={() => void saveChanges(true)}
-            >
-              Restart agent
-            </button>
-            <button type="button" className={button} disabled={saving} onClick={() => setConfirmRestart(false)}>
-              Cancel restart
-            </button>
-          </div>
-        </section>
-      )}
-      {confirmDiscard && (
-        <section className="flex flex-col gap-2 text-xs">
-          <p className="text-status-warning">Discard unsaved agent settings? Display preferences are already saved.</p>
-          <div className="flex gap-2">
-            <button type="button" className={button} onClick={onClose}>
-              Discard changes
-            </button>
-            <button type="button" className={button} onClick={() => setConfirmDiscard(false)}>
-              Keep editing
-            </button>
-          </div>
-        </section>
+          {saveError && (
+            <p role="alert" className="text-xs text-status-error">
+              {saveError}
+            </p>
+          )}
+        </>
+      ) : (
+        <>
+          <Section label="Agent">
+            <div className="flex items-center justify-between gap-3">
+              <span data-testid="session-settings-agent" className="text-xs font-medium text-text-primary">
+                {agent}
+              </span>
+              <button
+                type="button"
+                disabled={dirty || saving}
+                title={dirty ? "Apply or cancel changes before switching agents." : undefined}
+                onClick={() => {
+                  onClose();
+                  requestSwitchAgent(sessionId);
+                }}
+                className={button}
+              >
+                <ArrowLeftRight className="mr-1 inline h-3 w-3 opacity-70" aria-hidden />
+                Switch agent…
+              </button>
+            </div>
+          </Section>
+          <fieldset disabled={saving} className="flex min-w-0 flex-col gap-4">
+            <Section label="Agent settings">
+              <div className="flex flex-col gap-2">
+                {channel && (
+                  <ConfigRow label={channel.label}>
+                    <ChoiceDropdown
+                      label={channel.label}
+                      choices={channel.modes.map((mode) => ({
+                        value: mode.id,
+                        name: mode.name,
+                        description: mode.description,
+                      }))}
+                      current={draft[modeKey] ?? savedMode}
+                      onSelect={(value) => setDraft((previous) => ({ ...previous, [modeKey]: value }))}
+                      testId="session-mode"
+                      selectedLabel="Selected"
+                    />
+                  </ConfigRow>
+                )}
+                {hasSessionConfigControls(draftOptions) && (
+                  <SessionConfigControls
+                    configOptions={draftOptions}
+                    pendingConfigOption={null}
+                    selectedLabel="Selected"
+                    onSetConfigOption={(id, value) => setDraft((previous) => ({ ...previous, [id]: value }))}
+                  />
+                )}
+                {launchOptions.map((option) => (
+                  <div key={option.id} className="flex flex-col gap-1">
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={yoloValue}
+                      onClick={() => setYoloDraft(!yoloValue)}
+                      className="flex min-h-8 items-center justify-between gap-2 rounded-md px-2 py-1 text-left text-xs hover:bg-surface-700/40"
+                    >
+                      <span>{option.name}</span>
+                      <span
+                        className={`h-3 w-3 rounded-sm border ${yoloValue ? "border-brand-500 bg-brand-500" : "border-surface-600"}`}
+                      />
+                    </button>
+                    <p className="text-[11px] text-text-dim">
+                      {option.description}.{" "}
+                      {snapshot?.running ? "Changes require a restart." : "Applies when the agent starts."}
+                    </p>
+                    {yoloChanged && yoloValue && <p className="text-[11px] text-status-warning">{option.warning}</p>}
+                  </div>
+                ))}
+                {budget && (
+                  <div className="flex flex-col gap-1">
+                    <CompactionBudgetControl
+                      state={budget}
+                      value={budgetValue}
+                      disabled={saving}
+                      onChange={(value) => setBudgetDraft({ value })}
+                    />
+                    {budget.bounds &&
+                      (budgetChanged || pending.some((setting) => setting.id === "auto_compaction")) && (
+                        <p className="text-[11px] text-text-dim">
+                          {snapshot?.running ? "Changes require a restart." : "Applies when the agent starts."}
+                        </p>
+                      )}
+                    {snapshot?.running && budget.bounds && !budget.applied_known && (
+                      <p className="text-[11px] text-text-dim">The running agent’s compaction budget is unknown.</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            </Section>
+            <Section label="Display">
+              <ThinkingDisplayRow
+                value={thinkingDraft}
+                globalDefault={thinking.globalDefault}
+                onChange={setThinkingDraft}
+              />
+            </Section>
+          </fieldset>
+          {dirty && (
+            <p role="status" className="text-xs text-text-dim">
+              {agentDirty
+                ? "Applies now where possible; otherwise on next agent start."
+                : "Applies to this session’s display only."}
+            </p>
+          )}
+          {pending.length > 0 && (
+            <section aria-label="Pending settings" className="flex flex-col gap-1 text-xs">
+              <h3 className="font-medium text-text-primary">
+                {pending.length} {pending.length === 1 ? "setting" : "settings"} pending
+              </h3>
+              {pending.map((setting) => (
+                <p key={setting.id} className="text-text-dim">
+                  {setting.name}: {applicationText(setting.application)}
+                  {setting.reason ? `. ${setting.reason}` : ""}
+                </p>
+              ))}
+            </section>
+          )}
+          {!snapshot && !loadError && <p className="text-xs text-text-dim">Loading agent settings…</p>}
+          {[loadError, saveError].map(
+            (error, index) =>
+              error && (
+                <p key={index} role="alert" className="text-xs text-status-error">
+                  {error}
+                </p>
+              ),
+          )}
+        </>
       )}
     </Dialog>
   );
@@ -501,8 +516,15 @@ function Section({ label, children }: { label: string; children: ReactNode }) {
 const THINKING_CHOICES: readonly (ThinkingDisplay | "default")[] = ["default", ...THINKING_DISPLAYS];
 
 /** Per-session override of the dashboard's thinking display; "Default" follows the dashboard. */
-function ThinkingDisplayRow({ sessionId }: { sessionId: string }) {
-  const { override, globalDefault, setOverride } = useSessionThinkingDisplay(sessionId);
+function ThinkingDisplayRow({
+  value,
+  globalDefault,
+  onChange,
+}: {
+  value: ThinkingDisplay | null;
+  globalDefault: ThinkingDisplay;
+  onChange: (value: ThinkingDisplay | null) => void;
+}) {
   return (
     <ConfigRow label="Thinking">
       <ChoiceDropdown
@@ -516,8 +538,8 @@ function ThinkingDisplayRow({ sessionId }: { sessionId: string }) {
               : THINKING_DISPLAY_LABELS[choice],
           description: choice === "default" ? "Follows your dashboard setting" : null,
         }))}
-        current={override ?? "default"}
-        onSelect={(choice) => setOverride(choice === "default" ? null : (choice as ThinkingDisplay))}
+        current={value ?? "default"}
+        onSelect={(choice) => onChange(choice === "default" ? null : (choice as ThinkingDisplay))}
         testId="thinking-display"
       />
     </ConfigRow>

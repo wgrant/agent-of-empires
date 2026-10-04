@@ -525,6 +525,7 @@ export function Composer(props: Props) {
                   open={settingsOpen}
                   onOpenChange={setSettingsOpen}
                   dialogContainer={dialogContainer}
+                  turnActive={turnActive}
                 />
                 <AuthStatusHint authStatus={props.authStatus} />
               </div>
