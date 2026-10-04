@@ -21,14 +21,16 @@ function Form({ initial = null, disabled = false }: { initial?: string | null; d
 it("keeps the default quiet and edits a custom budget without its own save buttons", () => {
   render(<Form />);
   expect(screen.getByText("Uses the agent’s default compaction policy.")).toBeTruthy();
-  expect(screen.queryByRole("button")).toBeNull();
+  expect(screen.getAllByRole("button")).toHaveLength(1);
   expect(screen.queryByLabelText("Working context budget (tokens)")).toBeNull();
-  fireEvent.change(screen.getByLabelText("Auto-compaction"), { target: { value: "custom" } });
+  fireEvent.click(screen.getByTestId("auto-compaction"));
+  fireEvent.click(screen.getByTestId("auto-compaction-value-custom"));
   expect((screen.getByLabelText("Working context budget (tokens)") as HTMLInputElement).value).toBe("100000");
-  expect(screen.getByText(/can lose detail/)).toBeTruthy();
+  expect(screen.getByText(/May lose detail/)).toBeTruthy();
   fireEvent.change(screen.getByLabelText("Working context budget (tokens)"), { target: { value: "200000" } });
   expect(screen.queryByRole("alert")).toBeNull();
-  fireEvent.change(screen.getByLabelText("Auto-compaction"), { target: { value: "default" } });
+  fireEvent.click(screen.getByTestId("auto-compaction"));
+  fireEvent.click(screen.getByTestId("auto-compaction-value-default"));
   expect(screen.queryByLabelText("Working context budget (tokens)")).toBeNull();
 });
 
@@ -42,7 +44,7 @@ it("validates empty, fractional and out-of-range budgets and disables editing du
   fireEvent.change(input, { target: { value: "1000000" } });
   expect(screen.queryByRole("alert")).toBeNull();
   view.rerender(<Form disabled />);
-  expect(screen.getByLabelText("Auto-compaction")).toHaveProperty("disabled", true);
+  expect(screen.getByTestId("auto-compaction").matches(":disabled")).toBe(true);
   expect(input).toHaveProperty("disabled", true);
 });
 
