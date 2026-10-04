@@ -122,6 +122,7 @@ describe("OpenCode launch options", () => {
         else expect(indicator.getAttribute("aria-label")).not.toContain("Saved;");
       }
       expect(screen.queryAllByTestId("composer-compaction-pending")).toHaveLength(status ? 2 : 0);
+      expect(screen.queryByTestId("session-settings-pending") !== null).toBe(status !== null);
       for (const usage of screen.getAllByTestId("composer-usage")) {
         expect(usage.textContent).toContain("71k/258k");
       }
@@ -161,9 +162,8 @@ describe("OpenCode launch options", () => {
     fireEvent.click(screen.getByRole("switch", { name: /Yolo/ }));
     expect(screen.getByTestId("session-settings-dialog")).toBeTruthy();
     expect(fetchMock.mock.calls.some(([, init]) => init?.method === "PATCH")).toBe(false);
-    fireEvent.click(screen.getByRole("button", { name: "Save and restart…" }));
-    expect(screen.getByText(/Restarting interrupts/)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Restart agent" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply & restart" }));
+    expect(screen.queryByText(/This interrupts the current turn/)).toBeNull();
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
         "/api/sessions/sess%20open%2Fcode/acp/launch-options",

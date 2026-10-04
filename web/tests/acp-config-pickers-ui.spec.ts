@@ -146,7 +146,9 @@ test("user switches the model and the chip reflects the adapter confirmation", a
 
   await modelChip.click();
   await page.getByTestId("config-option-model-value-claude-sonnet-4-6").click();
-  await page.getByRole("button", { name: "Save changes" }).click();
+  await page.getByRole("button", { name: "Apply", exact: true }).click();
+  await expect(page.getByTestId("session-settings-dialog")).toHaveCount(0);
+  await openSessionSettings(page);
 
   // POST shape: { config_id: "model", value: "claude-sonnet-4-6" }.
   await expect.poll(() => mock.configOptionBodies.length).toBeGreaterThan(0);
@@ -175,7 +177,9 @@ test("user picks reasoning effort and the dropdown shows it once confirmed", asy
 
   await effortControl.click();
   await page.getByTestId("config-option-effort-value-high").click();
-  await page.getByRole("button", { name: "Save changes" }).click();
+  await page.getByRole("button", { name: "Apply", exact: true }).click();
+  await expect(page.getByTestId("session-settings-dialog")).toHaveCount(0);
+  await openSessionSettings(page);
 
   // The label follows the adapter's confirmation, not the click.
   await expect(effortControl).toHaveAttribute("aria-label", /High/, { timeout: 10_000 });
@@ -234,11 +238,13 @@ test("rejected switch renders a dismissable non-blocking notice", async ({ page 
   await expect(modelChip).toBeVisible({ timeout: 15_000 });
   await modelChip.click();
   await page.getByTestId("config-option-model-value-claude-sonnet-4-6").click();
-  await page.getByRole("button", { name: "Save changes" }).click();
+  await page.getByRole("button", { name: "Apply", exact: true }).click();
+  await expect(page.getByTestId("session-settings-dialog")).toHaveCount(0);
 
   const notice = page.getByTestId("config-option-switch-failed-notice");
   await expect(notice).toBeVisible({ timeout: 10_000 });
   await expect(notice).toContainText("rate limited (test)");
+  await openSessionSettings(page);
 
   // The picker shows the saved preference; its pending row reports rejection.
   await expect(modelChip).toContainText("Claude Sonnet 4.6");

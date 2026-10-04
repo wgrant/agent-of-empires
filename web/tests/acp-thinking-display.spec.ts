@@ -31,7 +31,8 @@ test("a session's thinking display hides and expands earlier thinking", async ({
     await openSessionSettings(page);
     await page.getByTestId("thinking-display").click();
     await page.getByTestId(`thinking-display-value-${value}`).click();
-    await page.getByRole("button", { name: "Close", exact: true }).click();
+    await page.getByRole("button", { name: "Apply", exact: true }).click();
+    await expect(page.getByTestId("session-settings-dialog")).toHaveCount(0);
   };
 
   await choose("hidden");

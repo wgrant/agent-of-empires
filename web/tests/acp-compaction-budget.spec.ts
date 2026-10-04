@@ -10,7 +10,7 @@ import {
   waitForComposerConnected,
 } from "./helpers/acpMock";
 
-test("mobile context settings save without restart and require confirmation to apply", async ({ page }) => {
+test("mobile context settings apply without restarting and retain a stable pending indicator", async ({ page }) => {
   await page.setViewportSize({ width: 412, height: 915 });
   const mock = await mockAcpSession(page, {
     initialEvents: [agentMessageChunk("Ready."), usageUpdated({ used: 71000, size: 258000, cost: null }), stopped()],
@@ -52,11 +52,13 @@ test("mobile context settings save without restart and require confirmation to a
   await page.getByTestId("auto-compaction-value-custom").click();
   const input = page.getByLabel("Working context budget (tokens)");
   await input.fill("200000");
-  await expect(page.getByTestId("session-settings-dialog").getByRole("status")).toHaveText("Unsaved changes.");
+  await expect(page.getByTestId("session-settings-dialog").getByRole("status")).toContainText(
+    "Applies now where possible",
+  );
   for (const control of [
     input,
-    page.getByRole("button", { name: "Save changes" }),
-    page.getByRole("button", { name: "Save and restart…" }),
+    page.getByRole("button", { name: "Apply", exact: true }),
+    page.getByRole("button", { name: "Apply & restart" }),
   ]) {
     expect(await control.evaluate((node) => node.getBoundingClientRect().height)).toBeGreaterThanOrEqual(32);
   }
@@ -72,17 +74,16 @@ test("mobile context settings save without restart and require confirmation to a
     expect(await context.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
   }
   await page.screenshot({ path: "test-results/compaction-budget-mobile-custom.png" });
-  await page.getByRole("button", { name: "Save changes" }).click();
+  await page.getByRole("button", { name: "Apply", exact: true }).click();
   await expect.poll(() => patches).toEqual([{ auto_compaction: { tokens: 200000 }, restart: false }]);
+  await expect(page.getByTestId("session-settings-dialog")).toHaveCount(0);
+  await openSessionSettings(page);
   await expect(page.getByRole("region", { name: "Pending settings" })).toContainText(
     "Auto-compaction: Restart required",
   );
   await page.screenshot({ path: "test-results/compaction-budget-mobile-pending.png" });
-  await page.getByRole("button", { name: "Restart agent…" }).click();
-  await expect(page.getByText(/Restarting interrupts/)).toBeVisible();
   expect(patches).toHaveLength(1);
-  await page.screenshot({ path: "test-results/compaction-budget-mobile-confirm.png" });
-  await page.getByRole("button", { name: "Cancel restart" }).click();
+  await expect(page.getByRole("button", { name: "Apply & restart" })).toBeVisible();
   await page.getByRole("button", { name: "Close", exact: true }).click();
   await page.setViewportSize({ width: 1200, height: 915 });
   await expect(page.getByTestId("composer-footer").getByTestId("composer-compaction-budget")).toBeVisible();
@@ -109,11 +110,10 @@ test("mobile context settings save without restart and require confirmation to a
   await expect(page.getByLabel("Message the agent")).not.toBeFocused();
   await page.getByTestId("auto-compaction").click();
   await page.getByTestId("auto-compaction-value-default").click();
-  await page.getByRole("button", { name: "Save changes" }).click();
+  await page.getByRole("button", { name: "Apply", exact: true }).click();
   await expect.poll(() => patches).toHaveLength(2);
   expect(patches[1]).toEqual({ auto_compaction: { tokens: null }, restart: false });
-  await expect(context.getByRole("button")).toHaveCount(1);
-  await page.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(page.getByTestId("session-settings-dialog")).toHaveCount(0);
   await expect(page.getByTestId("composer-compaction-budget")).toHaveCount(0);
   expect(await viewport.evaluate((node) => node.clientHeight)).toBe(heightBefore);
 });
@@ -194,4 +194,13 @@ test("a custom budget leaves room for the mobile permission summary, queue and s
   await usage.click();
   await usage.hover();
   await expect(page.getByRole("tooltip")).toContainText("7d: 37% used");
+  await strip.getByTestId("composer-compaction-budget").click();
+  await expect(page.getByTestId("session-settings-dialog")).toBeVisible();
+  await page.getByRole("button", { name: "Apply & restart" }).click();
+  await expect(page.getByRole("heading", { name: "Restart the agent?" })).toBeVisible();
+  await expect(page.getByTestId("auto-compaction")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Back", exact: true })).toBeFocused();
+  await page.screenshot({ path: "test-results/settings-restart-active-turn.png" });
+  await page.getByRole("button", { name: "Back", exact: true }).click();
+  await expect(page.getByTestId("auto-compaction")).toBeVisible();
 });
