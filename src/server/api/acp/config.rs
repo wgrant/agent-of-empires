@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::acp::state::ConfigOptionCategory;
 
+use super::settings::{pending_launch, pending_selector, SavedSelector};
 use super::*;
 
 #[derive(Debug, Deserialize)]
@@ -75,8 +76,7 @@ impl PersistedSelector {
     }
 }
 
-/// The category the session's agent advertised for `config_id`, from the
-/// option catalog (the daemon keeps no live per-session option state).
+/// Prefer session-local descriptors; the catalog is only a fallback.
 async fn config_option_category(
     state: &Arc<AppState>,
     id: &str,
@@ -92,6 +92,16 @@ async fn config_option_category(
                 .to_string()
         })
     }?;
+    let control = state.session_service.fold_control_state(id).await;
+    if control.agent.0 == agent {
+        if let Some(option) = control
+            .config_options
+            .iter()
+            .find(|option| option.id == config_id)
+        {
+            return Some(option.category.clone());
+        }
+    }
     crate::acp::option_catalog::load()
         .agents
         .get(&agent)
@@ -158,47 +168,141 @@ pub async fn acp_launch_options(
         .as_deref()
         .filter(|name| !name.is_empty())
         .unwrap_or(&instance.tool);
-    let options = crate::acp::option_catalog::load()
-        .agents
-        .get(agent)
-        .map(|entry| entry.options.clone())
-        .unwrap_or_default();
-    let mut selectors: Vec<_> = options.iter().filter_map(|option| {
-        let value = match option.category {
-            ConfigOptionCategory::Model => &instance.agent_model,
-            ConfigOptionCategory::Mode => &instance.acp_mode_id,
-            ConfigOptionCategory::ThoughtLevel => &instance.acp_effort,
-            ConfigOptionCategory::Other(_) => return None,
-        };
-        Some(serde_json::json!({"config_id": option.id, "category": option.category, "value": value}))
-    }).collect();
+    let control = state.session_service.fold_control_state(&id).await;
+    let options = if control.agent.0 == agent && !control.config_options.is_empty() {
+        control.config_options.clone()
+    } else {
+        crate::acp::option_catalog::load()
+            .agents
+            .get(agent)
+            .map(|entry| entry.options.clone())
+            .unwrap_or_default()
+    };
+    let mut selectors: Vec<_> = options
+        .iter()
+        .filter_map(|option| {
+            let value = match option.category {
+                ConfigOptionCategory::Model => &instance.agent_model,
+                ConfigOptionCategory::Mode => &instance.acp_mode_id,
+                ConfigOptionCategory::ThoughtLevel => &instance.acp_effort,
+                ConfigOptionCategory::Other(_) => return None,
+            };
+            Some(SavedSelector {
+                config_id: option.id.clone(),
+                category: option.category.clone(),
+                value: value.clone(),
+            })
+        })
+        .collect();
     if !options
         .iter()
         .any(|option| option.category == ConfigOptionCategory::Model)
         && instance.agent_model.is_some()
     {
-        selectors.push(serde_json::json!({"config_id":"model", "category":"model", "value":instance.agent_model}));
+        selectors.push(SavedSelector {
+            config_id: "model".into(),
+            category: ConfigOptionCategory::Model,
+            value: instance.agent_model.clone(),
+        });
     }
     let applied = state.acp_supervisor.compaction_budget(&id).await;
     let applied_yolo = state.acp_supervisor.launch_yolo(&id).await;
     let worker_state = state.acp_supervisor.worker_state(&id).await;
     let running = worker_state == crate::daemon::AcpWorkerState::Running;
+    let starting = worker_state == crate::daemon::AcpWorkerState::Resuming;
+    let budget_known = (running || starting) && applied.is_some();
+    let yolo_known = (running || starting) && applied_yolo.is_some();
+    let yolo_requires_restart = crate::agents::get_agent(agent).is_some_and(|definition| {
+        matches!(definition.yolo, Some(crate::agents::YoloMode::EnvVar(_, _)))
+    });
+    let mut pending = Vec::new();
+    for selector in &selectors {
+        let Some(desired) = &selector.value else {
+            continue;
+        };
+        let descriptor = options
+            .iter()
+            .find(|option| option.id == selector.config_id);
+        let name = descriptor.map_or("Model", |option| option.name.as_str());
+        let observed = control
+            .config_options
+            .iter()
+            .find(|option| option.id == selector.config_id)
+            .map(|option| option.current_value.as_str());
+        if let Some(setting) = pending_selector(
+            &selector.config_id,
+            name,
+            desired,
+            observed,
+            &control,
+            running,
+            starting,
+        ) {
+            pending.push(setting);
+        }
+    }
+    if !selectors
+        .iter()
+        .any(|selector| selector.category == ConfigOptionCategory::Mode && selector.value.is_some())
+    {
+        if let Some(mode) = &instance.acp_mode_id {
+            if let Some(setting) = pending_selector(
+                "legacy_mode",
+                "Mode",
+                mode,
+                control.current_mode_id.as_deref(),
+                &control,
+                running,
+                starting,
+            ) {
+                pending.push(setting);
+            }
+        }
+    }
+    if crate::acp::compaction::bounds(agent).is_some() {
+        if let Some(setting) = pending_launch(
+            "auto_compaction",
+            "Auto-compaction",
+            instance.auto_compact_tokens.is_some(),
+            budget_known,
+            instance.auto_compact_tokens == applied.flatten(),
+            running,
+            starting,
+        ) {
+            pending.push(setting);
+        }
+    }
+    if yolo_requires_restart {
+        if let Some(setting) = pending_launch(
+            "yolo_mode",
+            "Yolo",
+            instance.yolo_mode,
+            yolo_known,
+            applied_yolo == Some(instance.yolo_mode),
+            running,
+            starting,
+        ) {
+            pending.push(setting);
+        }
+    }
     Json(serde_json::json!({
         "agent": agent,
         "running": running,
         "starting": worker_state == crate::daemon::AcpWorkerState::Resuming,
         "selectors": selectors,
+        "pending": pending,
         "config_options": options,
         "mode_id": instance.acp_mode_id,
         "yolo_mode": {
             "enabled": instance.yolo_mode,
-            "applied_known": running && applied_yolo.is_some(),
+            "requires_restart": yolo_requires_restart,
+            "applied_known": yolo_known,
             "applied_enabled": applied_yolo,
         },
         "auto_compaction": {
             "tokens": instance.auto_compact_tokens,
             "bounds": crate::acp::compaction::bounds(agent),
-            "applied_known": running && applied.is_some(),
+            "applied_known": budget_known,
             "applied_tokens": applied.flatten(),
             "running": running,
             "starting": worker_state == crate::daemon::AcpWorkerState::Resuming,
@@ -279,12 +383,21 @@ pub async fn acp_update_launch_options(
     };
     let yolo_mode = req.yolo_mode.unwrap_or(previous);
     let mut selectors = Vec::new();
+    let control = state.session_service.fold_control_state(&id).await;
+    let live_options = state.acp_supervisor.worker_state(&id).await
+        == crate::daemon::AcpWorkerState::Running
+        && control.agent.0 == agent
+        && !control.config_options.is_empty();
     let catalog = crate::acp::option_catalog::load();
-    let options = catalog
-        .agents
-        .get(&agent)
-        .map(|entry| entry.options.as_slice())
-        .unwrap_or_default();
+    let options = if live_options {
+        control.config_options.as_slice()
+    } else {
+        catalog
+            .agents
+            .get(&agent)
+            .map(|entry| entry.options.as_slice())
+            .unwrap_or_default()
+    };
     for option in &req.config_options {
         if option.value.trim().is_empty() {
             return (StatusCode::BAD_REQUEST, "Setting values must not be empty").into_response();
@@ -292,13 +405,15 @@ pub async fn acp_update_launch_options(
         let descriptor = options
             .iter()
             .find(|descriptor| descriptor.id == option.config_id);
-        if descriptor.is_some_and(|descriptor| {
-            !descriptor.options.is_empty()
-                && !descriptor
-                    .options
-                    .iter()
-                    .any(|choice| choice.value == option.value)
-        }) {
+        if live_options
+            && descriptor.is_some_and(|descriptor| {
+                !descriptor.options.is_empty()
+                    && !descriptor
+                        .options
+                        .iter()
+                        .any(|choice| choice.value == option.value)
+            })
+        {
             return (
                 StatusCode::BAD_REQUEST,
                 format!("Unsupported value for {}", option.config_id),
@@ -339,6 +454,21 @@ pub async fn acp_update_launch_options(
             )
                 .into_response();
         }
+        if live_options
+            && !control.available_modes.is_empty()
+            && !control.available_modes.iter().any(|available| {
+                available
+                    .id
+                    .replace('_', "")
+                    .eq_ignore_ascii_case(&mode.replace('_', ""))
+            })
+            && !control.config_options.iter().any(|option| {
+                option.category == ConfigOptionCategory::Mode
+                    && option.options.iter().any(|choice| choice.value == *mode)
+            })
+        {
+            return (StatusCode::BAD_REQUEST, "Unsupported permission mode").into_response();
+        }
         selectors.push((PersistedSelector::Mode, mode.clone()));
     }
     let tokens = req
@@ -353,7 +483,7 @@ pub async fn acp_update_launch_options(
                 .into_response();
         }
     }
-    let restart = req.restart.unwrap_or(req.yolo_mode.is_some());
+    let restart = req.restart.unwrap_or(false);
 
     if req.yolo_mode == Some(true) && !supports_yolo_launch(&agent) {
         return (
@@ -445,30 +575,19 @@ pub async fn acp_update_launch_options(
     let worker_state = state.acp_supervisor.worker_state(&id).await;
     let running = worker_state == crate::daemon::AcpWorkerState::Running;
     if !restart || generation.is_none() {
-        let mut applying = false;
-        if running {
-            for option in &req.config_options {
-                match state
-                    .acp_supervisor
-                    .set_config_option(&id, &option.config_id, &option.value)
-                    .await
-                {
-                    Ok(()) => applying = true,
-                    Err(error) => {
-                        tracing::warn!(target: "http.api.acp", session = %id, %error, "saved setting could not be dispatched; retained for next start")
-                    }
+        let applying = !selectors.is_empty()
+            && (running || worker_state == crate::daemon::AcpWorkerState::Resuming);
+        if applying {
+            let supervisor = Arc::clone(&state.acp_supervisor);
+            let session = id.clone();
+            tokio::spawn(async move {
+                if let Err(error) = supervisor.reconcile_settings(&session).await {
+                    tracing::warn!(target: "http.api.acp", session = %session, %error, "saved settings could not be reconciled; retained for next start");
                 }
-                count_plan_mode(&state, &option.value);
-            }
-            if let Some(mode) = &req.mode_id {
-                match state.acp_supervisor.set_mode(&id, mode).await {
-                    Ok(()) => applying = true,
-                    Err(error) => {
-                        tracing::warn!(target: "http.api.acp", session = %id, %error, "saved permission mode could not be dispatched; retained for next start")
-                    }
-                }
-                count_plan_mode(&state, mode);
-            }
+            });
+        }
+        for (_, value) in &selectors {
+            count_plan_mode(&state, value);
         }
         return Json(UpdateLaunchOptionsResponse {
             status: if applying {
@@ -794,7 +913,7 @@ mod tests {
         let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(body["status"], "applying");
         state.acp_supervisor.test_flush_worker_commands(&id).await;
-        assert_eq!(*commands.lock().unwrap(), vec!["set_config_option"]);
+        assert_eq!(*commands.lock().unwrap(), vec!["reconcile_settings"]);
         assert_eq!(
             storage.load().unwrap()[0].agent_model.as_deref(),
             Some("new-model")
