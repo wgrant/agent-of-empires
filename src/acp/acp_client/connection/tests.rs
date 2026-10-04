@@ -895,6 +895,8 @@ async fn auth_status_is_cleared_per_adapter_process() {
     let reattach = ConnectMode::Resume {
         acp_session_id: "s-auth".into(),
         in_flight_turn: false,
+        subagents: Vec::new(),
+        workflows: Vec::new(),
     };
     let cases = [
         ("silent replacement", fresh(), false, vec![false]),
@@ -940,6 +942,7 @@ async fn auth_events(mode: ConnectMode, reports: bool) -> Vec<bool> {
         default_effort: None,
         default_mode: None,
         default_model: None,
+        extensions: Default::default(),
         mcp_servers: Vec::new(),
         runner: None,
     };
