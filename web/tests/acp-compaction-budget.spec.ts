@@ -92,6 +92,7 @@ test("mobile context settings save without restart and require confirmation to a
   await expect(budget).toHaveText("compact 200k");
   await expect(budget).toHaveAttribute("aria-label", /Saved; restart required/);
   await expect(budget.getByTestId("composer-compaction-pending")).toBeVisible();
+  expect(await budget.evaluate((node) => node.getBoundingClientRect().height)).toBeGreaterThanOrEqual(32);
   await expect(page.getByTestId("composer-mobile-status")).toBeVisible();
   expect(
     await page.getByTestId("composer-mobile-status").evaluate((node) => node.scrollWidth <= node.clientWidth),
