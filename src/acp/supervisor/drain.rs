@@ -11,8 +11,9 @@ use tracing::{debug, info, warn};
 
 use super::agents::log_wrapper_substitution;
 use super::launch::{
-    apply_claude_store_pin, before_session_env, overlay_env, publish_rejection,
-    refresh_spawn_model_effort, resolve_mcp_servers,
+    apply_claude_store_pin, before_session_env, codex_acp_initial_mode_environment, overlay_env,
+    publish_rejection, refresh_spawn_model_effort, resolve_mcp_servers, set_spawn_model,
+    yolo_environment,
 };
 use super::teardown::{settle_lease, tear_down_replacement, tear_down_runner, wait_for_exit};
 use super::{
@@ -510,18 +511,6 @@ impl<S: BroadcastSink> Drain<S> {
     /// Re-resolve what may have changed since the first launch: model pins,
     /// host hook env, and MCP servers.
     async fn refresh_launch_env(session_id: &str, config: &mut SpawnConfig) {
-        match crate::acp::compaction::load_budget(
-            config.source_profile.clone(),
-            session_id.to_string(),
-            config.agent_key.clone(),
-        )
-        .await
-        {
-            Ok(tokens) => config.auto_compact_tokens = tokens,
-            Err(error) => {
-                warn!(target: "acp.supervisor", %session_id, %error, "could not reload compaction budget")
-            }
-        }
         let agent = config.agent_key.clone();
         let profile = config.source_profile.clone().unwrap_or_default();
         let cwd = config.cwd.clone();
@@ -533,7 +522,10 @@ impl<S: BroadcastSink> Drain<S> {
         })
         .await;
         match defaults {
-            Ok(defaults) => refresh_spawn_model_effort(config, defaults.as_ref()),
+            Ok(defaults) => {
+                refresh_spawn_model_effort(config, defaults.as_ref());
+                config.default_mode = defaults.as_ref().and_then(|defaults| defaults.mode());
+            }
             Err(e) => warn!(
                 target: "acp.supervisor",
                 session = %session_id,
@@ -577,6 +569,8 @@ impl<S: BroadcastSink> Drain<S> {
                 apply_claude_store_pin(&mut host_environment, config.claude_store_pin.as_ref());
             config.host_environment = host_environment;
         }
+
+        refresh_saved_settings(session_id, config).await;
 
         config.mcp_servers = resolve_mcp_servers(
             &config.agent_key,
@@ -662,6 +656,77 @@ impl<S: BroadcastSink> Drain<S> {
                 .await;
         settle_lease(&self.lifecycle, &self.notify, respawn_lease, settlement);
         self.publish(Event::Stopped { reason });
+    }
+}
+
+async fn refresh_saved_settings(session_id: &str, config: &mut SpawnConfig) {
+    let Some(profile) = config.source_profile.clone() else {
+        return;
+    };
+    let id = session_id.to_string();
+    let agent = config.agent_key.clone();
+    let saved = tokio::task::spawn_blocking(move || {
+        let storage = crate::session::Storage::new_unwatched(&profile)?;
+        Ok::<_, anyhow::Error>(storage.load()?.into_iter().find(|instance| {
+            instance.id == id
+                && instance
+                    .agent_name
+                    .as_deref()
+                    .filter(|name| !name.is_empty())
+                    .unwrap_or(&instance.tool)
+                    == agent
+        }))
+    })
+    .await;
+    let instance = match saved {
+        Ok(Ok(Some(instance))) => instance,
+        Ok(Ok(None)) => return,
+        error => {
+            warn!(target: "acp.supervisor", %session_id, ?error, "could not reload saved agent settings");
+            return;
+        }
+    };
+    config.auto_compact_tokens = instance.auto_compact_tokens;
+    if instance.agent_model.is_some() {
+        set_spawn_model(config, instance.agent_model);
+    }
+    if let Some(effort) = instance.acp_effort {
+        config.default_effort = Some(effort);
+        config.default_effort_explicit = true;
+    }
+    let mode = instance.acp_mode_id.or_else(|| {
+        crate::acp::agent_profiles::resolve(&config.agent_key)
+            .yolo_mode_id
+            .filter(|_| instance.yolo_mode)
+            .map(str::to_string)
+    });
+    if mode.is_some() {
+        config.default_mode = mode.clone();
+    }
+    if let Some(crate::agents::YoloMode::EnvVar(key, _)) =
+        crate::agents::get_agent(&config.agent_key).and_then(|agent| agent.yolo.as_ref())
+    {
+        config.host_environment.retain(|(name, _)| name != key);
+        config.provider_env.retain(|(name, _)| name != key);
+    }
+    if config.agent_key == "codex" {
+        config
+            .host_environment
+            .retain(|(name, _)| name != "INITIAL_AGENT_MODE");
+        config
+            .provider_env
+            .retain(|(name, _)| name != "INITIAL_AGENT_MODE");
+    }
+    let environment = if config.sandbox_info.is_some() {
+        &mut config.provider_env
+    } else {
+        &mut config.host_environment
+    };
+    if let Some(entry) = yolo_environment(&config.agent_key, instance.yolo_mode) {
+        overlay_env(environment, vec![entry]);
+    }
+    if let Some(entry) = codex_acp_initial_mode_environment(&config.agent_key, mode.as_deref()) {
+        overlay_env(environment, vec![entry]);
     }
 }
 
@@ -757,6 +822,49 @@ mod tests {
     use super::super::test_support::*;
     use super::*;
     use crate::daemon::AcpWorkerState;
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn respawn_reloads_saved_selectors_and_launch_permissions() {
+        let _tmp = crate::session::test_support::isolate_app_dir();
+        let mut instance = crate::session::Instance::new("saved", "/tmp");
+        instance.agent_name = Some("opencode".into());
+        instance.agent_model = Some("new-model".into());
+        instance.acp_effort = Some("high".into());
+        instance.acp_mode_id = Some("plan".into());
+        instance.yolo_mode = true;
+        instance.auto_compact_tokens = Some(200_000);
+        let id = instance.id.clone();
+        let storage = crate::session::Storage::new_unwatched("default").unwrap();
+        storage
+            .update(|instances, _| {
+                instances.push(instance);
+                Ok(())
+            })
+            .unwrap();
+        let mut config = runner_config(std::env::temp_dir().join("saved-settings.sock"));
+        config.source_profile = Some("default".into());
+        config.agent_key = "opencode".into();
+        refresh_saved_settings(&id, &mut config).await;
+        assert_eq!(config.default_model.as_deref(), Some("new-model"));
+        assert_eq!(config.default_effort.as_deref(), Some("high"));
+        assert!(config.default_effort_explicit);
+        assert_eq!(config.default_mode.as_deref(), Some("plan"));
+        assert_eq!(config.auto_compact_tokens, Some(200_000));
+        let expected = yolo_environment("opencode", true).unwrap();
+        assert!(config.host_environment.contains(&expected));
+        storage
+            .update(|instances, _| {
+                instances[0].yolo_mode = false;
+                Ok(())
+            })
+            .unwrap();
+        refresh_saved_settings(&id, &mut config).await;
+        assert!(!config
+            .host_environment
+            .iter()
+            .any(|(key, _)| key == &expected.0));
+    }
 
     #[tokio::test]
     #[serial_test::serial]

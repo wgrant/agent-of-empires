@@ -28,7 +28,7 @@ use crate::session::SandboxInfo;
 /// How long a runner left by a previous daemon has to answer the attach handshake.
 const ATTACH_HANDSHAKE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
 
-fn yolo_environment(agent: &str, enabled: bool) -> Option<(String, String)> {
+pub(super) fn yolo_environment(agent: &str, enabled: bool) -> Option<(String, String)> {
     if !enabled {
         return None;
     }
@@ -43,7 +43,7 @@ fn yolo_environment(agent: &str, enabled: bool) -> Option<(String, String)> {
 /// Seed codex-acp's initial mode before `session/load` resumes the native
 /// Codex thread. Applying the ACP mode after load is too late for its sandbox
 /// and approval overrides.
-fn codex_acp_initial_mode_environment(
+pub(super) fn codex_acp_initial_mode_environment(
     agent: &str,
     mode_id: Option<&str>,
 ) -> Option<(String, String)> {
@@ -399,7 +399,9 @@ impl<S: BroadcastSink> Supervisor<S> {
                 base_host_environment,
                 default_effort: effort,
                 default_effort_explicit: req.effort_explicit,
-                default_mode: acp_defaults.and_then(|defaults| defaults.mode()),
+                default_mode: effective_acp_mode(req)
+                    .map(str::to_string)
+                    .or_else(|| acp_defaults.and_then(|defaults| defaults.mode())),
                 default_model: model,
                 extensions: crate::acp::acp_client::ClientExtensions {
                     native_subagents: resolved_cfg.acp.native_subagents,
