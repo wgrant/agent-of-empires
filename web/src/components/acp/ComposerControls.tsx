@@ -1,7 +1,8 @@
 // Composer footer controls: toolbar, usage hint, attachments, send/stop, popover list.
 
 import { ComposerPrimitive, useAui } from "@assistant-ui/react";
-import { Paperclip, ShieldCheck, Square, X } from "lucide-react";
+import { Clock3, Paperclip, ShieldCheck, Square, X } from "lucide-react";
+import { applicationText, type PendingSetting } from "../../lib/agentSettings";
 
 import { useMinuteClock } from "../../hooks/useMinuteClock";
 import { useNow } from "../../hooks/useNow";
@@ -245,6 +246,38 @@ export function UsageHint({
         </button>
       </Tooltip>
     </span>
+  );
+}
+
+export function CompactionBudgetHint({
+  tokens,
+  pending,
+  compact = false,
+  onOpenSettings,
+}: {
+  tokens: number | null;
+  pending?: PendingSetting;
+  compact?: boolean;
+  onOpenSettings: () => void;
+}) {
+  if (tokens === null) return null;
+  const explanation = `Auto-compaction budget: ${tokens.toLocaleString()} tokens. ${
+    pending ? `Saved; ${applicationText(pending.application).toLowerCase()}. ` : ""
+  }Open session settings.`;
+  return (
+    <Tooltip text={explanation}>
+      <button
+        type="button"
+        data-testid="composer-compaction-budget"
+        aria-label={explanation}
+        aria-haspopup="dialog"
+        onClick={onOpenSettings}
+        className={`inline-flex shrink-0 items-center gap-1 ${compact ? "text-[10px]" : "text-[11px]"} tabular-nums text-text-dim hover:text-text-secondary`}
+      >
+        compact {formatTokens(tokens)}
+        {pending && <Clock3 data-testid="composer-compaction-pending" className="h-3 w-3 shrink-0" aria-hidden />}
+      </button>
+    </Tooltip>
   );
 }
 

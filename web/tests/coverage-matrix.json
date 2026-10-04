@@ -9,10 +9,16 @@
       "specs": [
         "src/components/acp/CompactionBudgetControl.test.tsx",
         "src/components/acp/SessionSettings.test.tsx",
+        "src/components/acp/Composer.launchOptions.test.tsx",
         "src/hooks/useAgentSettings.test.tsx",
         "src/lib/__tests__/agentSettings.test.ts"
       ],
-      "components": ["web/src/components/acp/CompactionBudgetControl.tsx", "web/src/components/acp/SessionSettings.tsx"]
+      "components": [
+        "web/src/components/acp/CompactionBudgetControl.tsx",
+        "web/src/components/acp/SessionSettings.tsx",
+        "web/src/components/acp/Composer.tsx",
+        "web/src/components/acp/ComposerControls.tsx"
+      ]
     },
     {
       "id": "acp.session-compaction-budget.mobile-touch-targets-and-inline-editor",

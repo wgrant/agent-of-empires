@@ -39,7 +39,7 @@ function Harness() {
           configOptions={[MODE]}
           pendingConfigOption={null}
           setConfigOption={() => {}}
-          sessionUsage={null}
+          sessionUsage={{ used: 71000, size: 258000, cost: null }}
           availableCommands={[]}
           availability={{ kind: "send_now" }}
           turnActive={false}
@@ -79,6 +79,58 @@ afterEach(() => {
 });
 
 describe("OpenCode launch options", () => {
+  it.each([
+    { name: "default", tokens: null, applied: null, running: true, status: null },
+    { name: "applied custom", tokens: 200000, applied: 200000, running: true, status: null },
+    { name: "pending restart", tokens: 200000, applied: null, running: true, status: "restart required" },
+    { name: "pending start", tokens: 200000, applied: null, running: false, status: "applies when the agent starts" },
+  ])(
+    "shows the $name compaction budget beside usage and opens settings",
+    async ({ tokens, applied, running, status }) => {
+      const snapshot = {
+        agent: "opencode",
+        running,
+        starting: false,
+        selectors: [],
+        config_options: [],
+        mode_id: null,
+        yolo_mode: { enabled: false, applied_known: true, applied_enabled: false },
+        auto_compaction: { tokens, bounds: [100000, 1000000], applied_known: true, applied_tokens: applied },
+      };
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => new Response(JSON.stringify(snapshot))),
+      );
+      render(<Harness />);
+      await waitFor(() =>
+        expect(screen.getByTestId("session-settings-trigger").getAttribute("aria-label")).toContain(
+          status ? "settings pending" : "Session settings:",
+        ),
+      );
+      if (tokens === null) {
+        fireEvent.click(screen.getByTestId("session-settings-trigger"));
+        await screen.findByTestId("auto-compaction");
+        expect(screen.queryAllByTestId("composer-compaction-budget")).toHaveLength(0);
+        return;
+      }
+      const indicators = await screen.findAllByTestId("composer-compaction-budget");
+      expect(indicators).toHaveLength(2);
+      for (const indicator of indicators) {
+        expect(indicator.textContent).toBe("compact 200k");
+        expect(indicator.getAttribute("aria-label")).toContain("Auto-compaction budget: 200,000 tokens");
+        if (status) expect(indicator.getAttribute("aria-label")).toContain(status);
+        else expect(indicator.getAttribute("aria-label")).not.toContain("Saved;");
+      }
+      expect(screen.queryAllByTestId("composer-compaction-pending")).toHaveLength(status ? 2 : 0);
+      for (const usage of screen.getAllByTestId("composer-usage")) {
+        expect(usage.textContent).toContain("71k/258k");
+      }
+      fireEvent.click(indicators[0]!);
+      expect(screen.getByTestId("session-settings-dialog")).toBeTruthy();
+      expect(screen.getByLabelText("Working context budget (tokens)")).toHaveProperty("value", "200000");
+    },
+  );
+
   it("keeps Build/Plan separate from Yolo and confirms the targeted restart", async () => {
     const fetchMock = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
       if (init?.method === "PATCH") return Promise.resolve(new Response(null, { status: 202 }));

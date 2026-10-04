@@ -2,6 +2,7 @@
 import { cleanup, fireEvent, render, screen, within, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAgentSettings } from "../../hooks/useAgentSettings";
+import { useState } from "react";
 import type { AgentSettingsSnapshot } from "../../lib/agentSettings";
 
 import type { ConfigOptionDescriptor } from "../../lib/acpTypes";
@@ -73,6 +74,7 @@ const MODEL: ConfigOptionDescriptor = {
 function mount(configOptions: ConfigOptionDescriptor[]) {
   function Harness() {
     const controller = useAgentSettings("s1", true);
+    const [open, setOpen] = useState(false);
     return (
       <AgentProfileProvider toolKey="claude">
         <SessionSettingsControl
@@ -86,6 +88,8 @@ function mount(configOptions: ConfigOptionDescriptor[]) {
           pendingConfigOption={null}
           summary={{ agent: "Claude", permission: "Default", model: "Opus", effort: null }}
           settings={controller}
+          open={open}
+          onOpenChange={setOpen}
         />
       </AgentProfileProvider>
     );

@@ -39,6 +39,8 @@ interface Props {
   settings: ReturnType<typeof useAgentSettings>;
   /** Read-only one-line summary shown on the chip. */
   summary: ComposerStatusParts;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }
 
 /** The permission segment is tinted by mode id so destructive modes stand out without opening the dialog. */
@@ -55,7 +57,7 @@ function hasSessionConfigControls(configOptions: AcpState["configOptions"]): boo
 
 export function SessionSettingsControl(props: Props) {
   const profile = useAgentProfile();
-  const [open, setOpen] = useState(false);
+  const { open, onOpenChange: setOpen } = props;
   const settings = props.settings;
   const snapshot = settings.snapshot;
   const pending = snapshot
