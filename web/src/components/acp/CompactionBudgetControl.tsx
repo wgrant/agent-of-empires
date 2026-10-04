@@ -15,7 +15,8 @@ export function CompactionBudgetControl({ sessionId }: { sessionId: string }) {
   const [draft, setDraft] = useState<string | null>(null);
   const [custom, setCustom] = useState<boolean | null>(null);
   const [revision, setRevision] = useState(0);
-  const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [confirmRestart, setConfirmRestart] = useState(false);
 
@@ -26,9 +27,12 @@ export function CompactionBudgetControl({ sessionId }: { sessionId: string }) {
         const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/acp/launch-options`);
         if (!response.ok) throw new Error(`Could not load context settings (HTTP ${response.status})`);
         const body = (await response.json()) as { auto_compaction: BudgetState };
-        if (!cancelled) setState(body.auto_compaction);
+        if (!cancelled) {
+          setState(body.auto_compaction);
+          setLoadError(null);
+        }
       } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : "Could not load context settings");
+        if (!cancelled) setLoadError(e instanceof Error ? e.message : "Could not load context settings");
       }
     };
     void refresh();
@@ -53,7 +57,7 @@ export function CompactionBudgetControl({ sessionId }: { sessionId: string }) {
   const pending = state != null && state.applied_known && state.tokens !== state.applied_tokens;
   const save = async (restart: boolean) => {
     setSaving(true);
-    setError(null);
+    setSaveError(null);
     try {
       await updateAgentLaunchOptions(sessionId, { auto_compaction: { tokens }, restart });
       setState((previous) => previous && { ...previous, tokens });
@@ -62,7 +66,7 @@ export function CompactionBudgetControl({ sessionId }: { sessionId: string }) {
       setRevision((previous) => previous + 1);
       setConfirmRestart(false);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not save context settings");
+      setSaveError(e instanceof Error ? e.message : "Could not save context settings");
     } finally {
       setSaving(false);
     }
@@ -72,7 +76,7 @@ export function CompactionBudgetControl({ sessionId }: { sessionId: string }) {
   return (
     <section aria-label="Context management" className="flex flex-col gap-2 text-xs">
       <h3 className="font-medium text-text-primary">Context management</h3>
-      {!state && !error && <p className="text-text-dim">Loading context settings…</p>}
+      {!state && !loadError && <p className="text-text-dim">Loading context settings…</p>}
       {state && !state.bounds && (
         <p className="text-text-dim">This agent does not expose a custom auto-compaction budget.</p>
       )}
@@ -126,15 +130,17 @@ export function CompactionBudgetControl({ sessionId }: { sessionId: string }) {
           <p role="status" className="text-text-dim">
             {saving
               ? "Saving…"
-              : state.starting
-                ? "Starting agent with the saved policy…"
-                : !state.running
-                  ? "Applies on the next agent start."
-                  : !state.applied_known
-                    ? "Running agent’s budget is unknown. Restart to use the saved policy."
-                    : pending
-                      ? "Saved. Restart the agent to apply, or wait for its next start."
-                      : "Applied to this agent’s launch configuration."}
+              : changed
+                ? "Unsaved changes."
+                : state.starting
+                  ? "Starting agent with the saved policy…"
+                  : !state.running
+                    ? "Applies on the next agent start."
+                    : !state.applied_known
+                      ? "Running agent’s budget is unknown. Restart to use the saved policy."
+                      : pending
+                        ? "Saved. Restart the agent to apply, or wait for its next start."
+                        : "Applied to this agent’s launch configuration."}
           </p>
           {confirmRestart ? (
             <div className="flex flex-col gap-2">
@@ -174,10 +180,13 @@ export function CompactionBudgetControl({ sessionId }: { sessionId: string }) {
           )}
         </>
       )}
-      {error && (
-        <p role="alert" className="text-rose-300">
-          {error}
-        </p>
+      {[loadError, saveError].map(
+        (error, index) =>
+          error && (
+            <p key={index} role="alert" className="text-rose-300">
+              {error}
+            </p>
+          ),
       )}
     </section>
   );
