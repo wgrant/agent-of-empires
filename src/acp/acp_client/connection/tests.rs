@@ -16,7 +16,13 @@ type SharedWrite = Arc<Mutex<tokio::io::DuplexStream>>;
 #[tokio::test]
 async fn settings_rejected_during_a_turn_retry_once_before_the_next_prompt() {
     for kind in ["model", "effort", "mode", "config-mode"] {
-        for scenario in ["accepted", "rejected", "superseded", "retry-fails"] {
+        for scenario in [
+            "accepted",
+            "rejected",
+            "superseded",
+            "retry-fails",
+            "idle-responsive",
+        ] {
             settings_between_turns(kind, scenario).await;
         }
     }
@@ -98,6 +104,29 @@ async fn settings_between_turns(kind: &str, scenario: &str) {
     } else {
         "session/set_config_option"
     };
+    if scenario == "idle-responsive" {
+        commands.send(setting(value)).await.unwrap();
+        let selection = settings_request(&mut requests).await;
+        assert_eq!(selection["method"], method);
+        let (flushed, flush) = oneshot::channel();
+        commands
+            .send(ClientCmd::FlushForTest(flushed))
+            .await
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(1), flush)
+            .await
+            .unwrap()
+            .unwrap();
+        commands.send(ClientCmd::Cancel).await.unwrap();
+        settings_stopped(&mut events).await;
+        commands.send(ClientCmd::Shutdown).await.unwrap();
+        tokio::time::timeout(Duration::from_secs(1), connection)
+            .await
+            .unwrap()
+            .unwrap();
+        agent.abort();
+        return;
+    }
     commands.send(prompt()).await.unwrap();
     let first_prompt = settings_request(&mut requests).await;
     assert_eq!(first_prompt["method"], "session/prompt");

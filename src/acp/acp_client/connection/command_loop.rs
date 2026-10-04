@@ -172,10 +172,17 @@ impl Session {
 
     async fn settle_settings(&mut self) {
         for mut pending in std::mem::take(&mut self.pending_settings) {
-            let applied = (&mut pending.attempt).await.unwrap_or(false);
-            if applied || !pending.retry_when_idle {
+            if !pending.attempt.is_finished() {
+                self.pending_settings.push(pending);
                 continue;
             }
+            let applied = (&mut pending.attempt).await.unwrap_or(false);
+            self.finish_setting(pending, applied);
+        }
+    }
+
+    fn finish_setting(&mut self, mut pending: PendingSettingChange, applied: bool) {
+        if !applied && pending.retry_when_idle {
             info!(target: "acp.protocol", setting = %pending.key, "retrying setting between prompts");
             let attempt = match &pending.change {
                 SettingChange::Config { config_id, value } => Some(dispatch_set_config_option(
@@ -197,7 +204,8 @@ impl Session {
             };
             if let Some(attempt) = attempt {
                 pending.attempt = attempt;
-                let _ = (&mut pending.attempt).await;
+                pending.retry_when_idle = false;
+                self.pending_settings.push(pending);
             }
         }
     }
@@ -215,10 +223,22 @@ impl Session {
                     acp_internal_error("native session is not established".into())
                 })?;
             // Fallback prompts go first so later messages cannot overtake them.
-            let cmd = match self.pending_prompts.pop_front() {
+            let cmd = match self
+                .pending_settings
+                .is_empty()
+                .then(|| self.pending_prompts.pop_front())
+                .flatten()
+            {
                 Some(blocks) => Some(ClientCmd::Prompt(blocks)),
                 None => tokio::select! {
                     cmd = self.cmd_rx.recv() => cmd,
+                    applied = async {
+                        (&mut self.pending_settings[0].attempt).await.unwrap_or(false)
+                    }, if !self.pending_settings.is_empty() => {
+                        let pending = self.pending_settings.remove(0);
+                        self.finish_setting(pending, applied);
+                        continue;
+                    }
                     _ = idle_tick.tick() => {
                         self.between_prompt_idle_tick().await;
                         continue;
@@ -227,6 +247,10 @@ impl Session {
             };
             match cmd {
                 Some(ClientCmd::Prompt(blocks)) => {
+                    if !self.pending_settings.is_empty() {
+                        self.pending_prompts.push_back(blocks);
+                        continue;
+                    }
                     if self.run_prompt(blocks).await? {
                         break;
                     }
