@@ -50,6 +50,8 @@ import {
 import { compactComposerStatusText, composerStatusParts, composerStatusText } from "./composerStatus";
 import { BackgroundWorkChip } from "./BackgroundWorkChip";
 import { SessionSettingsControl } from "./SessionSettings";
+import { useAgentSettings } from "../../hooks/useAgentSettings";
+import { pendingAgentSettings } from "../../lib/agentSettings";
 import { SwitchAgentModal } from "./SwitchAgentModal";
 import {
   useAttachments,
@@ -78,6 +80,8 @@ interface Props {
   configOptions: AcpState["configOptions"];
   pendingConfigOption: AcpState["pendingConfigOption"];
   setConfigOption: (configId: string, value: string) => void | Promise<void>;
+  configOptionSwitchFailed?: AcpState["configOptionSwitchFailed"];
+  modeSwitchFailed?: AcpState["modeSwitchFailed"];
   sessionUsage: AcpState["sessionUsage"];
   authStatus: AcpState["authStatus"];
   quota?: AcpState["quota"];
@@ -112,6 +116,17 @@ const POPOVER_CLASS =
 
 export function Composer(props: Props) {
   const { sessionId, turnActive, availability, promptCapabilities, queuedPrompts } = props;
+  const agentSettings = useAgentSettings(sessionId, false);
+  const pendingSettings = agentSettings.snapshot
+    ? pendingAgentSettings(
+        agentSettings.snapshot,
+        props.configOptions,
+        props.currentModeId,
+        props.configOptionSwitchFailed,
+        props.modeSwitchFailed,
+        agentSettings.launchIntent,
+      )
+    : [];
   const forceStop = props.forceStopNext ?? false;
   const cancelEscalatesAt = props.cancelEscalatesAt ?? null;
   const taRef = useRef<HTMLTextAreaElement | null>(null);
@@ -236,7 +251,10 @@ export function Composer(props: Props) {
   const statusParts = composerStatusParts({
     agent: props.currentAgent ?? profile.key,
     mode: activeMode,
-    yoloMode: props.yoloMode ?? false,
+    yoloMode:
+      (props.currentAgent ?? profile.key) === "opencode"
+        ? (agentSettings.snapshot?.yolo_mode.applied_enabled ?? false)
+        : (props.yoloMode ?? false),
     configOptions: props.configOptions,
   });
   const summary = composerStatusText(statusParts);
@@ -305,6 +323,11 @@ export function Composer(props: Props) {
                       </span>
                     )}
                     {compactComposerStatusText(statusParts)}
+                    {pendingSettings.length > 0 && (
+                      <span className="ml-1.5 text-text-dim" data-testid="composer-mobile-settings-pending">
+                        · Settings pending
+                      </span>
+                    )}
                   </span>
                 </button>
                 <BackgroundWorkChip sessionId={sessionId} compact />
@@ -478,7 +501,9 @@ export function Composer(props: Props) {
                   legacyMode={props.legacyMode}
                   configOptions={props.configOptions}
                   pendingConfigOption={props.pendingConfigOption}
-                  setConfigOption={props.setConfigOption}
+                  configOptionSwitchFailed={props.configOptionSwitchFailed}
+                  modeSwitchFailed={props.modeSwitchFailed}
+                  settings={agentSettings}
                   summary={statusParts}
                 />
                 <AuthStatusHint authStatus={props.authStatus} />

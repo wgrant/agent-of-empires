@@ -1,3 +1,5 @@
+import type { AgentSettingsPatch } from "./agentSettings";
+
 export interface AgentLaunchOption {
   id: "yolo_mode";
   name: string;
@@ -32,10 +34,7 @@ function errorMessage(body: unknown, status: number): string {
 /** Persist launch-only options and ask the server to restart only this ACP
  * worker. The endpoint is a typed patch so more basic options can share the
  * lifecycle without adding one route per setting. */
-export async function updateAgentLaunchOptions(
-  sessionId: string,
-  patch: { yolo_mode?: boolean; auto_compaction?: { tokens: number | null }; restart?: boolean },
-): Promise<void> {
+export async function updateAgentLaunchOptions(sessionId: string, patch: AgentSettingsPatch): Promise<void> {
   const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/acp/launch-options`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },

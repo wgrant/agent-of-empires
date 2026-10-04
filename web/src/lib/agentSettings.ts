@@ -26,6 +26,39 @@ export interface AgentSettingsPatch {
 
 export type SettingApplication = "applying" | "confirmation" | "next_start" | "restart" | "rejected";
 
+export interface LaunchSettingsIntent {
+  auto_compaction?: { tokens: number | null };
+  yolo_mode?: boolean;
+}
+
+/** An unknown worker cannot confirm a reset to Default or approvals-on. */
+export function reconcileLaunchIntent(
+  snapshot: AgentSettingsSnapshot,
+  intent: LaunchSettingsIntent,
+): LaunchSettingsIntent {
+  const remaining: LaunchSettingsIntent = {};
+  if (
+    intent.auto_compaction &&
+    snapshot.auto_compaction.bounds &&
+    intent.auto_compaction.tokens === snapshot.auto_compaction.tokens &&
+    !(
+      snapshot.auto_compaction.applied_known &&
+      snapshot.auto_compaction.applied_tokens === intent.auto_compaction.tokens
+    )
+  ) {
+    remaining.auto_compaction = intent.auto_compaction;
+  }
+  if (
+    intent.yolo_mode !== undefined &&
+    snapshot.agent === "opencode" &&
+    intent.yolo_mode === snapshot.yolo_mode.enabled &&
+    !(snapshot.yolo_mode.applied_known && snapshot.yolo_mode.applied_enabled === intent.yolo_mode)
+  ) {
+    remaining.yolo_mode = intent.yolo_mode;
+  }
+  return remaining;
+}
+
 export interface PendingSetting {
   id: string;
   name: string;
@@ -55,6 +88,7 @@ export function pendingAgentSettings(
   currentModeId: string | null,
   failure?: { configId: string; value: string; reason: string } | null,
   modeFailure?: { modeId: string; reason: string } | null,
+  launchIntent: LaunchSettingsIntent = {},
 ): PendingSetting[] {
   const pending: PendingSetting[] = [];
   const application = snapshot.starting ? "applying" : snapshot.running ? "confirmation" : "next_start";
@@ -65,7 +99,11 @@ export function pendingAgentSettings(
       const rejected = snapshot.running && failure?.configId === saved.config_id && failure.value === saved.value;
       pending.push({
         id: saved.config_id,
-        name: option?.name ?? saved.category,
+        name:
+          option?.name ??
+          snapshot.config_options.find((option) => option.id === saved.config_id)?.name ??
+          { model: "Model", mode: "Mode", thought_level: "Reasoning effort" }[saved.category] ??
+          saved.category,
         application: rejected ? "rejected" : application,
         reason: rejected ? failure.reason : undefined,
       });
@@ -73,7 +111,7 @@ export function pendingAgentSettings(
   }
   if (
     snapshot.mode_id &&
-    !snapshot.selectors.some((selector) => selector.category === "mode") &&
+    !snapshot.selectors.some((selector) => selector.category === "mode" && selector.value !== null) &&
     (!snapshot.running || snapshot.mode_id !== currentModeId)
   ) {
     const rejected = snapshot.running && modeFailure?.modeId === snapshot.mode_id;
@@ -86,11 +124,19 @@ export function pendingAgentSettings(
   }
   const launchApplication = snapshot.starting ? "applying" : snapshot.running ? "restart" : "next_start";
   const budget = snapshot.auto_compaction;
-  if (budget.bounds && (budget.applied_known ? budget.tokens !== budget.applied_tokens : budget.tokens !== null)) {
+  if (
+    budget.bounds &&
+    (budget.applied_known
+      ? budget.tokens !== budget.applied_tokens
+      : budget.tokens !== null || launchIntent.auto_compaction !== undefined)
+  ) {
     pending.push({ id: "auto_compaction", name: "Auto-compaction", application: launchApplication });
   }
   const yolo = snapshot.yolo_mode;
-  if (snapshot.agent === "opencode" && (yolo.applied_known ? yolo.enabled !== yolo.applied_enabled : yolo.enabled)) {
+  if (
+    snapshot.agent === "opencode" &&
+    (yolo.applied_known ? yolo.enabled !== yolo.applied_enabled : yolo.enabled || launchIntent.yolo_mode !== undefined)
+  ) {
     pending.push({ id: "yolo_mode", name: "Yolo", application: launchApplication });
   }
   return pending;

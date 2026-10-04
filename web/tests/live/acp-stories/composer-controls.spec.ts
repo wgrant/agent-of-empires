@@ -185,7 +185,8 @@ async function pickMode(page: Page, mode: RegExp) {
   const item = page.getByRole("menu").getByText(mode).first();
   await expect(item).toBeVisible({ timeout: 5_000 });
   await item.click();
-  await page.getByRole("button", { name: "Done" }).click();
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await page.getByRole("button", { name: "Close", exact: true }).click();
 }
 
 test("session settings switch the structured view mode", async ({ page, spawnServe }) => {

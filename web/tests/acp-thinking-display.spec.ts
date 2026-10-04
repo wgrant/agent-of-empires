@@ -14,11 +14,15 @@ import {
 test("a session's thinking display hides and expands earlier thinking", async ({ page }) => {
   const mock = await mockAcpSession(page, {
     title: "thinking-display",
-    initialEvents: [agentThoughtChunk("Weighing the two options."), agentMessageChunk("Picked the first."), stopped()],
+    initialEvents: [
+      agentThoughtChunk("**Weighing options**\n\nWeighing the two options."),
+      agentMessageChunk("Picked the first."),
+      stopped(),
+    ],
   });
   await openStructuredSession(page, mock);
 
-  const trace = page.getByText("Thinking trace");
+  const trace = page.locator("details summary").getByText("Weighing options");
   const thought = page.getByText("Weighing the two options.");
   await expect(trace).toBeVisible({ timeout: 15_000 });
   await expect(thought).toBeHidden();
@@ -27,7 +31,7 @@ test("a session's thinking display hides and expands earlier thinking", async ({
     await openSessionSettings(page);
     await page.getByTestId("thinking-display").click();
     await page.getByTestId(`thinking-display-value-${value}`).click();
-    await page.getByRole("button", { name: "Done" }).click();
+    await page.getByRole("button", { name: "Close", exact: true }).click();
   };
 
   await choose("hidden");

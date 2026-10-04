@@ -6,7 +6,12 @@
       "id": "acp.session-compaction-budget.drafts-and-error-recovery",
       "kind": "vitest",
       "risk": "high",
-      "specs": ["src/components/acp/CompactionBudgetControl.test.tsx"],
+      "specs": [
+        "src/components/acp/CompactionBudgetControl.test.tsx",
+        "src/components/acp/SessionSettings.test.tsx",
+        "src/hooks/useAgentSettings.test.tsx",
+        "src/lib/__tests__/agentSettings.test.ts"
+      ],
       "components": ["web/src/components/acp/CompactionBudgetControl.tsx", "web/src/components/acp/SessionSettings.tsx"]
     },
     {
@@ -2761,13 +2766,12 @@
       "specs": [
         "tests/live/acp-launch-options.spec.ts",
         "src/components/acp/Composer.launchOptions.test.tsx",
-        "src/components/acp/LaunchOptionRestartDialog.test.tsx",
         "src/lib/agentLaunchOptions.test.ts"
       ],
       "components": [
         "src/server/api/acp/config.rs",
         "web/src/components/acp/Composer.tsx",
-        "web/src/components/acp/LaunchOptionRestartDialog.tsx",
+        "web/src/components/acp/SessionSettings.tsx",
         "web/src/components/acp/StructuredView.tsx",
         "web/src/lib/agentLaunchOptions.ts"
       ]

@@ -82,6 +82,22 @@ describe("OpenCode launch options", () => {
   it("keeps Build/Plan separate from Yolo and confirms the targeted restart", async () => {
     const fetchMock = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
       if (init?.method === "PATCH") return Promise.resolve(new Response(null, { status: 202 }));
+      if (url.endsWith("launch-options"))
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              agent: "opencode",
+              running: true,
+              starting: false,
+              selectors: [],
+              config_options: [],
+              mode_id: null,
+              yolo_mode: { enabled: false, applied_known: true, applied_enabled: false },
+              auto_compaction: { tokens: null, bounds: null, applied_known: true, applied_tokens: null },
+            }),
+            { status: 200 },
+          ),
+        );
       return Promise.resolve(new Response(JSON.stringify({ files: [] }), { status: 200 }));
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -89,16 +105,17 @@ describe("OpenCode launch options", () => {
 
     fireEvent.click(screen.getByTestId("session-settings-trigger"));
     expect(screen.getByTestId("session-mode").getAttribute("aria-label")).toMatch(/Build/);
-    expect(screen.getByText(/Launch options · restart required/)).toBeTruthy();
+    await screen.findByText(/Changes require a restart/);
     fireEvent.click(screen.getByRole("switch", { name: /Yolo/ }));
-    expect(screen.queryByTestId("session-settings-dialog")).toBeNull();
-
-    expect(screen.getByRole("dialog").textContent).toContain("Enable Yolo and restart agent?");
-    fireEvent.click(screen.getByTestId("launch-option-confirm"));
+    expect(screen.getByTestId("session-settings-dialog")).toBeTruthy();
+    expect(fetchMock.mock.calls.some(([, init]) => init?.method === "PATCH")).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "Save and restart…" }));
+    expect(screen.getByText(/Restarting interrupts/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Restart agent" }));
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
         "/api/sessions/sess%20open%2Fcode/acp/launch-options",
-        expect.objectContaining({ method: "PATCH", body: JSON.stringify({ yolo_mode: true }) }),
+        expect.objectContaining({ method: "PATCH", body: JSON.stringify({ yolo_mode: true, restart: true }) }),
       ),
     );
   });

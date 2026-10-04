@@ -19,6 +19,7 @@ interface Props {
   onSetProvider?: (provider: string) => void | Promise<void>;
   /** Why the provider cannot change right now, if it cannot. */
   providerLockedReason?: string | null;
+  selectedLabel?: string;
 }
 
 const MODEL_LABEL_MAX = 24;
@@ -73,6 +74,7 @@ export function SessionConfigControls({
   providerPending,
   onSetProvider,
   providerLockedReason,
+  selectedLabel,
 }: Props) {
   const model = findByCategory(configOptions, "model");
   const effort = findByCategory(configOptions, "thought_level");
@@ -87,6 +89,7 @@ export function SessionConfigControls({
             option={model}
             pending={pendingConfigOption?.configId === model.id ? pendingConfigOption.value : null}
             onSelect={(value) => onSetConfigOption(model.id, value)}
+            selectedLabel={selectedLabel}
           />
         </ConfigRow>
       )}
@@ -96,6 +99,7 @@ export function SessionConfigControls({
             option={effort}
             pending={pendingConfigOption?.configId === effort.id ? pendingConfigOption.value : null}
             onSelect={(value) => onSetConfigOption(effort.id, value)}
+            selectedLabel={selectedLabel}
           />
         </ConfigRow>
       )}
@@ -127,6 +131,7 @@ interface SubProps {
   onSelect: (value: string) => void | Promise<void>;
   /** Disables the trigger and explains why. */
   lockedReason?: string | null;
+  selectedLabel?: string;
 }
 
 interface MenuLayout {
@@ -173,7 +178,7 @@ function computeMenuLayout(
 }
 
 /** A config option's values as a dropdown. */
-function ModelDropdown({ option, pending, onSelect, lockedReason }: SubProps) {
+function ModelDropdown({ option, pending, onSelect, selectedLabel, lockedReason }: SubProps) {
   return (
     <ChoiceDropdown
       label={option.name}
@@ -183,6 +188,7 @@ function ModelDropdown({ option, pending, onSelect, lockedReason }: SubProps) {
       onSelect={onSelect}
       testId={`config-option-${option.id}`}
       lockedReason={lockedReason}
+      selectedLabel={selectedLabel}
     />
   );
 }
@@ -236,6 +242,7 @@ export function ChoiceDropdown({
   testId,
   note,
   lockedReason,
+  selectedLabel = "Active",
 }: {
   label: string;
   choices: readonly Choice[];
@@ -248,6 +255,7 @@ export function ChoiceDropdown({
   /** A line under the menu's heading. */
   note?: string;
   lockedReason?: string | null;
+  selectedLabel?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -385,6 +393,7 @@ export function ChoiceDropdown({
                         pending={pending}
                         onChoose={choose}
                         testId={testId}
+                        selectedLabel={selectedLabel}
                       />
                     ))}
                   </div>
@@ -398,6 +407,7 @@ export function ChoiceDropdown({
                     pending={pending}
                     onChoose={choose}
                     testId={testId}
+                    selectedLabel={selectedLabel}
                   />
                 ))}
           </div>
@@ -414,6 +424,7 @@ function ChoiceItem({
   pending,
   onChoose,
   testId,
+  selectedLabel,
 }: {
   choice: Choice;
   name: string;
@@ -421,6 +432,7 @@ function ChoiceItem({
   pending: string | null;
   onChoose: (choice: Choice) => void;
   testId: string;
+  selectedLabel: string;
 }) {
   const isCurrent = choice.value === current;
   const isPending = pending === choice.value;
@@ -443,7 +455,7 @@ function ChoiceItem({
         <span className="block font-medium">{name}</span>
         {choice.description && <span className="block text-[11px] text-text-dim">{choice.description}</span>}
       </span>
-      {isCurrent && !isPending && <span className="text-[10px] uppercase text-brand-500">Active</span>}
+      {isCurrent && !isPending && <span className="text-[10px] uppercase text-brand-500">{selectedLabel}</span>}
       {isPending && <span className="text-[10px] uppercase text-text-dim">…</span>}
     </button>
   );
