@@ -133,6 +133,11 @@ export function Composer(props: Props) {
   const cancelEscalatesAt = props.cancelEscalatesAt ?? null;
   const taRef = useRef<HTMLTextAreaElement | null>(null);
   const rootRef = useRef<HTMLFormElement | null>(null);
+  const [dialogContainer, setDialogContainer] = useState<HTMLFormElement | null>(null);
+  const setRoot = useCallback((node: HTMLFormElement | null) => {
+    rootRef.current = node;
+    setDialogContainer(node);
+  }, []);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const { client, composerText, draftTextRef } = useComposerClient();
   const loadText = useLoadText(client, taRef);
@@ -282,7 +287,7 @@ export function Composer(props: Props) {
       >
         <ComposerPrimitive.Unstable_TriggerPopoverRoot>
           <ComposerPrimitive.Root
-            ref={rootRef}
+            ref={setRoot}
             data-testid="composer-root"
             className={[
               "group relative flex flex-col gap-2 rounded-xl border border-surface-700 bg-surface-850",
@@ -461,7 +466,7 @@ export function Composer(props: Props) {
             {/* One row when the footer is wide enough, else tools and settings above usage and actions. */}
             <div
               data-testid="composer-footer"
-              className={`${mobileExpanded || settingsOpen ? "flex" : "hidden sm:flex"} @container flex-wrap items-center gap-x-2 gap-y-1.5 border-t border-surface-800/60 px-2 pb-2 pt-1.5`}
+              className={`${mobileExpanded ? "flex" : "hidden sm:flex"} @container flex-wrap items-center gap-x-2 gap-y-1.5 border-t border-surface-800/60 px-2 pb-2 pt-1.5`}
             >
               <div className="flex min-w-0 flex-1 basis-full items-center gap-x-0.5 @lg:basis-auto">
                 <ToolbarButton
@@ -515,6 +520,7 @@ export function Composer(props: Props) {
                   summary={statusParts}
                   open={settingsOpen}
                   onOpenChange={setSettingsOpen}
+                  dialogContainer={dialogContainer}
                 />
                 <AuthStatusHint authStatus={props.authStatus} />
               </div>

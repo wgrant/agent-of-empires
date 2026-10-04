@@ -97,8 +97,13 @@ test("mobile context settings save without restart and require confirmation to a
     await page.getByTestId("composer-mobile-status").evaluate((node) => node.scrollWidth <= node.clientWidth),
   ).toBe(true);
   await page.screenshot({ path: "test-results/compaction-budget-mobile-composer.png" });
+  const viewport = page.getByTestId("acp-viewport");
+  const heightBefore = await viewport.evaluate((node) => node.clientHeight);
+  await expect(page.getByTestId("composer-footer")).toBeHidden();
   await budget.click();
   await expect(page.getByTestId("session-settings-dialog")).toBeVisible();
+  await expect(page.getByTestId("composer-footer")).toBeHidden();
+  expect(await viewport.evaluate((node) => node.clientHeight)).toBe(heightBefore);
   await expect(page.getByLabel("Message the agent")).not.toBeFocused();
   await page.getByTestId("auto-compaction").click();
   await page.getByTestId("auto-compaction-value-default").click();
@@ -108,4 +113,5 @@ test("mobile context settings save without restart and require confirmation to a
   await expect(context.getByRole("button")).toHaveCount(1);
   await page.getByRole("button", { name: "Close", exact: true }).click();
   await expect(page.getByTestId("composer-compaction-budget")).toHaveCount(0);
+  expect(await viewport.evaluate((node) => node.clientHeight)).toBe(heightBefore);
 });
