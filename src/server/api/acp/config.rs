@@ -212,9 +212,7 @@ pub async fn acp_launch_options(
     let starting = worker_state == crate::daemon::AcpWorkerState::Resuming;
     let budget_known = (running || starting) && applied.is_some();
     let yolo_known = (running || starting) && applied_yolo.is_some();
-    let yolo_requires_restart = crate::agents::get_agent(agent).is_some_and(|definition| {
-        matches!(definition.yolo, Some(crate::agents::YoloMode::EnvVar(_, _)))
-    });
+    let yolo_requires_restart = supports_yolo_launch(agent);
     let mut pending = Vec::new();
     for selector in &selectors {
         let Some(desired) = &selector.value else {
@@ -321,9 +319,7 @@ pub struct UpdateLaunchOptionsResponse {
 fn supports_yolo_launch(agent: &str) -> bool {
     crate::agents::get_agent(agent).is_some_and(|definition| {
         matches!(definition.yolo, Some(crate::agents::YoloMode::EnvVar(_, _)))
-    }) || crate::acp::agent_profiles::resolve(agent)
-        .yolo_mode_id
-        .is_some()
+    })
 }
 
 /// Save desired settings, dispatch live selectors, and optionally restart the worker.
@@ -485,12 +481,12 @@ pub async fn acp_update_launch_options(
     }
     let restart = req.restart.unwrap_or(false);
 
-    if req.yolo_mode == Some(true) && !supports_yolo_launch(&agent) {
+    if req.yolo_mode.is_some() && !supports_yolo_launch(&agent) {
         return (
             StatusCode::BAD_REQUEST,
             Json(serde_json::json!({
                 "error": "unsupported_launch_option",
-                "message": format!("Agent {agent:?} has no configured auto-approve mode"),
+                "message": format!("Change the permission mode for {agent:?}; it has no launch-only auto-approval setting"),
             })),
         )
             .into_response();
@@ -627,6 +623,116 @@ mod tests {
     use crate::acp::state::{ConfigOptionChoice, ConfigOptionDescriptor};
     use crate::session::test_support::isolate_app_dir;
 
+    async fn wait_for_reconciliation(commands: &std::sync::Mutex<Vec<&'static str>>) {
+        tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            while commands.lock().unwrap().is_empty() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("saved settings are delivered to the worker");
+        assert_eq!(*commands.lock().unwrap(), vec!["reconcile_settings"]);
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn live_settings_use_session_descriptors_and_canonical_confirmation() {
+        use crate::acp::state::{Event, SettingApplication, SettingApplicationStatus};
+        use crate::acp::supervisor::{BroadcastSink, ChannelSink};
+        let _app = isolate_app_dir();
+        let mut instance = crate::session::Instance::new("settings", "/tmp");
+        instance.view = crate::session::View::Structured;
+        instance.agent_model = Some("old".into());
+        let id = instance.id.clone();
+        let storage = crate::session::Storage::new_unwatched(&instance.source_profile).unwrap();
+        storage
+            .update(|instances, _| {
+                instances.push(instance.clone());
+                Ok(())
+            })
+            .unwrap();
+        let state = crate::server::test_support::build_test_app_state(vec![instance]);
+        let option = |value: &str| ConfigOptionDescriptor {
+            id: "model".into(),
+            name: "Model".into(),
+            description: None,
+            category: ConfigOptionCategory::Model,
+            current_value: "old".into(),
+            options: vec![ConfigOptionChoice {
+                value: value.into(),
+                name: value.into(),
+                description: None,
+            }],
+        };
+        crate::acp::option_catalog::record("claude", &[option("catalog-only")], "now".into())
+            .unwrap();
+        state.session_service.fold_control_state(&id).await;
+        let sink = ChannelSink {
+            tx: state.acp_events_tx.clone(),
+            event_store: Arc::clone(&state.acp_event_store),
+            control_cache: Arc::clone(&state.acp_control_cache),
+        };
+        assert!(sink.publish_persisted(
+            &id,
+            1,
+            &Event::ConfigOptionsUpdated {
+                options: vec![option("local-choice")]
+            }
+        ));
+        let commands = state.acp_supervisor.test_insert_recording_worker(&id).await;
+        for (value, accepted) in [("catalog-only", false), ("local-choice", true)] {
+            let response = acp_set_config_option(
+                State(state.clone()),
+                Path(id.clone()),
+                Ok(Json(SetConfigOptionRequest {
+                    config_id: "model".into(),
+                    value: value.into(),
+                })),
+            )
+            .await
+            .into_response();
+            assert_eq!(response.status().is_success(), accepted, "{value}");
+            assert_eq!(
+                storage.load().unwrap()[0].agent_model.as_deref(),
+                Some(if accepted { "local-choice" } else { "old" })
+            );
+        }
+        wait_for_reconciliation(&commands).await;
+        let mut confirmed = option("local-choice");
+        confirmed.current_value = "canonical-choice".into();
+        assert!(sink.publish_persisted(
+            &id,
+            2,
+            &Event::ConfigOptionsUpdated {
+                options: vec![confirmed]
+            }
+        ));
+        assert!(sink.publish_persisted(
+            &id,
+            3,
+            &Event::SettingApplicationChanged {
+                config_id: "model".into(),
+                application: SettingApplication {
+                    value: "local-choice".into(),
+                    applied_value: Some("canonical-choice".into()),
+                    revision: 1,
+                    status: SettingApplicationStatus::Applied,
+                },
+            }
+        ));
+        let response = acp_launch_options(State(state), Path(id)).await;
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(!body["pending"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|setting| setting["id"] == "model"));
+        assert_eq!(body["selectors"][0]["value"], "local-choice");
+    }
+
     #[tokio::test]
     #[serial_test::serial]
     async fn compaction_settings_persist_without_waking_dormant_agents() {
@@ -714,13 +820,47 @@ mod tests {
         assert_eq!(body["auto_compaction"]["applied_known"], false);
     }
 
-    #[test]
-    fn launch_yolo_support_covers_env_and_acp_mode_agents() {
-        for agent in ["opencode", "claude", "codex", "gemini", "kimi"] {
-            assert!(supports_yolo_launch(agent), "{agent}");
-        }
-        for agent in ["vibe", "unknown-agent"] {
-            assert!(!supports_yolo_launch(agent), "{agent}");
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn yolo_launch_patch_uses_backend_policy_and_never_implicitly_restarts() {
+        let _app = isolate_app_dir();
+        for (agent, accepted) in [("opencode", true), ("claude", false), ("codex", false)] {
+            let mut instance = crate::session::Instance::new(agent, "/tmp");
+            instance.tool = agent.into();
+            instance.view = crate::session::View::Structured;
+            let id = instance.id.clone();
+            let storage = crate::session::Storage::new_unwatched(&instance.source_profile).unwrap();
+            storage
+                .update(|instances, _| {
+                    instances.push(instance.clone());
+                    Ok(())
+                })
+                .unwrap();
+            let state = crate::server::test_support::build_test_app_state(vec![instance]);
+            for enabled in [true, false] {
+                let response = acp_update_launch_options(
+                    State(state.clone()),
+                    Path(id.clone()),
+                    Ok(Json(UpdateLaunchOptionsRequest {
+                        yolo_mode: Some(enabled),
+                        ..Default::default()
+                    })),
+                )
+                .await
+                .into_response();
+                assert_eq!(response.status().is_success(), accepted, "{agent}");
+                assert!(state.acp_supervisor.running_identity(&id).is_none());
+                assert_eq!(
+                    storage
+                        .load()
+                        .unwrap()
+                        .iter()
+                        .find(|instance| instance.id == id)
+                        .unwrap()
+                        .yolo_mode,
+                    accepted && enabled
+                );
+            }
         }
     }
 
@@ -912,8 +1052,7 @@ mod tests {
             .unwrap();
         let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(body["status"], "applying");
-        state.acp_supervisor.test_flush_worker_commands(&id).await;
-        assert_eq!(*commands.lock().unwrap(), vec!["reconcile_settings"]);
+        wait_for_reconciliation(&commands).await;
         assert_eq!(
             storage.load().unwrap()[0].agent_model.as_deref(),
             Some("new-model")
