@@ -11,7 +11,6 @@ import type { AcpState } from "../../lib/acpTypes";
 import { agentLaunchOptions, type AgentLaunchOption } from "../../lib/agentLaunchOptions";
 import {
   applicationText,
-  pendingAgentSettings,
   type AgentSettingsSnapshot,
   type AgentSettingsPatch,
   type PendingSetting,
@@ -35,8 +34,6 @@ interface Props {
   legacyMode: AcpState["mode"];
   configOptions: AcpState["configOptions"];
   pendingConfigOption: AcpState["pendingConfigOption"];
-  configOptionSwitchFailed?: AcpState["configOptionSwitchFailed"];
-  modeSwitchFailed?: AcpState["modeSwitchFailed"];
   settings: ReturnType<typeof useAgentSettings>;
   /** Read-only one-line summary shown on the chip. */
   summary: ComposerStatusParts;
@@ -63,17 +60,8 @@ export function SessionSettingsControl(props: Props) {
   const { open, onOpenChange: setOpen } = props;
   const settings = props.settings;
   const snapshot = settings.snapshot;
-  const pending = snapshot
-    ? pendingAgentSettings(
-        snapshot,
-        props.configOptions,
-        props.currentModeId,
-        props.configOptionSwitchFailed,
-        props.modeSwitchFailed,
-        settings.launchIntent,
-      )
-    : [];
-  const options = props.configOptions.length ? props.configOptions : (snapshot?.config_options ?? []);
+  const pending = snapshot?.pending ?? [];
+  const options = snapshot?.config_options.length ? snapshot.config_options : props.configOptions;
   // Each channel (config option, SessionModeState, claude fallback) pairs with its own write path.
   const channel = resolveModeChannel({
     configOptions: options,
@@ -84,26 +72,25 @@ export function SessionSettingsControl(props: Props) {
     allowLegacyFallback: profile.capabilities.legacyModeFallback,
   });
   const launchOptions = agentLaunchOptions(
-    props.currentAgent ?? profile.key,
+    snapshot?.yolo_mode.requires_restart ?? false,
     snapshot?.yolo_mode.enabled ?? props.yoloMode,
   );
 
   const activeYolo = snapshot?.yolo_mode.applied_known ? snapshot.yolo_mode.applied_enabled : false;
   const activeToneId = activeYolo ? "yolo" : (channel?.activeId ?? "");
   const permissionTone = MODE_TONES.find(([re]) => re.test(activeToneId))?.[1];
-  const summary =
-    snapshot?.agent === "opencode"
-      ? {
-          ...props.summary,
-          permission: snapshot.running
-            ? snapshot.yolo_mode.applied_known
-              ? snapshot.yolo_mode.applied_enabled
-                ? "Yolo"
-                : (channel?.activeId ?? "Approvals")
-              : "Permissions unknown"
-            : "Next start",
-        }
-      : props.summary;
+  const summary = snapshot?.yolo_mode.requires_restart
+    ? {
+        ...props.summary,
+        permission: snapshot.running
+          ? snapshot.yolo_mode.applied_known
+            ? snapshot.yolo_mode.applied_enabled
+              ? "Yolo"
+              : (channel?.activeId ?? "Approvals")
+            : "Permissions unknown"
+          : "Next start",
+      }
+    : props.summary;
   const summaryText = composerStatusText(summary);
   const label = `Session settings: ${summaryText}${pending.length ? `. ${pending.length} settings pending. ${pending.map((setting) => `${setting.name}: ${applicationText(setting.application)}`).join(". ")}` : ""}`;
 
@@ -266,17 +253,24 @@ function SessionSettingsDialog({
     (snapshot?.yolo_mode.applied_known
       ? yoloValue !== snapshot.yolo_mode.applied_enabled
       : yoloChanged || pending.some((setting) => setting.id === "yolo_mode"));
-  const canRestart =
-    snapshot?.running &&
-    (budgetNeedsRestart || yoloNeedsRestart || pending.some((setting) => setting.application === "rejected"));
+  const canRestart = (snapshot?.running || snapshot?.starting) && (budgetNeedsRestart || yoloNeedsRestart);
+  const rejected = pending.filter((setting) => setting.application === "rejected");
   const dismiss = () => {
     if (!saving) onClose();
   };
   const saveChanges = async (restart: boolean) => {
-    const config = changedSelectors
+    const retries = rejected.flatMap((setting): [string, string][] => {
+      const value =
+        setting.id === "legacy_mode"
+          ? snapshot?.mode_id
+          : snapshot?.selectors.find((selector) => selector.config_id === setting.id)?.value;
+      return value && !changedSelectors.some(([id]) => id === setting.id) ? [[setting.id, value]] : [];
+    });
+    const selections = [...changedSelectors, ...retries];
+    const config = selections
       .filter(([id]) => id !== "legacy_mode")
       .map(([config_id, value]) => ({ config_id, value }));
-    const mode = changedSelectors.find(([id]) => id === "legacy_mode")?.[1];
+    const mode = selections.find(([id]) => id === "legacy_mode")?.[1];
     const patch: AgentSettingsPatch = {
       ...(config.length > 0 && { config_options: config }),
       ...(mode !== undefined && { mode_id: mode }),
@@ -287,7 +281,7 @@ function SessionSettingsDialog({
     setSaving(true);
     setSaveError(null);
     try {
-      if (agentDirty || restart) await save(patch);
+      if (agentDirty || retries.length > 0 || restart) await save(patch);
       if (thinkingChanged) thinking.setOverride(thinkingDraft);
       onClose();
     } catch (e) {
@@ -331,14 +325,14 @@ function SessionSettingsDialog({
           >
             {confirmRestart ? "Back" : dirty ? "Cancel" : "Close"}
           </button>
-          {!confirmRestart && dirty && (
+          {!confirmRestart && (dirty || rejected.length > 0) && (
             <button
               type="button"
               className={`${button} ${BRAND_BUTTON}`}
               disabled={saving || (agentDirty && !snapshot) || !validBudget}
               onClick={() => void saveChanges(false)}
             >
-              {saving ? "Applying…" : "Apply"}
+              {saving ? "Applying…" : dirty ? "Apply" : "Retry"}
             </button>
           )}
           {canRestart && (
@@ -435,7 +429,9 @@ function SessionSettingsDialog({
                     </button>
                     <p className="text-[11px] text-text-dim">
                       {option.description}.{" "}
-                      {snapshot?.running ? "Changes require a restart." : "Applies when the agent starts."}
+                      {snapshot?.running || snapshot?.starting
+                        ? "Changes require a restart."
+                        : "Applies when the agent starts."}
                     </p>
                     {yoloChanged && yoloValue && <p className="text-[11px] text-status-warning">{option.warning}</p>}
                   </div>
@@ -451,7 +447,9 @@ function SessionSettingsDialog({
                     {budget.bounds &&
                       (budgetChanged || pending.some((setting) => setting.id === "auto_compaction")) && (
                         <p className="text-[11px] text-text-dim">
-                          {snapshot?.running ? "Changes require a restart." : "Applies when the agent starts."}
+                          {snapshot?.running || snapshot?.starting
+                            ? "Changes require a restart."
+                            : "Applies when the agent starts."}
                         </p>
                       )}
                     {snapshot?.running && budget.bounds && !budget.applied_known && (
@@ -472,7 +470,7 @@ function SessionSettingsDialog({
           {dirty && (
             <p role="status" className="text-xs text-text-dim">
               {agentDirty
-                ? "Applies now where possible; otherwise on next agent start."
+                ? "Applies now where possible; other changes stay pending."
                 : "Applies to this session’s display only."}
             </p>
           )}

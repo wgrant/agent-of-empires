@@ -193,6 +193,29 @@ export async function mockAcpSession(page: Page, opts: AcpSessionMockOptions = {
   const openMessage: { row: Record<string, unknown> | null } = { row: null };
   const pushEvents = (events: unknown[]) => {
     for (const event of events) {
+      const update = event as {
+        ConfigOptionsUpdated?: { options: AgentSettingsSnapshot["config_options"] };
+        ConfigOptionSwitchFailed?: { config_id: string; value: string; reason: string };
+      };
+      if (update.ConfigOptionsUpdated) {
+        savedSettings.config_options = update.ConfigOptionsUpdated.options;
+        savedSettings.pending = savedSettings.pending.filter((setting) => {
+          const desired = savedSettings.selectors.find((selector) => selector.config_id === setting.id)?.value;
+          return !savedSettings.config_options.some(
+            (option) => option.id === setting.id && option.current_value === desired,
+          );
+        });
+      }
+      if (update.ConfigOptionSwitchFailed) {
+        const failure = update.ConfigOptionSwitchFailed;
+        savedSettings.pending = savedSettings.pending.filter((setting) => setting.id !== failure.config_id);
+        savedSettings.pending.push({
+          id: failure.config_id,
+          name: "Model",
+          application: "rejected",
+          reason: failure.reason,
+        });
+      }
       const at = ++seq;
       const frame = JSON.stringify({ session_id: sessionId, seq: at, event });
       frameLog.push(frame);
@@ -229,7 +252,13 @@ export async function mockAcpSession(page: Page, opts: AcpSessionMockOptions = {
     selectors: [],
     config_options: [],
     mode_id: null,
-    yolo_mode: { enabled: opts.yoloMode ?? false, applied_known: true, applied_enabled: opts.yoloMode ?? false },
+    pending: [],
+    yolo_mode: {
+      enabled: opts.yoloMode ?? false,
+      requires_restart: false,
+      applied_known: true,
+      applied_enabled: opts.yoloMode ?? false,
+    },
     auto_compaction: { tokens: null, bounds: [100000, 1000000], applied_known: true, applied_tokens: null },
   };
   await page.route("**/api/sessions/*/acp/launch-options", async (r) => {
@@ -241,10 +270,16 @@ export async function mockAcpSession(page: Page, opts: AcpSessionMockOptions = {
       for (const option of patch.config_options ?? []) {
         savedSettings.selectors = savedSettings.selectors.filter((saved) => saved.config_id !== option.config_id);
         savedSettings.selectors.push({ ...option, category: option.config_id === "mode" ? "mode" : "model" });
+        savedSettings.pending = savedSettings.pending.filter((setting) => setting.id !== option.config_id);
+        savedSettings.pending.push({
+          id: option.config_id,
+          name: option.config_id === "mode" ? "Mode" : "Model",
+          application: "applying",
+        });
         handle.configOptionBodies.push(option);
       }
-      await r.fulfill({ json: { status: "applying", restarted: false } });
       for (const option of patch.config_options ?? []) pushEvents(opts.onConfigOption?.(option) ?? []);
+      await r.fulfill({ json: { status: "applying", restarted: false } });
     } else await r.fulfill({ json: savedSettings });
   });
 

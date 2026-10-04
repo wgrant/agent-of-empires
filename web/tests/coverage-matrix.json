@@ -3,15 +3,14 @@
   "description": "Surface/flow coverage matrix for the agent-of-empires web dashboard. Every component file under web/src/components/** must appear in at least one entry's `components` list (covered, deferred, or out-of-scope), or in coverage-matrix.exempt.json. CI validates this on every PR via tests/validate-coverage-matrix.mjs.",
   "surfaces": [
     {
-      "id": "acp.session-settings.apply-cancel-restart-and-pending-indicators",
+      "id": "acp.session-settings.server-authoritative-pending-retry-apply-cancel-and-restart",
       "kind": "vitest",
       "risk": "high",
       "specs": [
         "src/components/acp/CompactionBudgetControl.test.tsx",
         "src/components/acp/SessionSettings.test.tsx",
         "src/components/acp/Composer.launchOptions.test.tsx",
-        "src/hooks/useAgentSettings.test.tsx",
-        "src/lib/__tests__/agentSettings.test.ts"
+        "src/hooks/useAgentSettings.test.tsx"
       ],
       "components": [
         "web/src/components/acp/CompactionBudgetControl.tsx",

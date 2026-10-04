@@ -52,7 +52,6 @@ import { compactComposerStatusText, composerStatusParts, composerStatusText } fr
 import { BackgroundWorkChip } from "./BackgroundWorkChip";
 import { SessionSettingsControl } from "./SessionSettings";
 import { useAgentSettings } from "../../hooks/useAgentSettings";
-import { pendingAgentSettings } from "../../lib/agentSettings";
 import { SwitchAgentModal } from "./SwitchAgentModal";
 import {
   useAttachments,
@@ -117,18 +116,9 @@ const POPOVER_CLASS =
 
 export function Composer(props: Props) {
   const { sessionId, turnActive, availability, promptCapabilities, queuedPrompts } = props;
-  const agentSettings = useAgentSettings(sessionId, false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const pendingSettings = agentSettings.snapshot
-    ? pendingAgentSettings(
-        agentSettings.snapshot,
-        props.configOptions,
-        props.currentModeId,
-        props.configOptionSwitchFailed,
-        props.modeSwitchFailed,
-        agentSettings.launchIntent,
-      )
-    : [];
+  const agentSettings = useAgentSettings(sessionId, settingsOpen);
+  const pendingSettings = agentSettings.snapshot?.pending ?? [];
   const forceStop = props.forceStopNext ?? false;
   const cancelEscalatesAt = props.cancelEscalatesAt ?? null;
   const taRef = useRef<HTMLTextAreaElement | null>(null);
@@ -518,8 +508,6 @@ export function Composer(props: Props) {
                   legacyMode={props.legacyMode}
                   configOptions={props.configOptions}
                   pendingConfigOption={props.pendingConfigOption}
-                  configOptionSwitchFailed={props.configOptionSwitchFailed}
-                  modeSwitchFailed={props.modeSwitchFailed}
                   settings={agentSettings}
                   summary={statusParts}
                   open={settingsOpen}
