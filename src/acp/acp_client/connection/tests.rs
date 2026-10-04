@@ -13,6 +13,247 @@ use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
 type SharedWrite = Arc<Mutex<tokio::io::DuplexStream>>;
 
+#[tokio::test]
+async fn settings_rejected_during_a_turn_retry_once_before_the_next_prompt() {
+    for kind in ["model", "effort", "mode", "config-mode"] {
+        for scenario in ["accepted", "rejected", "superseded", "retry-fails"] {
+            settings_between_turns(kind, scenario).await;
+        }
+    }
+}
+
+async fn settings_between_turns(kind: &str, scenario: &str) {
+    let (daemon_write, agent_read) = tokio::io::duplex(65536);
+    let (agent_write, daemon_read) = tokio::io::duplex(65536);
+    let agent_write: SharedWrite = Arc::new(Mutex::new(agent_write));
+    let (transport, (params, mut events, commands, ready, _temp)) =
+        connection_params("settings-retry", daemon_write, daemon_read);
+    let connection = tokio::spawn(run_connection_task(transport, params));
+    let (requests_tx, mut requests) = mpsc::channel(16);
+    let writer = agent_write.clone();
+    let mode_as_config = kind == "config-mode";
+    let agent = tokio::spawn(async move {
+        let mut lines = BufReader::new(agent_read).lines();
+        while let Some(line) = lines.next_line().await.unwrap() {
+            let request: serde_json::Value = serde_json::from_str(&line).unwrap();
+            let result = match request["method"].as_str() {
+                Some("initialize") => Some(serde_json::json!({
+                    "protocolVersion": 1, "agentCapabilities": {}
+                })),
+                Some("session/new") => {
+                    let mut result = serde_json::json!({
+                    "sessionId": "settings-session",
+                    "modes": {
+                        "currentModeId": "default",
+                        "availableModes": [
+                            {"id": "default", "name": "Default"},
+                            {"id": "plan", "name": "Plan"}
+                        ]
+                    }
+                    });
+                    if mode_as_config {
+                        result["configOptions"] = serde_json::json!([{
+                            "id": "mode", "name": "Mode", "category": "mode",
+                            "type": "select", "currentValue": "default",
+                            "options": [
+                                {"value": "default", "name": "Default"},
+                                {"value": "plan", "name": "Plan"}
+                            ]
+                        }]);
+                    }
+                    Some(result)
+                }
+                _ => None,
+            };
+            if let Some(result) = result {
+                settings_reply(&writer, &request, result).await;
+            } else if request.get("id").is_some() {
+                requests_tx.send(request).await.unwrap();
+            }
+        }
+    });
+    tokio::time::timeout(Duration::from_secs(10), ready)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    let prompt = || ClientCmd::Prompt(vec![ContentBlock::Text(TextContent::new("test"))]);
+    let setting = |value: &str| {
+        if kind.ends_with("mode") {
+            ClientCmd::SetMode(value.to_string())
+        } else {
+            ClientCmd::SetConfigOption {
+                config_id: kind.to_string(),
+                value: value.to_string(),
+            }
+        }
+    };
+    let value = if kind.ends_with("mode") {
+        "plan"
+    } else {
+        "high"
+    };
+    let method = if kind == "mode" {
+        "session/set_mode"
+    } else {
+        "session/set_config_option"
+    };
+    commands.send(prompt()).await.unwrap();
+    let first_prompt = settings_request(&mut requests).await;
+    assert_eq!(first_prompt["method"], "session/prompt");
+    let old_selection = if scenario == "superseded" {
+        let old_change = if mode_as_config {
+            ClientCmd::SetConfigOption {
+                config_id: "mode".into(),
+                value: "default".into(),
+            }
+        } else {
+            setting("default")
+        };
+        commands.send(old_change).await.unwrap();
+        let old = settings_request(&mut requests).await;
+        assert_eq!(old["method"], method);
+        Some(old)
+    } else {
+        None
+    };
+    commands.send(setting(value)).await.unwrap();
+    let selection = settings_request(&mut requests).await;
+    assert_eq!(selection["method"], method);
+    if scenario == "accepted" {
+        settings_success(&agent_write, &selection, kind, value).await;
+    }
+    settings_reply(
+        &agent_write,
+        &first_prompt,
+        serde_json::json!({"stopReason": "end_turn"}),
+    )
+    .await;
+    settings_stopped(&mut events).await;
+    if let Some(old) = old_selection {
+        settings_reject(&agent_write, &old).await;
+    }
+    commands.send(prompt()).await.unwrap();
+    if scenario != "accepted" {
+        // The failure may arrive after the prompt finishes. It still belongs
+        // to a mid-turn attempt and must be retried before the next prompt.
+        settings_reject(&agent_write, &selection).await;
+        let retry = settings_request(&mut requests).await;
+        assert_eq!(retry["method"], method, "{kind}: {scenario}");
+        let wire_value = if kind == "mode" { "modeId" } else { "value" };
+        assert_eq!(retry["params"][wire_value], value);
+        // The retry is on the wire but deliberately unanswered. Observe
+        // that the next prompt stays blocked until its acknowledgement.
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), requests.recv())
+                .await
+                .is_err(),
+            "next prompt must wait for the setting response"
+        );
+        if scenario == "retry-fails" {
+            settings_reject(&agent_write, &retry).await;
+        } else {
+            settings_success(&agent_write, &retry, kind, value).await;
+        }
+    }
+    let second_prompt = settings_request(&mut requests).await;
+    assert_eq!(
+        second_prompt["method"], "session/prompt",
+        "{kind}: {scenario}"
+    );
+    settings_reply(
+        &agent_write,
+        &second_prompt,
+        serde_json::json!({"stopReason": "end_turn"}),
+    )
+    .await;
+    settings_stopped(&mut events).await;
+    commands.send(prompt()).await.unwrap();
+    let third_prompt = settings_request(&mut requests).await;
+    assert_eq!(
+        third_prompt["method"], "session/prompt",
+        "no repeated retries"
+    );
+    settings_reply(
+        &agent_write,
+        &third_prompt,
+        serde_json::json!({"stopReason": "end_turn"}),
+    )
+    .await;
+    settings_stopped(&mut events).await;
+    commands.send(ClientCmd::Shutdown).await.unwrap();
+    tokio::time::timeout(Duration::from_secs(10), connection)
+        .await
+        .unwrap()
+        .unwrap();
+    agent.abort();
+}
+
+async fn settings_stopped(events: &mut mpsc::Receiver<Event>) {
+    tokio::time::timeout(Duration::from_secs(10), async {
+        while let Some(event) = events.recv().await {
+            match event {
+                Event::Stopped { .. } => return,
+                Event::ConfigOptionSwitchFailed { value, .. } => assert_ne!(value, "default"),
+                Event::ModeSwitchFailed { mode_id, .. } => assert_ne!(mode_id, "default"),
+                _ => {}
+            }
+        }
+        panic!("connection closed before turn finished");
+    })
+    .await
+    .expect("turn finishes");
+}
+
+async fn settings_request(requests: &mut mpsc::Receiver<serde_json::Value>) -> serde_json::Value {
+    tokio::time::timeout(Duration::from_secs(10), requests.recv())
+        .await
+        .expect("adapter receives next request")
+        .expect("connection remains open")
+}
+
+async fn settings_reply(
+    writer: &SharedWrite,
+    request: &serde_json::Value,
+    result: serde_json::Value,
+) {
+    write_line(
+        writer,
+        &serde_json::json!({"jsonrpc": "2.0", "id": request["id"], "result": result}).to_string(),
+    )
+    .await;
+}
+
+async fn settings_reject(writer: &SharedWrite, request: &serde_json::Value) {
+    write_line(
+        writer,
+        &serde_json::json!({
+            "jsonrpc": "2.0", "id": request["id"],
+            "error": {"code": -32603, "message": "Agent is busy"}
+        })
+        .to_string(),
+    )
+    .await;
+}
+
+async fn settings_success(
+    writer: &SharedWrite,
+    request: &serde_json::Value,
+    kind: &str,
+    value: &str,
+) {
+    let result = if kind == "mode" {
+        serde_json::json!({})
+    } else {
+        serde_json::json!({"configOptions": [{
+            "id": if kind == "config-mode" { "mode" } else { kind },
+            "name": kind, "type": "select", "currentValue": value,
+            "options": [{"value": value, "name": value}]
+        }]})
+    };
+    settings_reply(writer, request, result).await;
+}
+
 async fn write_line(w: &SharedWrite, line: &str) {
     let mut guard = w.lock().await;
     guard.write_all(line.as_bytes()).await.unwrap();

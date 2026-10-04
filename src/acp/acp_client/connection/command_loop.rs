@@ -13,6 +13,7 @@ use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
+use tokio::task::JoinHandle;
 use tracing::{debug, info, warn};
 
 use super::notifications::{now_ms, Shared};
@@ -34,6 +35,24 @@ use crate::acp::acp_client::reset::{
     await_reset_request, ResetRequestError, ResetSessionOutcome, SESSION_RESET_IN_TASK_TIMEOUT,
 };
 use crate::acp::acp_client::session_identity::ordered_session_request;
+
+pub(super) enum SettingChange {
+    Config { config_id: String, value: String },
+    Mode(String),
+}
+
+pub(super) struct PendingSettingChange {
+    key: String,
+    change: SettingChange,
+    retry_when_idle: bool,
+    attempt: JoinHandle<bool>,
+}
+
+impl Drop for PendingSettingChange {
+    fn drop(&mut self) {
+        self.attempt.abort();
+    }
+}
 
 pub(super) struct Session {
     pub(super) connection: ConnectionTo<Agent>,
@@ -61,6 +80,7 @@ pub(super) struct Session {
     /// Steers the adapter handed back unconsumed, run as ordinary turns.
     /// Kept here rather than re-sent on the bounded channel this task drains.
     pub(super) pending_prompts: VecDeque<Vec<ContentBlock>>,
+    pub(super) pending_settings: Vec<PendingSettingChange>,
 }
 
 impl Session {
@@ -76,7 +96,12 @@ impl Session {
         }
     }
 
-    pub(super) fn dispatch_config_option(&mut self, config_id: String, value: String) {
+    pub(super) fn dispatch_config_option(
+        &mut self,
+        config_id: String,
+        value: String,
+        while_prompting: bool,
+    ) {
         // A reset re-applies `default_model`, so it follows the live pick.
         if self
             .channels
@@ -92,26 +117,89 @@ impl Session {
         if self.channels.mode_config_option_id.as_deref() == Some(config_id.as_str()) {
             self.default_mode = Some(value.clone());
         }
-        dispatch_set_config_option(
+        let attempt = dispatch_set_config_option(
             &self.connection,
             &self.acp_session_id,
-            config_id,
-            value,
+            config_id.clone(),
+            value.clone(),
             ConfigOptionDispatchPurpose::Generic,
             self.shared.event_tx.clone(),
+        );
+        self.track_setting(
+            config_id.clone(),
+            SettingChange::Config { config_id, value },
+            while_prompting,
+            attempt,
         );
     }
 
     pub(super) fn dispatch_mode(&mut self, mode_id: String, while_prompting: bool) {
         self.default_mode = Some(mode_id.clone());
-        dispatch_set_mode(
+        let attempt = dispatch_set_mode(
             &self.connection,
             &self.acp_session_id,
-            mode_id,
+            mode_id.clone(),
             &self.channels,
             self.shared.event_tx.clone(),
             while_prompting,
         );
+        if let Some(attempt) = attempt {
+            let key = self
+                .channels
+                .mode_config_option_id
+                .clone()
+                .unwrap_or_else(|| "session/set_mode".to_string());
+            self.track_setting(key, SettingChange::Mode(mode_id), while_prompting, attempt);
+        }
+    }
+
+    fn track_setting(
+        &mut self,
+        key: String,
+        change: SettingChange,
+        retry_when_idle: bool,
+        attempt: JoinHandle<bool>,
+    ) {
+        // Superseded responses must not overwrite the latest selection.
+        self.pending_settings.retain(|pending| pending.key != key);
+        self.pending_settings.push(PendingSettingChange {
+            key,
+            change,
+            retry_when_idle,
+            attempt,
+        });
+    }
+
+    async fn settle_settings(&mut self) {
+        for mut pending in std::mem::take(&mut self.pending_settings) {
+            let applied = (&mut pending.attempt).await.unwrap_or(false);
+            if applied || !pending.retry_when_idle {
+                continue;
+            }
+            info!(target: "acp.protocol", setting = %pending.key, "retrying setting between prompts");
+            let attempt = match &pending.change {
+                SettingChange::Config { config_id, value } => Some(dispatch_set_config_option(
+                    &self.connection,
+                    &self.acp_session_id,
+                    config_id.clone(),
+                    value.clone(),
+                    ConfigOptionDispatchPurpose::Generic,
+                    self.shared.event_tx.clone(),
+                )),
+                SettingChange::Mode(mode_id) => dispatch_set_mode(
+                    &self.connection,
+                    &self.acp_session_id,
+                    mode_id.clone(),
+                    &self.channels,
+                    self.shared.event_tx.clone(),
+                    false,
+                ),
+            };
+            if let Some(attempt) = attempt {
+                pending.attempt = attempt;
+                let _ = (&mut pending.attempt).await;
+            }
+        }
     }
 
     pub(super) async fn run(mut self) -> Result<(), agent_client_protocol::Error> {
@@ -121,6 +209,7 @@ impl Session {
         let mut idle_tick = tokio::time::interval(BETWEEN_PROMPT_IDLE_CHECK_INTERVAL);
         idle_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
+            self.settle_settings().await;
             self.acp_session_id =
                 self.shared.ingress.current().ok_or_else(|| {
                     acp_internal_error("native session is not established".into())
@@ -177,7 +266,7 @@ impl Session {
                     respond_to,
                 }) => handle_delete_session_cmd(&self.connection, acp_session_id, respond_to),
                 Some(ClientCmd::SetConfigOption { config_id, value }) => {
-                    self.dispatch_config_option(config_id, value)
+                    self.dispatch_config_option(config_id, value, false)
                 }
                 Some(ClientCmd::ResumeBackgroundTailing(launches)) => {
                     self.shared.resume_background_tailing(launches)
