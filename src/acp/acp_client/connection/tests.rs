@@ -22,11 +22,14 @@ async fn settings_rejected_during_a_turn_retry_once_before_the_next_prompt() {
             "superseded",
             "retry-fails",
             "idle-responsive",
+            "cancel-waiting-prompt",
         ] {
             settings_between_turns(kind, scenario).await;
         }
     }
     settings_between_turns("model", "batch").await;
+    settings_between_turns("mode", "reset-success").await;
+    settings_between_turns("mode", "reset-fails").await;
 }
 
 #[tokio::test]
@@ -34,6 +37,8 @@ async fn settings_rejected_during_a_turn_retry_once_before_the_next_prompt() {
 async fn startup_reconciles_preferences_saved_after_the_launch_snapshot() {
     let _app = crate::session::test_support::isolate_app_dir();
     settings_between_turns("model", "startup").await;
+    settings_between_turns("model", "startup-revert").await;
+    settings_between_turns("model", "startup-notification").await;
 }
 
 async fn settings_between_turns(kind: &str, scenario: &str) {
@@ -42,12 +47,14 @@ async fn settings_between_turns(kind: &str, scenario: &str) {
     let agent_write: SharedWrite = Arc::new(Mutex::new(agent_write));
     let (transport, (mut params, mut events, commands, ready, _temp)) =
         connection_params("settings-retry", daemon_write, daemon_read);
-    if scenario == "startup" {
+    let mut saved_instance = None;
+    if scenario.starts_with("startup") {
         let mut instance = crate::session::Instance::new("settings", "/tmp");
         instance.agent_model = Some("high".into());
         params.resources.label = instance.id.clone();
         params.source_profile = Some("default".into());
         params.default_model = Some("default".into());
+        saved_instance = Some(instance.id.clone());
         crate::session::Storage::new_unwatched("default")
             .unwrap()
             .update(|instances, _| {
@@ -60,7 +67,9 @@ async fn settings_between_turns(kind: &str, scenario: &str) {
     let (requests_tx, mut requests) = mpsc::channel(16);
     let writer = agent_write.clone();
     let mode_as_config = kind == "config-mode";
+    let reset_succeeds = scenario == "reset-success";
     let agent = tokio::spawn(async move {
+        let mut session_count = 0;
         let mut lines = BufReader::new(agent_read).lines();
         while let Some(line) = lines.next_line().await.unwrap() {
             let request: serde_json::Value = serde_json::from_str(&line).unwrap();
@@ -69,6 +78,7 @@ async fn settings_between_turns(kind: &str, scenario: &str) {
                     "protocolVersion": 1, "agentCapabilities": {}
                 })),
                 Some("session/new") => {
+                    session_count += 1;
                     let mut result = serde_json::json!({
                     "sessionId": "settings-session",
                     "modes": {
@@ -79,6 +89,9 @@ async fn settings_between_turns(kind: &str, scenario: &str) {
                         ]
                     }
                     });
+                    if reset_succeeds && session_count > 1 {
+                        result["sessionId"] = "settings-reset".into();
+                    }
                     if mode_as_config {
                         result["configOptions"] = serde_json::json!([{
                             "id": "mode", "name": "Mode", "category": "mode",
@@ -131,10 +144,126 @@ async fn settings_between_turns(kind: &str, scenario: &str) {
     } else {
         "session/set_config_option"
     };
-    if scenario == "startup" {
+    if scenario.starts_with("reset-") {
+        commands.send(setting(value)).await.unwrap();
+        let old = settings_request(&mut requests).await;
+        let (sent, received) = oneshot::channel();
+        commands
+            .send(ClientCmd::ResetSession {
+                text: "/clear".into(),
+                deadline: tokio::time::Instant::now() + Duration::from_secs(10),
+                respond_to: sent,
+            })
+            .await
+            .unwrap();
+        let outcome = tokio::time::timeout(Duration::from_secs(10), received)
+            .await
+            .unwrap()
+            .unwrap();
+        if scenario == "reset-success" {
+            assert!(matches!(
+                outcome,
+                crate::acp::acp_client::reset::ResetSessionOutcome::Reset { .. }
+            ));
+            let fresh = settings_request(&mut requests).await;
+            assert_eq!(fresh["method"], "session/set_mode");
+            assert_eq!(fresh["params"]["sessionId"], "settings-reset");
+            assert_eq!(fresh["params"]["modeId"], "plan");
+            settings_success(&agent_write, &old, kind, "default").await;
+            settings_success(&agent_write, &fresh, kind, value).await;
+        } else {
+            assert!(matches!(
+                outcome,
+                crate::acp::acp_client::reset::ResetSessionOutcome::Failed { .. }
+            ));
+            settings_success(&agent_write, &old, kind, value).await;
+        }
+        commands.send(prompt()).await.unwrap();
+        let next = settings_request(&mut requests).await;
+        assert_eq!(next["method"], "session/prompt");
+        assert_eq!(
+            next["params"]["sessionId"],
+            if reset_succeeds {
+                "settings-reset"
+            } else {
+                "settings-session"
+            }
+        );
+        settings_reply(
+            &agent_write,
+            &next,
+            serde_json::json!({ "stopReason": "end_turn" }),
+        )
+        .await;
+        commands.send(ClientCmd::Shutdown).await.unwrap();
+        tokio::time::timeout(Duration::from_secs(10), connection)
+            .await
+            .unwrap()
+            .unwrap();
+        while let Ok(Some(event)) =
+            tokio::time::timeout(Duration::from_millis(50), events.recv()).await
+        {
+            assert!(
+                !matches!(event, Event::CurrentModeChanged { current_mode_id } if current_mode_id == "default"),
+                "old-session settings response must not be published"
+            );
+        }
+        agent.abort();
+        return;
+    }
+    if scenario.starts_with("startup") {
         let selection = settings_request(&mut requests).await;
         assert_eq!(selection["params"]["value"], "high");
-        settings_success(&agent_write, &selection, kind, "high").await;
+        if scenario == "startup-revert" {
+            crate::session::Storage::new_unwatched("default")
+                .unwrap()
+                .update(|instances, _| {
+                    let instance = instances
+                        .iter_mut()
+                        .find(|instance| Some(&instance.id) == saved_instance.as_ref())
+                        .unwrap();
+                    instance.agent_model = Some("default".into());
+                    instance.acp_effort = Some("default".into());
+                    Ok(())
+                })
+                .unwrap();
+            commands.send(ClientCmd::ReconcileSettings).await.unwrap();
+            let (sent, received) = oneshot::channel();
+            commands.send(ClientCmd::FlushForTest(sent)).await.unwrap();
+            received.await.unwrap();
+            settings_snapshot(&agent_write, &selection, "high", "high").await;
+            let revert = settings_request(&mut requests).await;
+            assert_eq!(revert["params"]["configId"], "model");
+            assert_eq!(revert["params"]["value"], "default");
+            settings_snapshot(&agent_write, &revert, "default", "high").await;
+            let effort = settings_request(&mut requests).await;
+            assert_eq!(effort["params"]["configId"], "effort");
+            assert_eq!(effort["params"]["value"], "default");
+            settings_snapshot(&agent_write, &effort, "default", "default").await;
+        } else {
+            settings_success(&agent_write, &selection, kind, "high").await;
+        }
+        if scenario == "startup-notification" {
+            tokio::time::timeout(Duration::from_secs(1), async {
+                while !matches!(events.recv().await.expect("connection open"), Event::SettingApplicationChanged { application, .. } if application.status == crate::acp::state::SettingApplicationStatus::Applied) {}
+            }).await.unwrap();
+            write_line(&agent_write, &serde_json::json!({
+                "jsonrpc": "2.0", "method": "session/update", "params": {
+                    "sessionId": "settings-session", "update": {
+                        "sessionUpdate": "config_option_update", "configOptions": [{
+                            "id": "model", "name": "Model", "category": "model", "type": "select", "currentValue": "default", "options": [],
+                        }],
+                    },
+                },
+            }).to_string()).await;
+            tokio::time::timeout(Duration::from_secs(1), async {
+                while !matches!(events.recv().await.expect("connection open"), Event::ConfigOptionsUpdated { options } if options.iter().any(|option| option.id == "model" && option.current_value == "default")) {}
+            }).await.unwrap();
+            commands.send(ClientCmd::ReconcileSettings).await.unwrap();
+            let correction = settings_request(&mut requests).await;
+            assert_eq!(correction["params"]["value"], "high");
+            settings_success(&agent_write, &correction, kind, "high").await;
+        }
         commands.send(prompt()).await.unwrap();
         let request = settings_request(&mut requests).await;
         assert_eq!(request["method"], "session/prompt");
@@ -153,10 +282,13 @@ async fn settings_between_turns(kind: &str, scenario: &str) {
         agent.abort();
         return;
     }
-    if scenario == "idle-responsive" {
+    if scenario == "idle-responsive" || scenario == "cancel-waiting-prompt" {
         commands.send(setting(value)).await.unwrap();
         let selection = settings_request(&mut requests).await;
         assert_eq!(selection["method"], method);
+        if scenario == "cancel-waiting-prompt" {
+            commands.send(prompt()).await.unwrap();
+        }
         let (flushed, flush) = oneshot::channel();
         commands
             .send(ClientCmd::FlushForTest(flushed))
@@ -168,6 +300,18 @@ async fn settings_between_turns(kind: &str, scenario: &str) {
             .unwrap();
         commands.send(ClientCmd::Cancel).await.unwrap();
         settings_stopped(&mut events).await;
+        if scenario == "cancel-waiting-prompt" {
+            settings_success(&agent_write, &selection, kind, value).await;
+            tokio::time::timeout(Duration::from_secs(1), async {
+                while !matches!(events.recv().await, Some(Event::SettingApplicationChanged { application, .. }) if application.status == crate::acp::state::SettingApplicationStatus::Applied) {}
+            }).await.unwrap();
+            assert!(
+                tokio::time::timeout(Duration::from_millis(50), requests.recv())
+                    .await
+                    .is_err(),
+                "stopped prompt must not run after settings settle"
+            );
+        }
         commands.send(ClientCmd::Shutdown).await.unwrap();
         tokio::time::timeout(Duration::from_secs(1), connection)
             .await

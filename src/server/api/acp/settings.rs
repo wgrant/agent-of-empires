@@ -38,6 +38,14 @@ pub(super) fn pending_selector(
             SettingApplicationStatus::Applying => ("applying", None),
             SettingApplicationStatus::Queued => ("queued", None),
             _ if observed == Some(desired) => return None,
+            SettingApplicationStatus::Applied
+                if operation
+                    .applied_value
+                    .as_deref()
+                    .is_some_and(|value| observed == Some(value)) =>
+            {
+                return None
+            }
             SettingApplicationStatus::Failed { reason } => ("rejected", Some(reason.clone())),
             SettingApplicationStatus::Applied => ("confirmation", None),
         }
@@ -114,6 +122,7 @@ mod tests {
                         config_id: id.into(),
                         application: SettingApplication {
                             value: "high".into(),
+                            applied_value: None,
                             revision,
                             status: status.clone(),
                         },
@@ -144,6 +153,7 @@ mod tests {
                 config_id: "model".into(),
                 application: SettingApplication {
                     value: "old".into(),
+                    applied_value: None,
                     revision: 1,
                     status: SettingApplicationStatus::Applying,
                 },
@@ -169,6 +179,7 @@ mod tests {
                 config_id: "model".into(),
                 application: SettingApplication {
                     value: "high".into(),
+                    applied_value: Some("canonical-high".into()),
                     revision: 4,
                     status: SettingApplicationStatus::Applied,
                 },
@@ -184,12 +195,44 @@ mod tests {
             false
         )
         .is_none());
+        assert!(pending_selector(
+            "model",
+            "Model",
+            "high",
+            Some("canonical-high"),
+            &control,
+            true,
+            false
+        )
+        .is_none());
+        assert_eq!(
+            pending_selector(
+                "model",
+                "Model",
+                "high",
+                Some("different"),
+                &control,
+                true,
+                false
+            )
+            .unwrap()
+            .application,
+            "confirmation"
+        );
+        control
+            .apply_event(Event::ConfigOptionSwitchFailed {
+                config_id: "model".into(),
+                value: "high".into(),
+                reason: "old generation".into(),
+            })
+            .unwrap();
         control
             .apply_event(Event::AcpSessionAssigned {
                 acp_session_id: "new".into(),
             })
             .unwrap();
         assert!(control.setting_applications.is_empty());
+        assert!(control.config_option_switch_failed.is_none());
         assert_eq!(
             pending_selector("model", "Model", "high", Some("low"), &control, false, true)
                 .unwrap()
