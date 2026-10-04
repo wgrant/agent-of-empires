@@ -307,14 +307,14 @@ export function Composer(props: Props) {
             {!mobileExpanded && (
               <div
                 data-testid="composer-mobile-status"
-                className="flex min-h-8 min-w-0 items-center gap-2 px-2 py-1 sm:hidden"
+                className="@container flex min-h-8 min-w-0 items-center gap-1.5 px-2 sm:hidden"
               >
                 <button
                   type="button"
                   onClick={expandMobileComposer}
                   title={`Open message composer. ${summary}`}
                   aria-label={`Open message composer. ${summary}`}
-                  className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+                  className={`flex ${agentSettings.snapshot?.auto_compaction.tokens != null ? "min-w-24" : "min-w-0"} flex-1 items-center gap-1.5 text-left`}
                 >
                   <Pencil
                     data-testid="composer-mobile-compose-icon"
@@ -322,7 +322,10 @@ export function Composer(props: Props) {
                     aria-hidden
                   />
                   <span className="h-3 shrink-0 border-l border-surface-700/60" aria-hidden />
-                  <span className="min-w-0 truncate text-[10px] font-medium text-text-secondary">
+                  <span
+                    data-testid="composer-mobile-summary"
+                    className="min-w-0 truncate text-[10px] font-medium text-text-secondary"
+                  >
                     {hasDraft && <span className="mr-1.5 text-brand-400">Draft ·</span>}
                     {attachments.supported.length > 0 && (
                       <span className="mr-1.5 text-brand-400">
@@ -354,6 +357,7 @@ export function Composer(props: Props) {
                     lastModel={props.lastModel}
                     lastTurnUsage={props.lastTurnUsage}
                     compact
+                    reserveSummarySpace={agentSettings.snapshot?.auto_compaction.tokens != null}
                   />
                   <CompactionBudgetHint
                     tokens={agentSettings.snapshot?.auto_compaction.tokens ?? null}

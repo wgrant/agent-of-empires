@@ -187,6 +187,7 @@ export function UsageHint({
   lastModel = null,
   lastTurnUsage = null,
   compact = false,
+  reserveSummarySpace = false,
 }: {
   usage: AcpState["sessionUsage"];
   quota?: AcpState["quota"];
@@ -194,6 +195,7 @@ export function UsageHint({
   lastTurnUsage?: AcpState["lastTurnUsage"];
   /** Sized for the collapsed composer strip. */
   compact?: boolean;
+  reserveSummarySpace?: boolean;
 }) {
   const now = useMinuteClock();
   const windows = compactQuotaWindows(quota, now);
@@ -236,13 +238,30 @@ export function UsageHint({
             </span>
           )}
           {windows.map((w, index) => (
-            <span key={w.id} data-testid="composer-quota-window" className={quotaTone(w.used_percent)}>
+            <span
+              key={w.id}
+              data-testid="composer-quota-window"
+              className={[
+                quotaTone(w.used_percent),
+                compact && reserveSummarySpace
+                  ? index === 0 && context
+                    ? "hidden @[360px]:inline"
+                    : index > 0
+                      ? "hidden @[440px]:inline"
+                      : ""
+                  : "",
+              ].join(" ")}
+            >
               {(context || index > 0) && <span className="text-text-dim opacity-70">· </span>}
               {quotaWindowLabel(w)} {Math.round(w.used_percent)}%
             </span>
           ))}
           {/* Quota says more than spend on a subscription; cost stays in the tooltip then. */}
-          {cost && windows.length === 0 ? <span className="opacity-70">· {cost}</span> : null}
+          {cost && windows.length === 0 ? (
+            <span className={`opacity-70 ${compact && reserveSummarySpace ? "hidden @[360px]:inline" : ""}`}>
+              · {cost}
+            </span>
+          ) : null}
         </button>
       </Tooltip>
     </span>
