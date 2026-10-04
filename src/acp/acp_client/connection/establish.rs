@@ -24,7 +24,7 @@ use super::ReadyTx;
 use crate::acp::acp_client::commands::{ClientCmd, ConnectMode};
 use crate::acp::acp_client::config_options::{
     apply_config_default, config_option_failure_event, config_options_event, mode_config_id,
-    modes_available_event, thought_level_config_id, ConfigOptionDispatchPurpose, SessionChannels,
+    modes_available_event, ConfigOptionDispatchPurpose, SessionChannels,
 };
 use crate::acp::acp_client::control::{establish_session_v3, DaemonControlClient};
 use crate::acp::acp_client::errors::{acp_internal_error, AcpError, IncompatibleAgentError};
@@ -196,6 +196,8 @@ pub(super) async fn establish(
         lifecycle_rx: ctx.lifecycle_rx,
         pending_prompts: VecDeque::new(),
         pending_settings: Vec::new(),
+        setting_in_flight: None,
+        setting_revision: 0,
     };
     session.acp_session_id = match ctx.mode {
         ConnectMode::Resume { acp_session_id, .. } => session.resume(acp_session_id).await?,
@@ -592,8 +594,11 @@ impl Session {
         .await;
         match result {
             Ok(options) => {
-                self.channels.thought_level_config_option_id =
-                    thought_level_config_id(&options).map(|id| id.0.to_string());
+                let options: Vec<_> = options
+                    .into_iter()
+                    .filter_map(crate::acp::acp_client::config_options::map_acp_config_option)
+                    .collect();
+                self.channels.observe(&options);
             }
             Err(reason) => {
                 let event = config_option_failure_event(
@@ -609,13 +614,13 @@ impl Session {
 
     /// Effort is a pin carried across respawns, which resume via load or fork,
     /// so it applies after any establish path. Resume captures no option id.
-    async fn apply_default_effort(&self) {
+    async fn apply_default_effort(&mut self) {
         let Some(effort) = self.default_effort.as_deref() else {
             return;
         };
         match self.channels.thought_level_config_option_id.as_deref() {
             Some(config_id) => {
-                let _ = apply_config_default(
+                let result = apply_config_default(
                     &self.connection,
                     &self.shared.event_tx,
                     self.acp_session_id.clone(),
@@ -624,6 +629,13 @@ impl Session {
                     &self.shared.session_label,
                 )
                 .await;
+                if let Ok(options) = result {
+                    let options: Vec<_> = options
+                        .into_iter()
+                        .filter_map(crate::acp::acp_client::config_options::map_acp_config_option)
+                        .collect();
+                    self.channels.observe(&options);
+                }
             }
             None => debug!(
                 target: "acp.protocol",

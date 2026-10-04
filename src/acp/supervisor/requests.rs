@@ -219,6 +219,27 @@ impl<S: BroadcastSink> Supervisor<S> {
         result
     }
 
+    pub async fn apply_settings(
+        &self,
+        session_id: &str,
+        options: Vec<(String, String)>,
+        mode: Option<String>,
+    ) -> Result<(), SupervisorError> {
+        self.ready_client(session_id)
+            .await?
+            .apply_settings(options, mode)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn reconcile_settings(&self, session_id: &str) -> Result<(), SupervisorError> {
+        self.ready_client(session_id)
+            .await?
+            .reconcile_settings()
+            .await?;
+        Ok(())
+    }
+
     pub async fn stop_async_task(
         &self,
         session_id: &str,

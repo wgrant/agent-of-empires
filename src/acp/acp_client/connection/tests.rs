@@ -26,14 +26,36 @@ async fn settings_rejected_during_a_turn_retry_once_before_the_next_prompt() {
             settings_between_turns(kind, scenario).await;
         }
     }
+    settings_between_turns("model", "batch").await;
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn startup_reconciles_preferences_saved_after_the_launch_snapshot() {
+    let _app = crate::session::test_support::isolate_app_dir();
+    settings_between_turns("model", "startup").await;
 }
 
 async fn settings_between_turns(kind: &str, scenario: &str) {
     let (daemon_write, agent_read) = tokio::io::duplex(65536);
     let (agent_write, daemon_read) = tokio::io::duplex(65536);
     let agent_write: SharedWrite = Arc::new(Mutex::new(agent_write));
-    let (transport, (params, mut events, commands, ready, _temp)) =
+    let (transport, (mut params, mut events, commands, ready, _temp)) =
         connection_params("settings-retry", daemon_write, daemon_read);
+    if scenario == "startup" {
+        let mut instance = crate::session::Instance::new("settings", "/tmp");
+        instance.agent_model = Some("high".into());
+        params.resources.label = instance.id.clone();
+        params.source_profile = Some("default".into());
+        params.default_model = Some("default".into());
+        crate::session::Storage::new_unwatched("default")
+            .unwrap()
+            .update(|instances, _| {
+                instances.push(instance);
+                Ok(())
+            })
+            .unwrap();
+    }
     let connection = tokio::spawn(run_connection_task(transport, params));
     let (requests_tx, mut requests) = mpsc::channel(16);
     let writer = agent_write.clone();
@@ -66,6 +88,11 @@ async fn settings_between_turns(kind: &str, scenario: &str) {
                                 {"value": "plan", "name": "Plan"}
                             ]
                         }]);
+                    } else {
+                        result["configOptions"] = serde_json::json!([
+                            {"id":"model", "name":"Model", "category":"model", "type":"select", "currentValue":"default", "options":[{"value":"default","name":"Default"},{"value":"high","name":"High"}]},
+                            {"id":"effort", "name":"Effort", "category":"thought_level", "type":"select", "currentValue":"default", "options":[{"value":"default","name":"Default"},{"value":"high","name":"High"}]}
+                        ]);
                     }
                     Some(result)
                 }
@@ -104,6 +131,28 @@ async fn settings_between_turns(kind: &str, scenario: &str) {
     } else {
         "session/set_config_option"
     };
+    if scenario == "startup" {
+        let selection = settings_request(&mut requests).await;
+        assert_eq!(selection["params"]["value"], "high");
+        settings_success(&agent_write, &selection, kind, "high").await;
+        commands.send(prompt()).await.unwrap();
+        let request = settings_request(&mut requests).await;
+        assert_eq!(request["method"], "session/prompt");
+        settings_reply(
+            &agent_write,
+            &request,
+            serde_json::json!({"stopReason":"end_turn"}),
+        )
+        .await;
+        settings_stopped(&mut events).await;
+        commands.send(ClientCmd::Shutdown).await.unwrap();
+        tokio::time::timeout(Duration::from_secs(10), connection)
+            .await
+            .unwrap()
+            .unwrap();
+        agent.abort();
+        return;
+    }
     if scenario == "idle-responsive" {
         commands.send(setting(value)).await.unwrap();
         let selection = settings_request(&mut requests).await;
@@ -130,6 +179,46 @@ async fn settings_between_turns(kind: &str, scenario: &str) {
     commands.send(prompt()).await.unwrap();
     let first_prompt = settings_request(&mut requests).await;
     assert_eq!(first_prompt["method"], "session/prompt");
+    if scenario == "batch" {
+        commands
+            .send(ClientCmd::ApplySettings {
+                options: vec![
+                    ("effort".into(), "high".into()),
+                    ("model".into(), "high".into()),
+                ],
+                mode: None,
+            })
+            .await
+            .unwrap();
+        for (expected, model, effort) in [("model", "high", "default"), ("effort", "high", "high")]
+        {
+            let request = settings_request(&mut requests).await;
+            assert_eq!(request["params"]["configId"], expected);
+            settings_snapshot(&agent_write, &request, model, effort).await;
+        }
+        commands.send(setting("default")).await.unwrap();
+        let request = settings_request(&mut requests).await;
+        assert_eq!(request["params"]["configId"], "model");
+        settings_snapshot(&agent_write, &request, "default", "default").await;
+        let request = settings_request(&mut requests).await;
+        assert_eq!(request["params"]["configId"], "effort");
+        assert_eq!(request["params"]["value"], "high");
+        settings_snapshot(&agent_write, &request, "default", "high").await;
+        settings_reply(
+            &agent_write,
+            &first_prompt,
+            serde_json::json!({"stopReason":"end_turn"}),
+        )
+        .await;
+        settings_stopped(&mut events).await;
+        commands.send(ClientCmd::Shutdown).await.unwrap();
+        tokio::time::timeout(Duration::from_secs(10), connection)
+            .await
+            .unwrap()
+            .unwrap();
+        agent.abort();
+        return;
+    }
     let old_selection = if scenario == "superseded" {
         let old_change = if mode_as_config {
             ClientCmd::SetConfigOption {
@@ -147,6 +236,15 @@ async fn settings_between_turns(kind: &str, scenario: &str) {
         None
     };
     commands.send(setting(value)).await.unwrap();
+    if let Some(old) = &old_selection {
+        let (flushed, flush) = oneshot::channel();
+        commands
+            .send(ClientCmd::FlushForTest(flushed))
+            .await
+            .unwrap();
+        flush.await.unwrap();
+        settings_success(&agent_write, old, kind, "default").await;
+    }
     let selection = settings_request(&mut requests).await;
     assert_eq!(selection["method"], method);
     if scenario == "accepted" {
@@ -159,9 +257,6 @@ async fn settings_between_turns(kind: &str, scenario: &str) {
     )
     .await;
     settings_stopped(&mut events).await;
-    if let Some(old) = old_selection {
-        settings_reject(&agent_write, &old).await;
-    }
     commands.send(prompt()).await.unwrap();
     if scenario != "accepted" {
         // The failure may arrive after the prompt finishes. It still belongs
@@ -234,6 +329,18 @@ async fn settings_stopped(events: &mut mpsc::Receiver<Event>) {
     .expect("turn finishes");
 }
 
+async fn settings_snapshot(
+    writer: &SharedWrite,
+    request: &serde_json::Value,
+    model: &str,
+    effort: &str,
+) {
+    settings_reply(writer, request, serde_json::json!({"configOptions":[
+        {"id":"model", "name":"Model", "category":"model", "type":"select", "currentValue":model, "options":[]},
+        {"id":"effort", "name":"Effort", "category":"thought_level", "type":"select", "currentValue":effort, "options":[]}
+    ]})).await;
+}
+
 async fn settings_request(requests: &mut mpsc::Receiver<serde_json::Value>) -> serde_json::Value {
     tokio::time::timeout(Duration::from_secs(10), requests.recv())
         .await
@@ -276,6 +383,7 @@ async fn settings_success(
     } else {
         serde_json::json!({"configOptions": [{
             "id": if kind == "config-mode" { "mode" } else { kind },
+            "category": if kind == "config-mode" { "mode" } else if kind == "effort" { "thought_level" } else { "model" },
             "name": kind, "type": "select", "currentValue": value,
             "options": [{"value": value, "name": value}]
         }]})
