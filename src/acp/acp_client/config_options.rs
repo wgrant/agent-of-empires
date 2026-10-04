@@ -11,6 +11,7 @@ use agent_client_protocol::schema::v1::{
 };
 use agent_client_protocol::{Agent, ConnectionTo};
 use tokio::sync::mpsc;
+use tokio::task::JoinHandle;
 use tracing::{debug, info, warn};
 
 /// `None` when the response carried no options, so cached selectors persist.
@@ -115,7 +116,7 @@ pub(super) fn dispatch_set_config_option(
     value: String,
     purpose: ConfigOptionDispatchPurpose,
     event_tx: mpsc::Sender<Event>,
-) {
+) -> JoinHandle<bool> {
     info!(
         target: "acp.protocol",
         "sending session/set_config_option {config_id}={value}"
@@ -126,10 +127,14 @@ pub(super) fn dispatch_set_config_option(
         SessionConfigValueId::new(value.clone()),
     ));
     tokio::spawn(async move {
-        let events = match sent.block_task().await {
+        let result = tokio::time::timeout(std::time::Duration::from_secs(10), sent.block_task())
+            .await
+            .map_err(|_| "Settings request timed out".to_string())
+            .and_then(|result| result.map_err(|error| error.to_string()));
+        let applied = result.is_ok();
+        let events = match result {
             Ok(resp) => config_option_success_events(resp.config_options, value, purpose),
-            Err(e) => {
-                let reason = e.to_string();
+            Err(reason) => {
                 warn!(target: "acp.protocol", "session/set_config_option failed: {reason}");
                 vec![config_option_failure_event(
                     config_id, value, reason, purpose,
@@ -139,7 +144,8 @@ pub(super) fn dispatch_set_config_option(
         for event in events {
             let _ = event_tx.send(event).await;
         }
-    });
+        applied
+    })
 }
 
 /// Best-effort application of a configured default. A value the agent no
@@ -336,7 +342,7 @@ pub(super) fn dispatch_set_mode(
     channels: &SessionChannels,
     event_tx: mpsc::Sender<Event>,
     while_prompting: bool,
-) {
+) -> Option<JoinHandle<bool>> {
     let target = resolve_mode_set_target(
         &mode_id,
         &channels.available_mode_ids,
@@ -344,18 +350,17 @@ pub(super) fn dispatch_set_mode(
     );
     let Some(target) = target else {
         debug!(target: "acp.protocol", "skipping mode switch mode={mode_id}: not advertised");
-        return;
+        return None;
     };
     if let ModeSetTarget::ConfigOption(config_id) = target {
-        dispatch_set_config_option(
+        return Some(dispatch_set_config_option(
             connection,
             acp_session_id,
             config_id.to_string(),
             mode_id,
             ConfigOptionDispatchPurpose::Mode,
             event_tx,
-        );
-        return;
+        ));
     }
     info!(
         target: "acp.protocol",
@@ -366,19 +371,24 @@ pub(super) fn dispatch_set_mode(
         acp_session_id.clone(),
         mode_id.clone(),
     ));
-    tokio::spawn(async move {
-        let event = match sent.block_task().await {
+    Some(tokio::spawn(async move {
+        let result = tokio::time::timeout(std::time::Duration::from_secs(10), sent.block_task())
+            .await
+            .map_err(|_| "Settings request timed out".to_string())
+            .and_then(|result| result.map_err(|error| error.to_string()));
+        let applied = result.is_ok();
+        let event = match result {
             Ok(_) => Event::CurrentModeChanged {
                 current_mode_id: mode_id,
             },
-            Err(e) => {
-                let reason = e.to_string();
+            Err(reason) => {
                 warn!(target: "acp.protocol", while_prompting, "session/set_mode failed: {reason}");
                 Event::ModeSwitchFailed { mode_id, reason }
             }
         };
         let _ = event_tx.send(event).await;
-    });
+        applied
+    }))
 }
 
 #[cfg(test)]

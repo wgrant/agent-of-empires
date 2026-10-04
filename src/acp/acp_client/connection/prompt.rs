@@ -396,7 +396,7 @@ impl Session {
                 return Ok(Flow::Break);
             }
             Some(ClientCmd::SetConfigOption { config_id, value }) => {
-                self.dispatch_config_option(config_id, value)
+                self.dispatch_config_option(config_id, value, true)
             }
             Some(ClientCmd::SetMode(mode_id)) => self.dispatch_mode(mode_id, true),
             Some(ClientCmd::StopAsyncTask(task_id)) => {
