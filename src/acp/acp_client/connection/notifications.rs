@@ -3,7 +3,7 @@
 
 use crate::acp::agent_profiles::AgentProfile;
 use crate::acp::background_agent::{spawn_tailer, TailerStart, TranscriptSource};
-use crate::acp::state::Event;
+use crate::acp::state::{ConfigOptionDescriptor, Event};
 use agent_client_protocol::schema::v1::{SessionId, SessionNotification, SessionUpdate};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
@@ -31,7 +31,14 @@ pub(super) fn now_ms() -> i64 {
     chrono::Utc::now().timestamp_millis()
 }
 
+#[derive(Default)]
+pub(super) struct ObservedSettings {
+    pub(super) options: Option<Vec<ConfigOptionDescriptor>>,
+    pub(super) mode: Option<String>,
+}
+
 pub(super) struct Shared {
+    pub(super) observed_settings: std::sync::Mutex<ObservedSettings>,
     pub(super) event_tx: mpsc::Sender<Event>,
     /// Admits only the lifecycle-selected native session; everything the
     /// agent sends for another id is refused or buffered here (#3937).
@@ -97,6 +104,7 @@ impl Shared {
             None => TranscriptSource::Host,
         };
         Self {
+            observed_settings: Default::default(),
             event_tx,
             ingress,
             session_label,
@@ -123,10 +131,29 @@ impl Shared {
     }
 
     pub(super) async fn emit(&self, event: Event) {
+        self.observe_settings(&event);
         if matches!(event, Event::AcpSessionAssigned { .. }) {
             self.session_established.store(true, Ordering::Relaxed);
         }
         let _ = self.event_tx.send(event).await;
+    }
+
+    fn observe_settings(&self, event: &Event) {
+        match event {
+            Event::AcpSessionAssigned { .. } => {
+                *self.observed_settings.lock().unwrap() = ObservedSettings::default();
+            }
+            Event::ConfigOptionsUpdated { options } => {
+                self.observed_settings.lock().unwrap().options = Some(options.clone());
+            }
+            Event::CurrentModeChanged { current_mode_id }
+            | Event::ModesAvailable {
+                current_mode_id, ..
+            } => {
+                self.observed_settings.lock().unwrap().mode = Some(current_mode_id.clone());
+            }
+            _ => {}
+        }
     }
 
     /// Publish the native session the lifecycle selected and apply the
@@ -338,6 +365,7 @@ impl Shared {
                     .expect("workflow attribution mutex poisoned")
                     .observe(&event);
             }
+            self.observe_settings(&event);
             if self.event_tx.send(event).await.is_err() {
                 break;
             }

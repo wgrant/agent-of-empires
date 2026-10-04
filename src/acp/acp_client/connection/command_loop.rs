@@ -113,32 +113,68 @@ impl Session {
                 return;
             }
         };
+        {
+            let observed = self.shared.observed_settings.lock().unwrap();
+            if let Some(options) = &observed.options {
+                self.channels.observe(options);
+            }
+            if let Some(mode) = &observed.mode {
+                self.channels.current_mode = Some(mode.clone());
+            }
+        }
         if let Some(model) = instance.agent_model {
+            self.default_model = Some(model.clone());
             if let Some(option) = &self.channels.model_option {
-                if !option.is_current(&model) {
+                if !option.is_current(&model) || self.has_outstanding_setting(&option.id) {
                     self.dispatch_config_option(option.id.clone(), model, false);
                 }
             }
+        }
+        if let Some(effort) = &instance.acp_effort {
+            self.default_effort = Some(effort.clone());
         }
         if let (Some(effort), Some(id)) = (
             instance.acp_effort,
             self.channels.thought_level_config_option_id.clone(),
         ) {
-            if self.channels.current_values.get(&id) != Some(&effort) {
+            if self.channels.current_values.get(&id) != Some(&effort)
+                || self.has_outstanding_setting(&id)
+            {
                 self.dispatch_config_option(id, effort, false);
             }
         }
-        if let Some(mode) = instance.acp_mode_id {
+        if let Some(mode) = instance.acp_mode_id.or_else(|| {
+            self.shared
+                .profile
+                .yolo_mode_id
+                .filter(|_| instance.yolo_mode)
+                .map(str::to_owned)
+        }) {
+            self.default_mode = Some(mode.clone());
             let current = self
                 .channels
                 .mode_config_option_id
                 .as_ref()
                 .and_then(|id| self.channels.current_values.get(id))
                 .or(self.channels.current_mode.as_ref());
-            if current != Some(&mode) {
+            let key = self
+                .channels
+                .mode_config_option_id
+                .as_deref()
+                .unwrap_or("legacy_mode");
+            if current != Some(&mode) || self.has_outstanding_setting(key) {
                 self.dispatch_mode(mode, false);
             }
         }
+    }
+    fn has_outstanding_setting(&self, key: &str) -> bool {
+        self.setting_in_flight
+            .as_ref()
+            .is_some_and(|flight| flight.pending.key == key)
+            || self
+                .pending_settings
+                .iter()
+                .any(|pending| pending.key == key)
     }
     pub(super) async fn send_cancel(&self) -> Result<(), agent_client_protocol::Error> {
         match self.control.as_ref() {
@@ -213,11 +249,25 @@ impl Session {
         let value = match &pending.change {
             SettingChange::Config { value, .. } | SettingChange::Mode(value) => value.clone(),
         };
+        let applied_value = (status == SettingApplicationStatus::Applied)
+            .then(|| {
+                self.channels
+                    .current_values
+                    .get(&pending.key)
+                    .cloned()
+                    .or_else(|| {
+                        (pending.key == "legacy_mode")
+                            .then(|| self.channels.current_mode.clone())
+                            .flatten()
+                    })
+            })
+            .flatten();
         self.shared
             .emit(Event::SettingApplicationChanged {
                 config_id: pending.key.clone(),
                 application: SettingApplication {
                     value,
+                    applied_value,
                     revision: pending.revision,
                     status,
                 },
@@ -396,11 +446,11 @@ impl Session {
         let mut idle_tick = tokio::time::interval(BETWEEN_PROMPT_IDLE_CHECK_INTERVAL);
         idle_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
-            self.start_setting(false).await;
             self.acp_session_id =
                 self.shared.ingress.current().ok_or_else(|| {
                     acp_internal_error("native session is not established".into())
                 })?;
+            self.start_setting(false).await;
             // Fallback prompts go first so later messages cannot overtake them.
             let cmd = match (!self.settings_pending())
                 .then(|| self.pending_prompts.pop_front())
@@ -432,6 +482,7 @@ impl Session {
                     }
                 }
                 Some(ClientCmd::Cancel) => {
+                    self.pending_prompts.clear();
                     info!(target: "acp.protocol", "sending session/cancel (no prompt in flight)");
                     // Not `?`: a dead connection is when the UI most needs
                     // the synthetic Stopped below.
@@ -452,6 +503,7 @@ impl Session {
                         .await;
                 }
                 Some(ClientCmd::ForceStop) => {
+                    self.pending_prompts.clear();
                     // The supervisor publishes the terminal here (#1100).
                     info!(target: "acp.protocol", "force-stop requested with no prompt in flight; best-effort cancel only");
                     self.stand_down_idle_completion();
@@ -608,9 +660,11 @@ impl Session {
         let message = match result {
             Ok(new_session) if new_session.session_id.0 != self.acp_session_id.0 => {
                 let new_id = new_session.session_id.clone();
-                // session/new is the irreversible commit; the loop picks the
-                // id back up from the ingress on its next iteration.
+                // An irreversible identity change retires old-session requests.
                 self.session_from_storage = false;
+                self.acp_session_id = new_id.clone();
+                self.setting_in_flight = None;
+                self.pending_settings.clear();
                 self.channels = SessionChannels::new(
                     new_session.modes.as_ref(),
                     new_session.config_options.as_deref(),
@@ -642,6 +696,16 @@ impl Session {
                 }
                 self.reapply_defaults(&new_id, new_session.config_options.as_deref(), deadline)
                     .await;
+                if self.channels.mode_config_option_id.is_none() {
+                    if let Some(mode) = self
+                        .default_mode
+                        .clone()
+                        .filter(|mode| self.channels.current_mode.as_ref() != Some(mode))
+                    {
+                        self.dispatch_mode(mode, false);
+                    }
+                }
+                self.reconcile_saved_settings().await;
                 self.shared
                     .emit(Event::Stopped {
                         reason: "session_reset".into(),

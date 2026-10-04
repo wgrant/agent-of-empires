@@ -470,6 +470,8 @@ pub enum SettingApplicationStatus {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SettingApplication {
     pub value: String,
+    #[serde(default)]
+    pub applied_value: Option<String>,
     pub revision: u64,
     pub status: SettingApplicationStatus,
 }
@@ -1222,6 +1224,7 @@ impl AcpState {
             Event::PromptCapabilities { steering, .. } => self.steering = steering,
             Event::AcpSessionAssigned { .. } => {
                 self.setting_applications.clear();
+                self.config_option_switch_failed = None;
                 self.startup_error = None;
                 self.rate_limit = None;
             }
