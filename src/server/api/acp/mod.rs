@@ -20,6 +20,7 @@ mod config;
 mod history;
 mod install;
 mod prompt;
+mod settings;
 mod view;
 mod worker;
 
