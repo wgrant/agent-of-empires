@@ -5,9 +5,9 @@ import { agentLaunchOptions, updateAgentLaunchOptions } from "./agentLaunchOptio
 afterEach(() => vi.unstubAllGlobals());
 
 describe("agent launch options", () => {
-  it("offers OpenCode Yolo separately from ACP modes and sends a typed restart patch", async () => {
-    expect(agentLaunchOptions("claude", false)).toEqual([]);
-    expect(agentLaunchOptions("opencode", true)).toMatchObject([{ id: "yolo_mode", enabled: true }]);
+  it("uses the server's restart policy and does not implicitly restart when saving", async () => {
+    expect(agentLaunchOptions(false, false)).toEqual([]);
+    expect(agentLaunchOptions(true, true)).toMatchObject([{ id: "yolo_mode", enabled: true }]);
 
     const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 202 }));
     vi.stubGlobal("fetch", fetchMock);

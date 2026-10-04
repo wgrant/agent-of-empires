@@ -94,7 +94,10 @@ describe("OpenCode launch options", () => {
         selectors: [],
         config_options: [],
         mode_id: null,
-        yolo_mode: { enabled: false, applied_known: true, applied_enabled: false },
+        yolo_mode: { enabled: false, requires_restart: true, applied_known: true, applied_enabled: false },
+        pending: status
+          ? [{ id: "auto_compaction", name: "Auto-compaction", application: running ? "restart" : "next_start" }]
+          : [],
         auto_compaction: { tokens, bounds: [100000, 1000000], applied_known: true, applied_tokens: applied },
       };
       vi.stubGlobal(
@@ -145,7 +148,8 @@ describe("OpenCode launch options", () => {
               selectors: [],
               config_options: [],
               mode_id: null,
-              yolo_mode: { enabled: false, applied_known: true, applied_enabled: false },
+              yolo_mode: { enabled: false, requires_restart: true, applied_known: true, applied_enabled: false },
+              pending: [],
               auto_compaction: { tokens: null, bounds: null, applied_known: true, applied_tokens: null },
             }),
             { status: 200 },

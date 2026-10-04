@@ -28,7 +28,8 @@ beforeEach(() => {
     mode_id: null,
     selectors: [],
     config_options: [],
-    yolo_mode: { enabled: false, applied_known: true, applied_enabled: false },
+    pending: [],
+    yolo_mode: { enabled: false, requires_restart: false, applied_known: true, applied_enabled: false },
     auto_compaction: { tokens: null, bounds: [100000, 1000000], applied_known: true, applied_tokens: null },
   };
   requests = [];
@@ -43,6 +44,22 @@ beforeEach(() => {
           ...option,
           category: option.config_id === "mode" ? "mode" : "model",
         }));
+      settings.pending = [
+        ...(patch.config_options ?? []).map((option: { config_id: string }) => ({
+          id: option.config_id,
+          name: option.config_id === "mode" ? "Mode" : "Model",
+          application: settings.running ? ("confirmation" as const) : ("next_start" as const),
+        })),
+        ...(settings.auto_compaction.tokens === settings.auto_compaction.applied_tokens
+          ? []
+          : [
+              {
+                id: "auto_compaction",
+                name: "Auto-compaction",
+                application: settings.running ? ("restart" as const) : ("next_start" as const),
+              },
+            ]),
+      ];
       return new Response("{}", { status: 200 });
     }
     return new Response(JSON.stringify(settings), { status: 200 });
@@ -102,6 +119,64 @@ const trigger = () => screen.getByTestId("session-settings-trigger");
 const dialog = () => screen.queryByTestId("session-settings-dialog");
 
 describe("SessionSettingsControl", () => {
+  it("uses server queued status even when local observed values differ and offers no restart", async () => {
+    settings.selectors = [{ config_id: "model", category: "model", value: "sonnet" }];
+    settings.pending = [{ id: "model", name: "Model", application: "queued" }];
+    mount([MODEL], true);
+    await waitFor(() =>
+      expect(trigger().getAttribute("aria-label")).toContain("Model: Applies when this turn finishes"),
+    );
+    fireEvent.click(trigger());
+    expect(screen.getByTestId("config-option-model").textContent).toContain("Sonnet");
+    expect(screen.getByRole("region", { name: "Pending settings" }).textContent).toContain(
+      "Applies when this turn finishes",
+    );
+    expect(screen.queryByRole("button", { name: "Apply & restart" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+  });
+
+  it("retries each rejected saved selector without forcing a restart", async () => {
+    settings.selectors = [
+      { config_id: "model", category: "model", value: "sonnet" },
+      { config_id: "mode", category: "mode", value: "bypassPermissions" },
+    ];
+    settings.pending = [
+      { id: "model", name: "Model", application: "rejected", reason: "Model unavailable" },
+      { id: "mode", name: "Mode", application: "rejected", reason: "Mode refused" },
+    ];
+    mount([MODEL, MODE]);
+    await waitFor(() => expect(trigger().getAttribute("aria-label")).toContain("2 settings pending"));
+    fireEvent.click(trigger());
+    const pending = screen.getByRole("region", { name: "Pending settings" });
+    expect(pending.textContent).toContain("Model unavailable");
+    expect(pending.textContent).toContain("Mode refused");
+    expect(screen.queryByRole("button", { name: "Apply & restart" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() =>
+      expect(requests).toEqual([
+        {
+          config_options: [
+            { config_id: "model", value: "sonnet" },
+            { config_id: "mode", value: "bypassPermissions" },
+          ],
+          restart: false,
+        },
+      ]),
+    );
+    await waitFor(() => expect(dialog()).toBeNull());
+  });
+
+  it("offers an explicit restart for launch settings changed during startup", async () => {
+    settings.running = false;
+    settings.starting = true;
+    settings.auto_compaction.tokens = 200000;
+    settings.pending = [{ id: "auto_compaction", name: "Auto-compaction", application: "restart" }];
+    mount([MODEL]);
+    await waitFor(() => expect(trigger().getAttribute("aria-label")).toContain("Restart required"));
+    fireEvent.click(trigger());
+    expect(screen.getByRole("button", { name: "Apply & restart" })).toBeTruthy();
+    expect(screen.getByText("Changes require a restart.")).toBeTruthy();
+  });
   it("shows the summary and tints only the permission for a destructive mode", () => {
     mount([{ ...MODE, current_value: "bypassPermissions" }, MODEL]);
     expect(trigger().textContent).toContain("Claude · Default · Opus");
@@ -196,6 +271,7 @@ describe("SessionSettingsControl", () => {
 
   it.each(["Cancel", "Escape", "backdrop"])("discards only this visit's edits on %s", async (action) => {
     settings.auto_compaction.tokens = 200000;
+    settings.pending = [{ id: "auto_compaction", name: "Auto-compaction", application: "restart" }];
     mount([MODEL]);
     fireEvent.click(trigger());
     await screen.findByTestId("auto-compaction");
@@ -258,7 +334,7 @@ describe("SessionSettingsControl", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Apply", exact: true }));
     expect(await screen.findByRole("alert")).toHaveProperty("textContent", "Save rejected");
-    expect(screen.getByRole("status").textContent).toContain("otherwise on next agent start");
+    expect(screen.getByRole("status").textContent).toContain("other changes stay pending");
     expect((screen.getByLabelText("Working context budget (tokens)") as HTMLInputElement).value).toBe("100000");
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(dialog()).toBeNull();
@@ -283,6 +359,7 @@ describe("SessionSettingsControl", () => {
 
   it("restarts an idle agent directly and offers no restart when reverting to the applied budget", async () => {
     settings.auto_compaction.tokens = 200000;
+    settings.pending = [{ id: "auto_compaction", name: "Auto-compaction", application: "restart" }];
     mount([MODEL]);
     fireEvent.click(trigger());
     await screen.findByTestId("auto-compaction");
