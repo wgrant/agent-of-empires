@@ -35,9 +35,20 @@ test("mobile context settings save without restart and require confirmation to a
   await openStructuredSession(page, mock);
   await waitForComposerConnected(page);
   await openSessionSettings(page);
+  const context = page.getByRole("region", { name: "Context management" });
+  await expect(context.getByRole("button")).toHaveCount(0);
   await page.getByLabel("Auto-compaction", { exact: true }).selectOption("custom");
   const input = page.getByLabel("Working context budget (tokens)");
   await input.fill("200000");
+  await expect(context.getByRole("status")).toHaveText("Unsaved changes.");
+  for (const control of [
+    context.getByRole("combobox"),
+    input,
+    context.getByRole("button", { name: "Save for next start" }),
+    context.getByRole("button", { name: "Apply and restart…" }),
+  ]) {
+    expect(await control.evaluate((node) => node.getBoundingClientRect().height)).toBeGreaterThanOrEqual(32);
+  }
   await page.getByRole("button", { name: "Save for next start" }).click();
   await expect.poll(() => patches).toEqual([{ auto_compaction: { tokens: 200000 }, restart: false }]);
   await expect(page.getByText(/Saved. Restart the agent/)).toBeVisible();
@@ -51,4 +62,5 @@ test("mobile context settings save without restart and require confirmation to a
   await page.getByRole("button", { name: "Save for next start" }).click();
   await expect.poll(() => patches).toHaveLength(2);
   expect(patches[1]).toEqual({ auto_compaction: { tokens: null }, restart: false });
+  await expect(context.getByRole("button")).toHaveCount(0);
 });

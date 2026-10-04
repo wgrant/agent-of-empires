@@ -55,6 +55,7 @@ export function CompactionBudgetControl({ sessionId }: { sessionId: string }) {
       tokens <= state.bounds[1]);
   const changed = state != null && tokens !== state.tokens;
   const pending = state != null && state.applied_known && state.tokens !== state.applied_tokens;
+  const unknown = state != null && state.running && !state.applied_known;
   const save = async (restart: boolean) => {
     setSaving(true);
     setSaveError(null);
@@ -72,7 +73,8 @@ export function CompactionBudgetControl({ sessionId }: { sessionId: string }) {
     }
   };
 
-  const button = "rounded-md border border-surface-700 px-2 py-1 text-xs text-text-secondary disabled:opacity-50";
+  const button =
+    "min-h-8 rounded-md border border-surface-700 px-2 py-1 text-xs text-text-secondary disabled:opacity-50";
   return (
     <section aria-label="Context management" className="flex flex-col gap-2 text-xs">
       <h3 className="font-medium text-text-primary">Context management</h3>
@@ -93,7 +95,7 @@ export function CompactionBudgetControl({ sessionId }: { sessionId: string }) {
                 setDraft(String(state.tokens ?? state.bounds![0]));
                 setConfirmRestart(false);
               }}
-              className="rounded-md border border-surface-700 bg-surface-800 p-1"
+              className="min-h-8 shrink-0 rounded-md border border-surface-700 bg-surface-800 p-1"
             >
               <option value="default">Default</option>
               <option value="custom">Custom budget</option>
@@ -114,34 +116,37 @@ export function CompactionBudgetControl({ sessionId }: { sessionId: string }) {
                   setDraft(e.target.value);
                   setConfirmRestart(false);
                 }}
-                className="w-28 rounded-md border border-surface-700 bg-surface-800 p-1"
+                className="min-h-8 w-28 shrink-0 rounded-md border border-surface-700 bg-surface-800 p-1"
               />
             </label>
           )}
           <p className="text-[11px] text-text-dim">
-            Default uses the agent’s own policy. A custom budget changes when compaction happens, not the model’s
-            capacity. More frequent compaction can lose detail and does not always reduce cost.
+            {isCustom
+              ? "A custom budget changes when compaction happens, not the model’s capacity. More frequent compaction can lose detail and does not always reduce cost."
+              : "Uses the agent’s default compaction policy."}
           </p>
           {!valid && (
             <p role="alert" className="text-amber-300">
               Enter {state.bounds[0].toLocaleString()} to {state.bounds[1].toLocaleString()} tokens.
             </p>
           )}
-          <p role="status" className="text-text-dim">
-            {saving
-              ? "Saving…"
-              : changed
-                ? "Unsaved changes."
-                : state.starting
-                  ? "Starting agent with the saved policy…"
-                  : !state.running
-                    ? "Applies on the next agent start."
-                    : !state.applied_known
-                      ? "Running agent’s budget is unknown. Restart to use the saved policy."
-                      : pending
-                        ? "Saved. Restart the agent to apply, or wait for its next start."
-                        : "Applied to this agent’s launch configuration."}
-          </p>
+          {(isCustom || changed || pending || state.starting || unknown) && (
+            <p role="status" className="text-text-dim">
+              {saving
+                ? "Saving…"
+                : changed
+                  ? "Unsaved changes."
+                  : state.starting
+                    ? "Starting agent with the saved policy…"
+                    : !state.running
+                      ? "Applies on the next agent start."
+                      : !state.applied_known
+                        ? "Running agent’s budget is unknown. Restart to use the saved policy."
+                        : pending
+                          ? "Saved. Restart the agent to apply, or wait for its next start."
+                          : "Using the saved compaction policy."}
+            </p>
+          )}
           {confirmRestart ? (
             <div className="flex flex-col gap-2">
               <p className="text-amber-300">
@@ -157,26 +162,28 @@ export function CompactionBudgetControl({ sessionId }: { sessionId: string }) {
               </div>
             </div>
           ) : (
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                className={button}
-                disabled={saving || !valid || !changed}
-                onClick={() => void save(false)}
-              >
-                Save for next start
-              </button>
-              {state.running && (
+            (changed || pending || unknown) && (
+              <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
                   className={button}
-                  disabled={saving || !valid || (!changed && !pending && state.applied_known)}
-                  onClick={() => setConfirmRestart(true)}
+                  disabled={saving || !valid || !changed}
+                  onClick={() => void save(false)}
                 >
-                  Apply and restart…
+                  Save for next start
                 </button>
-              )}
-            </div>
+                {state.running && (
+                  <button
+                    type="button"
+                    className={button}
+                    disabled={saving || !valid || (!changed && !pending && state.applied_known)}
+                    onClick={() => setConfirmRestart(true)}
+                  >
+                    Apply and restart…
+                  </button>
+                )}
+              </div>
+            )
           )}
         </>
       )}

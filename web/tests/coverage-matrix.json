@@ -10,7 +10,7 @@
       "components": ["web/src/components/acp/CompactionBudgetControl.tsx", "web/src/components/acp/SessionSettings.tsx"]
     },
     {
-      "id": "acp.session-compaction-budget.mobile",
+      "id": "acp.session-compaction-budget.mobile-touch-targets",
       "kind": "mocked-playwright",
       "risk": "high",
       "specs": ["tests/acp-compaction-budget.spec.ts"],
