@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { CompactionBudgetControl } from "./CompactionBudgetControl";
 
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 function mockSettings(overrides: Record<string, unknown> = {}) {
@@ -33,6 +34,7 @@ it("saves a custom budget without restarting and distinguishes the pending launc
   const fetchMock = mockSettings();
   fireEvent.change(await screen.findByLabelText("Auto-compaction"), { target: { value: "custom" } });
   fireEvent.change(screen.getByLabelText("Working context budget (tokens)"), { target: { value: "200000" } });
+  expect(screen.getByRole("status").textContent).toBe("Unsaved changes.");
   fireEvent.click(screen.getByRole("button", { name: "Save for next start" }));
   await waitFor(() =>
     expect(fetchMock).toHaveBeenCalledWith("/api/sessions/session%20%2F%20one/acp/launch-options", {
@@ -62,6 +64,8 @@ it("requires explicit restart confirmation and can restore the native default", 
 
 it("validates bounds and never offers to wake a dormant session", async () => {
   mockSettings({ running: false, applied_known: false });
+  await screen.findByLabelText("Auto-compaction");
+  expect(screen.getByRole("status").textContent).toContain("next agent start");
   fireEvent.change(await screen.findByLabelText("Auto-compaction"), { target: { value: "custom" } });
   fireEvent.change(screen.getByLabelText("Working context budget (tokens)"), { target: { value: "50000" } });
   expect(screen.getByRole("alert").textContent).toContain("100,000");
@@ -69,7 +73,7 @@ it("validates bounds and never offers to wake a dormant session", async () => {
   expect(screen.queryByRole("button", { name: /restart/i })).toBeNull();
   fireEvent.change(screen.getByLabelText("Working context budget (tokens)"), { target: { value: "" } });
   expect((screen.getByRole("button", { name: "Save for next start" }) as HTMLButtonElement).disabled).toBe(true);
-  expect(screen.getByRole("status").textContent).toContain("next agent start");
+  expect(screen.getByRole("status").textContent).toBe("Unsaved changes.");
 });
 
 it("does not claim application for reattached workers or unsupported backends", async () => {
@@ -101,4 +105,37 @@ it("reports load and save failures without discarding the draft", async () => {
   );
   render(<CompactionBudgetControl sessionId="missing" />);
   expect(await screen.findByRole("alert")).toHaveProperty("textContent", "Could not load context settings (HTTP 404)");
+});
+
+it("clears a recovered load error but preserves a rejected save through refresh", async () => {
+  let refresh: () => void = () => {
+    throw new Error("refresh timer not registered");
+  };
+  const setInterval = window.setInterval.bind(window);
+  vi.spyOn(window, "setInterval").mockImplementation((handler, delay) => {
+    if (delay === 2000 && typeof handler === "function") refresh = () => handler();
+    return setInterval(handler, delay);
+  });
+  const fetchMock = mockSettings();
+  await screen.findByLabelText("Auto-compaction");
+  fetchMock.mockImplementationOnce(async () => new Response("", { status: 503 }));
+  await act(async () => {
+    refresh();
+  });
+  expect(await screen.findByRole("alert")).toHaveProperty("textContent", "Could not load context settings (HTTP 503)");
+  await act(async () => {
+    refresh();
+  });
+  await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  fireEvent.change(screen.getByLabelText("Auto-compaction"), { target: { value: "custom" } });
+  fetchMock.mockImplementationOnce(
+    async () => new Response(JSON.stringify({ message: "Save rejected" }), { status: 403 }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Save for next start" }));
+  expect(await screen.findByRole("alert")).toHaveProperty("textContent", "Save rejected");
+  await act(async () => {
+    refresh();
+  });
+  expect(screen.getByRole("alert").textContent).toBe("Save rejected");
+  expect(screen.getByRole("status").textContent).toBe("Unsaved changes.");
 });
