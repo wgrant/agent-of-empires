@@ -17,6 +17,14 @@ use crate::acp::runner_lifecycle::WorkerPhase;
 use crate::acp::state::Event;
 
 impl<S: BroadcastSink> Supervisor<S> {
+    /// A reattached runner has no cached launch configuration, so its budget is unknown.
+    pub async fn compaction_budget(&self, session_id: &str) -> Option<Option<u64>> {
+        let workers = self.workers.lock().await;
+        match &workers.get(session_id)?.kind {
+            WorkerKind::Runner { spawn_config } => Some(spawn_config.auto_compact_tokens),
+            _ => None,
+        }
+    }
     /// Wait until the session's worker is installed; false once no resume is
     /// pending or `deadline` elapses.
     pub(super) async fn wait_for_worker(&self, session_id: &str, deadline: Duration) -> bool {

@@ -56,6 +56,7 @@ fn spawn_config_with_shim_env(shim: PathBuf, env: Vec<(String, String)>) -> Spaw
         mcp_servers: Vec::new(),
         claude_store_pin: None,
         base_host_environment: vec![],
+        auto_compact_tokens: None,
     }
 }
 

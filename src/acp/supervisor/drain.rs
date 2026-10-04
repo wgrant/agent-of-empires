@@ -453,6 +453,9 @@ impl<S: BroadcastSink> Drain<S> {
                         handle.client = Arc::clone(&client);
                         handle.lease = respawn_lease.clone();
                         handle.native_session_id = None;
+                        if let WorkerKind::Runner { spawn_config } = &mut handle.kind {
+                            **spawn_config = config.clone();
+                        }
                         None
                     }
                     None => Some(InstallError::Stale),
@@ -507,6 +510,18 @@ impl<S: BroadcastSink> Drain<S> {
     /// Re-resolve what may have changed since the first launch: model pins,
     /// host hook env, and MCP servers.
     async fn refresh_launch_env(session_id: &str, config: &mut SpawnConfig) {
+        match crate::acp::compaction::load_budget(
+            config.source_profile.clone(),
+            session_id.to_string(),
+            config.agent_key.clone(),
+        )
+        .await
+        {
+            Ok(tokens) => config.auto_compact_tokens = tokens,
+            Err(error) => {
+                warn!(target: "acp.supervisor", %session_id, %error, "could not reload compaction budget")
+            }
+        }
         let agent = config.agent_key.clone();
         let profile = config.source_profile.clone().unwrap_or_default();
         let cwd = config.cwd.clone();

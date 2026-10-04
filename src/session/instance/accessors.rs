@@ -24,6 +24,7 @@ impl Instance {
             tool: "claude".to_string(),
             detect_as: String::new(),
             yolo_mode: false,
+            auto_compact_tokens: None,
             status: Status::Idle,
             created_at: Utc::now(),
             last_accessed_at: None,

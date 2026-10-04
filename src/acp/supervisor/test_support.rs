@@ -313,6 +313,7 @@ pub(super) fn runner_config(socket_path: PathBuf) -> SpawnConfig {
         generation: 0,
         claude_store_pin: None,
         base_host_environment: vec![],
+        auto_compact_tokens: None,
     }
 }
 

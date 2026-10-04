@@ -10,6 +10,7 @@ pub mod approvals;
 pub mod background_agent;
 pub mod capability_probe;
 pub mod client;
+pub mod compaction;
 pub mod context_primer;
 pub mod control_cache;
 pub mod control_protocol;

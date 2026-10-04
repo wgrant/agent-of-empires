@@ -373,7 +373,27 @@ impl AcpClient {
 
     /// Launch an agent: a detached runner when `socket_path` is set, else an
     /// in-proc stdio subprocess (tests).
-    pub async fn spawn(config: SpawnConfig, session_id: AcpSessionId) -> Result<Self, AcpError> {
+    pub async fn spawn(
+        mut config: SpawnConfig,
+        session_id: AcpSessionId,
+    ) -> Result<Self, AcpError> {
+        let mut environment = config.provider_env.clone();
+        environment.extend(config.host_environment.clone());
+        let overrides = crate::acp::compaction::environment(
+            &config.agent_key,
+            config.auto_compact_tokens,
+            &environment,
+        )
+        .map_err(AcpError::Spawn)?;
+        let destination = if config.sandbox_info.is_some() {
+            &mut config.provider_env
+        } else {
+            &mut config.host_environment
+        };
+        for (key, value) in overrides {
+            destination.retain(|(existing, _)| existing != &key);
+            destination.push((key, value));
+        }
         // A missing cwd would ENOENT like a missing binary and misdirect the
         // user to reinstalling the adapter (#1089).
         if !config.cwd.exists() {
