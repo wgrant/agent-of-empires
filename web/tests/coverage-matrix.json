@@ -2854,6 +2854,7 @@
         "src/hooks/useAcpSession.test.ts"
       ],
       "components": [
+        "web/src/components/Dialog.tsx",
         "web/src/components/acp/SessionConfigControls.tsx",
         "web/src/components/acp/useProviderSwitch.ts",
         "web/src/components/acp/SessionSettings.tsx",
