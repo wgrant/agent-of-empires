@@ -59,6 +59,17 @@ impl<S: BroadcastSink> Supervisor<S> {
             .epoch()
     }
 
+    pub(crate) async fn test_insert_recording_worker(
+        &self,
+        session_id: &str,
+    ) -> Arc<std::sync::Mutex<Vec<&'static str>>> {
+        let (client, _events, commands) =
+            AcpClient::fake_for_test_cmd_recording(AcpSessionId(session_id.to_string()));
+        self.test_install_handle(session_id, client, WorkerKind::Stdio, None)
+            .await;
+        commands
+    }
+
     /// Occupy a slot with a fake worker already carrying what a real drain
     /// publishes before the assigned frame reaches the listener: the
     /// agent-assigned id, and the store the launch observed (#4127).

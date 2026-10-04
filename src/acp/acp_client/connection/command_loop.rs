@@ -86,6 +86,12 @@ impl Session {
         {
             self.default_model = Some(value.clone());
         }
+        if self.channels.thought_level_config_option_id.as_deref() == Some(config_id.as_str()) {
+            self.default_effort = Some(value.clone());
+        }
+        if self.channels.mode_config_option_id.as_deref() == Some(config_id.as_str()) {
+            self.default_mode = Some(value.clone());
+        }
         dispatch_set_config_option(
             &self.connection,
             &self.acp_session_id,
@@ -96,7 +102,8 @@ impl Session {
         );
     }
 
-    pub(super) fn dispatch_mode(&self, mode_id: String, while_prompting: bool) {
+    pub(super) fn dispatch_mode(&mut self, mode_id: String, while_prompting: bool) {
+        self.default_mode = Some(mode_id.clone());
         dispatch_set_mode(
             &self.connection,
             &self.acp_session_id,

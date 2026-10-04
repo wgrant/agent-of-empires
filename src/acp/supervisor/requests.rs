@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 
 use tracing::info;
 
-use super::launch::{apply_mode, set_spawn_model};
+use super::launch::apply_mode;
 use super::{
     lock_recover, BroadcastSink, Supervisor, SupervisorError, WorkerKind, WORKER_READY_TIMEOUT,
 };
@@ -17,6 +17,31 @@ use crate::acp::runner_lifecycle::WorkerPhase;
 use crate::acp::state::Event;
 
 impl<S: BroadcastSink> Supervisor<S> {
+    pub async fn launch_yolo(&self, session_id: &str) -> Option<bool> {
+        let workers = self.workers.lock().await;
+        let WorkerKind::Runner { spawn_config } = &workers.get(session_id)?.kind else {
+            return None;
+        };
+        let definition = crate::agents::get_agent(&spawn_config.agent_key)?;
+        let crate::agents::YoloMode::EnvVar(key, value) = definition.yolo.as_ref()? else {
+            return None;
+        };
+        Some(
+            spawn_config
+                .host_environment
+                .iter()
+                .rev()
+                .find(|(name, _)| name == key)
+                .or_else(|| {
+                    spawn_config
+                        .provider_env
+                        .iter()
+                        .rev()
+                        .find(|(name, _)| name == key)
+                })
+                .is_some_and(|(_, current)| current == value),
+        )
+    }
     /// A reattached runner has no cached launch configuration, so its budget is unknown.
     pub async fn compaction_budget(&self, session_id: &str) -> Option<Option<u64>> {
         let workers = self.workers.lock().await;
@@ -176,9 +201,22 @@ impl<S: BroadcastSink> Supervisor<S> {
     }
 
     pub async fn set_mode(&self, session_id: &str, mode_id: &str) -> Result<(), SupervisorError> {
-        let client = self.ready_client(session_id).await?;
-        client.set_mode(mode_id).await?;
-        Ok(())
+        let result: Result<(), SupervisorError> = async {
+            let client = self.ready_client(session_id).await?;
+            client.set_mode(mode_id).await?;
+            Ok(())
+        }
+        .await;
+        if let Err(error) = &result {
+            self.publish_next(
+                session_id,
+                &Event::ModeSwitchFailed {
+                    mode_id: mode_id.to_string(),
+                    reason: error.to_string(),
+                },
+            );
+        }
+        result
     }
 
     pub async fn stop_async_task(
@@ -197,23 +235,23 @@ impl<S: BroadcastSink> Supervisor<S> {
         config_id: &str,
         value: &str,
     ) -> Result<(), SupervisorError> {
-        let client = self.ready_client(session_id).await?;
-        client.set_config_option(config_id, value).await?;
-        Ok(())
-    }
-
-    /// A watchdog respawn clones the cached spawn config, which the daemon's
-    /// persisted model pick never reaches.
-    pub async fn refresh_cached_model(&self, session_id: &str, model: &str) {
-        if let Some(WorkerKind::Runner { spawn_config }) = self
-            .workers
-            .lock()
-            .await
-            .get_mut(session_id)
-            .map(|h| &mut h.kind)
-        {
-            set_spawn_model(spawn_config, Some(model.to_string()));
+        let result: Result<(), SupervisorError> = async {
+            let client = self.ready_client(session_id).await?;
+            client.set_config_option(config_id, value).await?;
+            Ok(())
         }
+        .await;
+        if let Err(error) = &result {
+            self.publish_next(
+                session_id,
+                &Event::ConfigOptionSwitchFailed {
+                    config_id: config_id.to_string(),
+                    value: value.to_string(),
+                    reason: error.to_string(),
+                },
+            );
+        }
+        result
     }
 
     pub async fn resolve_permission(
@@ -290,6 +328,22 @@ mod tests {
     use super::*;
     use crate::acp::state::AcpSessionId;
     use crate::daemon::AcpWorkerState;
+
+    #[tokio::test]
+    async fn undeliverable_settings_publish_the_same_failure_events_as_adapter_rejections() {
+        let sink = VecSink::new();
+        let supervisor = Supervisor::new(sink.clone());
+        assert!(supervisor
+            .set_config_option("gone", "model", "new")
+            .await
+            .is_err());
+        assert!(supervisor.set_mode("gone", "plan").await.is_err());
+        let frames = sink.frames.lock().unwrap();
+        assert!(
+            matches!(&frames[0].2, Event::ConfigOptionSwitchFailed {config_id, value, ..} if config_id == "model" && value == "new")
+        );
+        assert!(matches!(&frames[1].2, Event::ModeSwitchFailed {mode_id, ..} if mode_id == "plan"));
+    }
 
     #[test]
     fn orphaned_approval_resolution_is_durable() {
