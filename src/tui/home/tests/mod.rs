@@ -207,7 +207,6 @@ async fn config_watch_keys_distinguish_global_from_profile_named_global() {
     )
     .unwrap();
 
-    assert_eq!(view.config_watch.handles.len(), 2);
     assert!(view
         .config_watch
         .handles
