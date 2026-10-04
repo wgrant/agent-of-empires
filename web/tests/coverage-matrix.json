@@ -4160,8 +4160,17 @@
       "id": "acp.auth-status",
       "kind": "vitest",
       "risk": "medium",
-      "specs": ["src/components/acp/__tests__/AuthStatusHint.test.tsx", "src/lib/acpTypes.test.ts"],
-      "components": ["web/src/components/acp/ComposerControls.tsx", "web/src/lib/acpTypes.ts"]
+      "specs": [
+        "src/components/acp/__tests__/AuthStatusHint.test.tsx",
+        "src/components/acp/SessionSettings.test.tsx",
+        "src/lib/acpTypes.test.ts"
+      ],
+      "components": [
+        "web/src/components/acp/ComposerControls.tsx",
+        "web/src/components/acp/Composer.tsx",
+        "web/src/components/acp/SessionSettings.tsx",
+        "web/src/lib/acpTypes.ts"
+      ]
     },
     {
       "id": "story.wizard-open-close",

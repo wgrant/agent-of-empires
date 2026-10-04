@@ -502,6 +502,7 @@ export function Composer(props: Props) {
                 <SessionSettingsControl
                   sessionId={sessionId}
                   currentAgent={props.currentAgent}
+                  authStatus={props.authStatus}
                   yoloMode={props.yoloMode ?? false}
                   availableModes={props.availableModes}
                   currentModeId={props.currentModeId}
@@ -515,7 +516,7 @@ export function Composer(props: Props) {
                   dialogContainer={dialogContainer}
                   turnActive={turnActive}
                 />
-                <AuthStatusHint authStatus={props.authStatus} />
+                <AuthStatusHint authStatus={props.authStatus} warningOnly />
               </div>
 
               <div className="ml-auto flex w-full items-center gap-2 pl-1.5 @lg:w-auto @lg:pl-0">

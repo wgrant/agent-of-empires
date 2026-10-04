@@ -149,9 +149,15 @@ function formatCost(amount: number, currency: string): string {
 /** The agent's own auth identity. Reporting only: the extension says which
  *  identity is in use, never whether its credentials still work, so a healthy
  *  looking chip is not a claim that the key is valid. */
-export function AuthStatusHint({ authStatus }: { authStatus: AcpState["authStatus"] }) {
+export function AuthStatusHint({
+  authStatus,
+  warningOnly = false,
+}: {
+  authStatus: AcpState["authStatus"];
+  warningOnly?: boolean;
+}) {
   // Silence means "not reported", which is not the same as logged out.
-  if (!authStatus) return null;
+  if (!authStatus || (warningOnly && authStatus.kind !== "none")) return null;
   const loggedOut = authStatus.kind === "none";
   // Account details stay in the tooltip: this chip is on screen during every
   // screen share and recording.
