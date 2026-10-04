@@ -272,7 +272,7 @@ export function CompactionBudgetHint({
         aria-label={explanation}
         aria-haspopup="dialog"
         onClick={onOpenSettings}
-        className={`inline-flex shrink-0 items-center gap-1 ${compact ? "text-[10px]" : "text-[11px]"} tabular-nums text-text-dim hover:text-text-secondary`}
+        className={`inline-flex min-h-8 shrink-0 items-center gap-1 ${compact ? "text-[10px]" : "text-[11px]"} tabular-nums text-text-dim hover:text-text-secondary`}
       >
         compact {formatTokens(tokens)}
         {pending && <Clock3 data-testid="composer-compaction-pending" className="h-3 w-3 shrink-0" aria-hidden />}
