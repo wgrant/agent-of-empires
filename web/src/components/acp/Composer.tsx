@@ -26,6 +26,7 @@ import { PluginComposerActions } from "../plugin/PluginSlots";
 import { composerDraftOperation, type ComposerDraftOperation } from "../plugin/composerDraftOperation";
 import {
   AttachmentChips,
+  CompactionBudgetHint,
   PopoverItems,
   QueueSendButton,
   SendButton,
@@ -117,6 +118,7 @@ const POPOVER_CLASS =
 export function Composer(props: Props) {
   const { sessionId, turnActive, availability, promptCapabilities, queuedPrompts } = props;
   const agentSettings = useAgentSettings(sessionId, false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const pendingSettings = agentSettings.snapshot
     ? pendingAgentSettings(
         agentSettings.snapshot,
@@ -340,12 +342,18 @@ export function Composer(props: Props) {
                     Q{queuedPrompts.length}
                   </span>
                 )}
-                <div className="flex shrink-0 items-center">
+                <div className="flex shrink-0 items-center gap-1.5">
                   <UsageHint
                     usage={props.sessionUsage}
                     quota={props.quota}
                     lastModel={props.lastModel}
                     lastTurnUsage={props.lastTurnUsage}
+                    compact
+                  />
+                  <CompactionBudgetHint
+                    tokens={agentSettings.snapshot?.auto_compaction.tokens ?? null}
+                    pending={pendingSettings.find((setting) => setting.id === "auto_compaction")}
+                    onOpenSettings={() => setSettingsOpen(true)}
                     compact
                   />
                 </div>
@@ -453,7 +461,7 @@ export function Composer(props: Props) {
             {/* One row when the footer is wide enough, else tools and settings above usage and actions. */}
             <div
               data-testid="composer-footer"
-              className={`${mobileExpanded ? "flex" : "hidden sm:flex"} @container flex-wrap items-center gap-x-2 gap-y-1.5 border-t border-surface-800/60 px-2 pb-2 pt-1.5`}
+              className={`${mobileExpanded || settingsOpen ? "flex" : "hidden sm:flex"} @container flex-wrap items-center gap-x-2 gap-y-1.5 border-t border-surface-800/60 px-2 pb-2 pt-1.5`}
             >
               <div className="flex min-w-0 flex-1 basis-full items-center gap-x-0.5 @lg:basis-auto">
                 <ToolbarButton
@@ -505,6 +513,8 @@ export function Composer(props: Props) {
                   modeSwitchFailed={props.modeSwitchFailed}
                   settings={agentSettings}
                   summary={statusParts}
+                  open={settingsOpen}
+                  onOpenChange={setSettingsOpen}
                 />
                 <AuthStatusHint authStatus={props.authStatus} />
               </div>
@@ -516,6 +526,11 @@ export function Composer(props: Props) {
                   quota={props.quota}
                   lastModel={props.lastModel}
                   lastTurnUsage={props.lastTurnUsage}
+                />
+                <CompactionBudgetHint
+                  tokens={agentSettings.snapshot?.auto_compaction.tokens ?? null}
+                  pending={pendingSettings.find((setting) => setting.id === "auto_compaction")}
+                  onOpenSettings={() => setSettingsOpen(true)}
                 />
                 <div data-testid="composer-actions" className="ml-auto flex shrink-0 items-center gap-2">
                   <PluginComposerActions sessionId={sessionId} getSnapshot={() => pluginSnapshot(client, taRef)} />
