@@ -15,6 +15,7 @@ import { TOUR_ANCHORS, tourAnchor } from "../../lib/tourSteps";
 import { BRAND_BUTTON, ConfirmButton, Dialog } from "../Dialog";
 import { compactModelName, composerStatusText, type ComposerStatusParts } from "./composerStatus";
 import { LaunchOptionRestartDialog } from "./LaunchOptionRestartDialog";
+import { CompactionBudgetControl } from "./CompactionBudgetControl";
 import { ChoiceDropdown, ConfigRow, SessionConfigControls } from "./SessionConfigControls";
 
 interface Props {
@@ -71,7 +72,6 @@ export function SessionSettingsControl(props: Props) {
   });
   const launchOptions = agentLaunchOptions(props.currentAgent ?? profile.key, props.yoloMode);
 
-  if (!channel && launchOptions.length === 0 && !hasSessionConfigControls(props.configOptions)) return null;
   const activeToneId = props.yoloMode ? "yolo" : (channel?.activeId ?? "");
   const permissionTone = MODE_TONES.find(([re]) => re.test(activeToneId))?.[1];
   const summaryText = composerStatusText(props.summary);
@@ -301,6 +301,7 @@ function SessionSettingsDialog({
           </div>
         </Section>
       )}
+      <CompactionBudgetControl key={sessionId} sessionId={sessionId} />
     </Dialog>
   );
 }
