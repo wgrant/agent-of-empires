@@ -97,6 +97,7 @@ function mount(configOptions: ConfigOptionDescriptor[], turnActive = false) {
         <SessionSettingsControl
           sessionId="s1"
           currentAgent="claude"
+          authStatus={{ kind: "account", label: "Claude Team", account: { email: "user@example.com" } }}
           yoloMode={false}
           availableModes={[]}
           currentModeId={null}
@@ -119,6 +120,15 @@ const trigger = () => screen.getByTestId("session-settings-trigger");
 const dialog = () => screen.queryByTestId("session-settings-dialog");
 
 describe("SessionSettingsControl", () => {
+  it("keeps the reported account in the settings dialog, not the summary chip", () => {
+    mount([MODEL]);
+    expect(screen.queryByText("Claude Team")).toBeNull();
+    fireEvent.click(trigger());
+    expect(within(dialog()!).getByText("Account")).toBeTruthy();
+    expect(within(dialog()!).getByText("Claude Team")).toBeTruthy();
+    expect(within(dialog()!).getByRole("img").getAttribute("aria-label")).toContain("user@example.com");
+    expect(trigger().textContent).not.toContain("Claude Team");
+  });
   it("uses server queued status even when local observed values differ and offers no restart", async () => {
     settings.selectors = [{ config_id: "model", category: "model", value: "sonnet" }];
     settings.pending = [{ id: "model", name: "Model", application: "queued" }];

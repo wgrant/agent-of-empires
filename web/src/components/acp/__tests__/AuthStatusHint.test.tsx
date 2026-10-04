@@ -10,6 +10,12 @@ afterEach(cleanup);
 const chip = () => screen.queryByTestId("composer-auth-status");
 
 describe("AuthStatusHint", () => {
+  it("only retains the logged-out warning in the composer", () => {
+    const { rerender } = render(<AuthStatusHint authStatus={{ kind: "account", label: "Claude Team" }} warningOnly />);
+    expect(chip()).toBeNull();
+    rerender(<AuthStatusHint authStatus={{ kind: "none", label: "Not logged in" }} warningOnly />);
+    expect(chip()?.textContent).toContain("Not logged in");
+  });
   it("renders nothing when the agent never reported", () => {
     // Silence means "not reported", which must not read as logged out.
     render(<AuthStatusHint authStatus={null} />);

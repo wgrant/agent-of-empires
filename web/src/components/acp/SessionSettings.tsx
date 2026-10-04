@@ -23,11 +23,13 @@ import { TOUR_ANCHORS, tourAnchor } from "../../lib/tourSteps";
 import { BRAND_BUTTON, Dialog } from "../Dialog";
 import { compactModelName, composerStatusText, type ComposerStatusParts } from "./composerStatus";
 import { CompactionBudgetControl } from "./CompactionBudgetControl";
+import { AuthStatusHint } from "./ComposerControls";
 import { ChoiceDropdown, ConfigRow, SessionConfigControls } from "./SessionConfigControls";
 
 interface Props {
   sessionId: string;
   currentAgent: AcpState["agent"];
+  authStatus?: AcpState["authStatus"];
   yoloMode: boolean;
   availableModes: AcpState["availableModes"];
   currentModeId: string | null;
@@ -125,6 +127,7 @@ export function SessionSettingsControl(props: Props) {
           <SessionSettingsDialog
             sessionId={props.sessionId}
             agent={props.summary.agent}
+            authStatus={props.authStatus ?? null}
             channel={channel}
             configOptions={options}
             snapshot={snapshot}
@@ -177,6 +180,7 @@ const DIALOG_ID = "session-settings-dialog";
 function SessionSettingsDialog({
   sessionId,
   agent,
+  authStatus,
   channel,
   configOptions,
   snapshot,
@@ -189,6 +193,7 @@ function SessionSettingsDialog({
 }: {
   sessionId: string;
   agent: string;
+  authStatus: AcpState["authStatus"];
   channel: ModeChannel | null;
   configOptions: AcpState["configOptions"];
   snapshot: AgentSettingsSnapshot | null;
@@ -386,6 +391,11 @@ function SessionSettingsDialog({
               </button>
             </div>
           </Section>
+          {authStatus && (
+            <ConfigRow label="Account">
+              <AuthStatusHint authStatus={authStatus} />
+            </ConfigRow>
+          )}
           <fieldset disabled={saving} className="flex min-w-0 flex-col gap-4">
             <Section label="Agent settings">
               <div className="flex flex-col gap-2">
