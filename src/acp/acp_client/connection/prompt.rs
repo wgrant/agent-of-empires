@@ -195,6 +195,7 @@ impl Session {
         let simulate_orphan = simulate_orphan(&shared.session_label);
 
         loop {
+            self.start_setting(true).await;
             #[cfg(test)]
             self.select_probe_gate().await;
             let flow = tokio::select! {
@@ -208,6 +209,12 @@ impl Session {
                     #[cfg(test)]
                     observe_select_win(true);
                     self.on_command(&mut turn, cmd).await?
+                }
+                outcome = async {
+                    (&mut self.setting_in_flight.as_mut().unwrap().attempt).await
+                }, if self.setting_in_flight.is_some() => {
+                    self.finish_setting(outcome).await;
+                    Flow::Continue
                 }
                 _ = turn.cancel_grace.as_mut(), if turn.flags.cancelling => {
                     warn!(
@@ -399,6 +406,15 @@ impl Session {
                 self.dispatch_config_option(config_id, value, true)
             }
             Some(ClientCmd::SetMode(mode_id)) => self.dispatch_mode(mode_id, true),
+            Some(ClientCmd::ApplySettings { options, mode }) => {
+                for (id, value) in options {
+                    self.dispatch_config_option(id, value, true);
+                }
+                if let Some(mode) = mode {
+                    self.dispatch_mode(mode, true);
+                }
+            }
+            Some(ClientCmd::ReconcileSettings) => self.reconcile_saved_settings().await,
             Some(ClientCmd::StopAsyncTask(task_id)) => {
                 dispatch_stop_async_task(&self.connection, &self.acp_session_id, task_id)
             }

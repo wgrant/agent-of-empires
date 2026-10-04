@@ -1,7 +1,7 @@
 //! The between-prompt command loop over an established session, including
 //! the driven conversation reset.
 
-use crate::acp::state::Event;
+use crate::acp::state::{Event, SettingApplication, SettingApplicationStatus};
 use agent_client_protocol::schema::v1::{
     CancelNotification, ContentBlock, McpServer, NewSessionRequest, NewSessionResponse,
     SessionConfigId, SessionConfigOption, SessionConfigValueId, SessionId,
@@ -25,7 +25,7 @@ use crate::acp::acp_client::commands::ClientCmd;
 use crate::acp::acp_client::config_options::{
     config_option_failure_event, config_options_event, dispatch_set_config_option,
     dispatch_set_mode, mode_config_id, model_option, modes_available_event,
-    thought_level_config_id, ConfigOptionDispatchPurpose, SessionChannels,
+    thought_level_config_id, ConfigOptionDispatchPurpose, SessionChannels, SettingOutcome,
 };
 use crate::acp::acp_client::control::DaemonControlClient;
 use crate::acp::acp_client::delete::handle_delete_session_cmd;
@@ -36,19 +36,27 @@ use crate::acp::acp_client::reset::{
 };
 use crate::acp::acp_client::session_identity::ordered_session_request;
 
+#[derive(Clone)]
 pub(super) enum SettingChange {
     Config { config_id: String, value: String },
     Mode(String),
 }
 
+#[derive(Clone)]
 pub(super) struct PendingSettingChange {
     key: String,
     change: SettingChange,
     retry_when_idle: bool,
-    attempt: JoinHandle<bool>,
+    deferred: bool,
+    revision: u64,
 }
 
-impl Drop for PendingSettingChange {
+pub(super) struct SettingAttempt {
+    pending: PendingSettingChange,
+    pub(super) attempt: JoinHandle<SettingOutcome>,
+}
+
+impl Drop for SettingAttempt {
     fn drop(&mut self) {
         self.attempt.abort();
     }
@@ -81,9 +89,57 @@ pub(super) struct Session {
     /// Kept here rather than re-sent on the bounded channel this task drains.
     pub(super) pending_prompts: VecDeque<Vec<ContentBlock>>,
     pub(super) pending_settings: Vec<PendingSettingChange>,
+    pub(super) setting_in_flight: Option<SettingAttempt>,
+    pub(super) setting_revision: u64,
 }
 
 impl Session {
+    pub(super) async fn reconcile_saved_settings(&mut self) {
+        let Some(profile) = self.source_profile.clone() else {
+            return;
+        };
+        let id = self.shared.session_label.clone();
+        let saved = tokio::task::spawn_blocking(move || {
+            crate::session::Storage::new_unwatched(&profile)?
+                .load()
+                .map(|instances| instances.into_iter().find(|instance| instance.id == id))
+        })
+        .await;
+        let instance = match saved {
+            Ok(Ok(Some(instance))) => instance,
+            Ok(Ok(None)) => return,
+            error => {
+                warn!(target: "acp.protocol", ?error, "could not reconcile saved settings");
+                return;
+            }
+        };
+        if let Some(model) = instance.agent_model {
+            if let Some(option) = &self.channels.model_option {
+                if !option.is_current(&model) {
+                    self.dispatch_config_option(option.id.clone(), model, false);
+                }
+            }
+        }
+        if let (Some(effort), Some(id)) = (
+            instance.acp_effort,
+            self.channels.thought_level_config_option_id.clone(),
+        ) {
+            if self.channels.current_values.get(&id) != Some(&effort) {
+                self.dispatch_config_option(id, effort, false);
+            }
+        }
+        if let Some(mode) = instance.acp_mode_id {
+            let current = self
+                .channels
+                .mode_config_option_id
+                .as_ref()
+                .and_then(|id| self.channels.current_values.get(id))
+                .or(self.channels.current_mode.as_ref());
+            if current != Some(&mode) {
+                self.dispatch_mode(mode, false);
+            }
+        }
+    }
     pub(super) async fn send_cancel(&self) -> Result<(), agent_client_protocol::Error> {
         match self.control.as_ref() {
             Some(control) => {
@@ -100,7 +156,7 @@ impl Session {
         &mut self,
         config_id: String,
         value: String,
-        while_prompting: bool,
+        _while_prompting: bool,
     ) {
         // A reset re-applies `default_model`, so it follows the live pick.
         if self
@@ -117,126 +173,246 @@ impl Session {
         if self.channels.mode_config_option_id.as_deref() == Some(config_id.as_str()) {
             self.default_mode = Some(value.clone());
         }
-        let attempt = dispatch_set_config_option(
-            &self.connection,
-            &self.acp_session_id,
-            config_id.clone(),
-            value.clone(),
-            ConfigOptionDispatchPurpose::Generic,
-            self.shared.event_tx.clone(),
-        );
         self.track_setting(
             config_id.clone(),
             SettingChange::Config { config_id, value },
-            while_prompting,
-            attempt,
         );
     }
 
-    pub(super) fn dispatch_mode(&mut self, mode_id: String, while_prompting: bool) {
+    pub(super) fn dispatch_mode(&mut self, mode_id: String, _while_prompting: bool) {
         self.default_mode = Some(mode_id.clone());
-        let attempt = dispatch_set_mode(
-            &self.connection,
-            &self.acp_session_id,
-            mode_id.clone(),
-            &self.channels,
-            self.shared.event_tx.clone(),
-            while_prompting,
-        );
-        if let Some(attempt) = attempt {
-            let key = self
-                .channels
-                .mode_config_option_id
-                .clone()
-                .unwrap_or_else(|| "session/set_mode".to_string());
-            self.track_setting(key, SettingChange::Mode(mode_id), while_prompting, attempt);
-        }
+        let key = self
+            .channels
+            .mode_config_option_id
+            .clone()
+            .unwrap_or_else(|| "legacy_mode".to_string());
+        self.track_setting(key, SettingChange::Mode(mode_id));
     }
 
-    fn track_setting(
-        &mut self,
-        key: String,
-        change: SettingChange,
-        retry_when_idle: bool,
-        attempt: JoinHandle<bool>,
-    ) {
-        // Superseded responses must not overwrite the latest selection.
+    fn track_setting(&mut self, key: String, change: SettingChange) {
+        self.setting_revision += 1;
         self.pending_settings.retain(|pending| pending.key != key);
         self.pending_settings.push(PendingSettingChange {
             key,
             change,
-            retry_when_idle,
-            attempt,
+            retry_when_idle: false,
+            deferred: false,
+            revision: self.setting_revision,
         });
     }
 
-    async fn settle_settings(&mut self) {
-        for mut pending in std::mem::take(&mut self.pending_settings) {
-            if !pending.attempt.is_finished() {
-                self.pending_settings.push(pending);
-                continue;
+    pub(super) fn settings_pending(&self) -> bool {
+        self.setting_in_flight.is_some() || !self.pending_settings.is_empty()
+    }
+
+    async fn setting_status(
+        &self,
+        pending: &PendingSettingChange,
+        status: SettingApplicationStatus,
+    ) {
+        let value = match &pending.change {
+            SettingChange::Config { value, .. } | SettingChange::Mode(value) => value.clone(),
+        };
+        self.shared
+            .emit(Event::SettingApplicationChanged {
+                config_id: pending.key.clone(),
+                application: SettingApplication {
+                    value,
+                    revision: pending.revision,
+                    status,
+                },
+            })
+            .await;
+    }
+
+    pub(super) async fn start_setting(&mut self, while_prompting: bool) {
+        if self.setting_in_flight.is_some() {
+            return;
+        }
+        let priority = |pending: &PendingSettingChange| {
+            if self
+                .channels
+                .model_option
+                .as_ref()
+                .is_some_and(|option| option.id == pending.key)
+                || pending.key == "model"
+            {
+                0
+            } else if self.channels.thought_level_config_option_id.as_deref()
+                == Some(pending.key.as_str())
+            {
+                1
+            } else {
+                2
             }
-            let applied = (&mut pending.attempt).await.unwrap_or(false);
-            self.finish_setting(pending, applied);
+        };
+        let index = self
+            .pending_settings
+            .iter()
+            .enumerate()
+            .filter(|(_, pending)| !while_prompting || !pending.deferred)
+            .min_by_key(|(_, pending)| priority(pending))
+            .map(|(index, _)| index);
+        let Some(index) = index else {
+            return;
+        };
+        let mut pending = self.pending_settings.remove(index);
+        pending.retry_when_idle = while_prompting;
+        pending.deferred = false;
+        self.setting_status(&pending, SettingApplicationStatus::Applying)
+            .await;
+        let attempt = match &pending.change {
+            SettingChange::Config { config_id, value } => Some(dispatch_set_config_option(
+                &self.connection,
+                &self.acp_session_id,
+                config_id.clone(),
+                value.clone(),
+                ConfigOptionDispatchPurpose::Generic,
+            )),
+            SettingChange::Mode(mode_id) => dispatch_set_mode(
+                &self.connection,
+                &self.acp_session_id,
+                mode_id.clone(),
+                &self.channels,
+                while_prompting,
+            ),
+        };
+        if let Some(attempt) = attempt {
+            self.setting_in_flight = Some(SettingAttempt { pending, attempt });
+        } else {
+            self.setting_status(
+                &pending,
+                SettingApplicationStatus::Failed {
+                    reason: "The agent does not support this mode".into(),
+                },
+            )
+            .await;
         }
     }
 
-    fn finish_setting(&mut self, mut pending: PendingSettingChange, applied: bool) {
-        if !applied && pending.retry_when_idle {
-            info!(target: "acp.protocol", setting = %pending.key, "retrying setting between prompts");
-            let attempt = match &pending.change {
-                SettingChange::Config { config_id, value } => Some(dispatch_set_config_option(
-                    &self.connection,
-                    &self.acp_session_id,
-                    config_id.clone(),
-                    value.clone(),
-                    ConfigOptionDispatchPurpose::Generic,
-                    self.shared.event_tx.clone(),
-                )),
-                SettingChange::Mode(mode_id) => dispatch_set_mode(
-                    &self.connection,
-                    &self.acp_session_id,
-                    mode_id.clone(),
-                    &self.channels,
-                    self.shared.event_tx.clone(),
-                    false,
-                ),
-            };
-            if let Some(attempt) = attempt {
-                pending.attempt = attempt;
+    pub(super) async fn finish_setting(
+        &mut self,
+        outcome: Result<SettingOutcome, tokio::task::JoinError>,
+    ) {
+        let flight = self
+            .setting_in_flight
+            .take()
+            .expect("outstanding settings request");
+        let mut pending = flight.pending.clone();
+        let superseded = self
+            .pending_settings
+            .iter()
+            .any(|newer| newer.key == pending.key);
+        let outcome = outcome.unwrap_or_else(|error| {
+            Err(config_option_failure_event(
+                pending.key.clone(),
+                match &pending.change {
+                    SettingChange::Config { value, .. } | SettingChange::Mode(value) => {
+                        value.clone()
+                    }
+                },
+                error.to_string(),
+                ConfigOptionDispatchPurpose::Generic,
+            ))
+        });
+        match outcome {
+            Ok(events) => {
+                let model_changed = self
+                    .channels
+                    .model_option
+                    .as_ref()
+                    .is_some_and(|option| option.id == pending.key)
+                    || pending.key == "model";
+                for event in events {
+                    match &event {
+                        Event::ConfigOptionsUpdated { options } => self.channels.observe(options),
+                        Event::CurrentModeChanged { current_mode_id } => {
+                            self.channels.current_mode = Some(current_mode_id.clone())
+                        }
+                        _ => {}
+                    }
+                    if model_changed {
+                        if let Event::ConfigOptionsUpdated { options } = &event {
+                            if let Some(option) = options.iter().find(|option| {
+                                option.category
+                                    == crate::acp::state::ConfigOptionCategory::ThoughtLevel
+                            }) {
+                                self.channels.thought_level_config_option_id =
+                                    Some(option.id.clone());
+                                if let Some(effort) = self
+                                    .default_effort
+                                    .clone()
+                                    .filter(|value| value != &option.current_value)
+                                {
+                                    if !self
+                                        .pending_settings
+                                        .iter()
+                                        .any(|queued| queued.key == option.id)
+                                    {
+                                        self.dispatch_config_option(
+                                            option.id.clone(),
+                                            effort,
+                                            false,
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    self.shared.emit(event).await;
+                }
+                if !superseded {
+                    self.setting_status(&pending, SettingApplicationStatus::Applied)
+                        .await;
+                }
+            }
+            Err(event) if pending.retry_when_idle && !superseded => {
+                let _ = event;
+                pending.deferred = true;
                 pending.retry_when_idle = false;
+                self.setting_status(&pending, SettingApplicationStatus::Queued)
+                    .await;
                 self.pending_settings.push(pending);
             }
+            Err(event) if !superseded => {
+                let reason = match &event {
+                    Event::ConfigOptionSwitchFailed { reason, .. }
+                    | Event::ModeSwitchFailed { reason, .. } => reason.clone(),
+                    _ => "Could not apply setting".into(),
+                };
+                self.setting_status(&pending, SettingApplicationStatus::Failed { reason })
+                    .await;
+                self.shared.emit(event).await;
+            }
+            Err(_) => {}
         }
     }
 
     pub(super) async fn run(mut self) -> Result<(), agent_client_protocol::Error> {
+        self.reconcile_saved_settings().await;
         // Only polled while parked between prompts, so the per-prompt
         // watchdog stays the sole idle authority during a turn and this emit
         // is serialized with every command.
         let mut idle_tick = tokio::time::interval(BETWEEN_PROMPT_IDLE_CHECK_INTERVAL);
         idle_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
-            self.settle_settings().await;
+            self.start_setting(false).await;
             self.acp_session_id =
                 self.shared.ingress.current().ok_or_else(|| {
                     acp_internal_error("native session is not established".into())
                 })?;
             // Fallback prompts go first so later messages cannot overtake them.
-            let cmd = match self
-                .pending_settings
-                .is_empty()
+            let cmd = match (!self.settings_pending())
                 .then(|| self.pending_prompts.pop_front())
                 .flatten()
             {
                 Some(blocks) => Some(ClientCmd::Prompt(blocks)),
                 None => tokio::select! {
                     cmd = self.cmd_rx.recv() => cmd,
-                    applied = async {
-                        (&mut self.pending_settings[0].attempt).await.unwrap_or(false)
-                    }, if !self.pending_settings.is_empty() => {
-                        let pending = self.pending_settings.remove(0);
-                        self.finish_setting(pending, applied);
+                    outcome = async {
+                        (&mut self.setting_in_flight.as_mut().unwrap().attempt).await
+                    }, if self.setting_in_flight.is_some() => {
+                        self.finish_setting(outcome).await;
                         continue;
                     }
                     _ = idle_tick.tick() => {
@@ -247,7 +423,7 @@ impl Session {
             };
             match cmd {
                 Some(ClientCmd::Prompt(blocks)) => {
-                    if !self.pending_settings.is_empty() {
+                    if self.settings_pending() {
                         self.pending_prompts.push_back(blocks);
                         continue;
                     }
@@ -282,6 +458,15 @@ impl Session {
                     let _ = self.send_cancel().await;
                 }
                 Some(ClientCmd::SetMode(mode_id)) => self.dispatch_mode(mode_id, false),
+                Some(ClientCmd::ApplySettings { options, mode }) => {
+                    for (id, value) in options {
+                        self.dispatch_config_option(id, value, false);
+                    }
+                    if let Some(mode) = mode {
+                        self.dispatch_mode(mode, false);
+                    }
+                }
+                Some(ClientCmd::ReconcileSettings) => self.reconcile_saved_settings().await,
                 Some(ClientCmd::StopAsyncTask(task_id)) => {
                     dispatch_stop_async_task(&self.connection, &self.acp_session_id, task_id)
                 }

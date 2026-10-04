@@ -458,6 +458,22 @@ pub struct BackgroundAgentRecord {
     pub warning: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum SettingApplicationStatus {
+    Applying,
+    Queued,
+    Applied,
+    Failed { reason: String },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SettingApplication {
+    pub value: String,
+    pub revision: u64,
+    pub status: SettingApplicationStatus,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AcpState {
     pub session_id: AcpSessionId,
@@ -495,6 +511,8 @@ pub struct AcpState {
     /// Full snapshot of the adapter's per-session selectors.
     #[serde(default)]
     pub config_options: Vec<ConfigOptionDescriptor>,
+    #[serde(default)]
+    pub setting_applications: std::collections::HashMap<String, SettingApplication>,
     /// Notice for the most recent rejected `session/set_config_option`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub config_option_switch_failed: Option<ConfigOptionSwitchFailure>,
@@ -739,6 +757,10 @@ pub enum Event {
     },
     ConfigOptionsUpdated {
         options: Vec<ConfigOptionDescriptor>,
+    },
+    SettingApplicationChanged {
+        config_id: String,
+        application: SettingApplication,
     },
     ConfigOptionSwitchFailed {
         config_id: String,
@@ -1166,6 +1188,18 @@ impl AcpState {
                 }
                 self.config_options = options;
             }
+            Event::SettingApplicationChanged {
+                config_id,
+                application,
+            } => {
+                if self
+                    .setting_applications
+                    .get(&config_id)
+                    .is_none_or(|previous| previous.revision <= application.revision)
+                {
+                    self.setting_applications.insert(config_id, application);
+                }
+            }
             Event::ConfigOptionSwitchFailed {
                 config_id,
                 value,
@@ -1187,6 +1221,7 @@ impl AcpState {
             Event::UserPromptSent { .. } | Event::UserDiffCommentsPrompt { .. } => self.open_turn(),
             Event::PromptCapabilities { steering, .. } => self.steering = steering,
             Event::AcpSessionAssigned { .. } => {
+                self.setting_applications.clear();
                 self.startup_error = None;
                 self.rate_limit = None;
             }

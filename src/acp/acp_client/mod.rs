@@ -327,6 +327,8 @@ impl AcpClient {
                 ClientCmd::Cancel => "cancel",
                 ClientCmd::ForceStop => "force_stop",
                 ClientCmd::SetMode(_) => "set_mode",
+                ClientCmd::ApplySettings { .. } => "apply_settings",
+                ClientCmd::ReconcileSettings => "reconcile_settings",
                 ClientCmd::SetConfigOption { .. } => "set_config_option",
                 ClientCmd::StopAsyncTask(_) => "stop_async_task",
                 ClientCmd::ResumeBackgroundTailing(_) => "resume_background_tailing",
@@ -639,6 +641,19 @@ impl AcpClient {
             value: value.to_string(),
         })
         .await
+    }
+
+    pub async fn apply_settings(
+        &self,
+        options: Vec<(String, String)>,
+        mode: Option<String>,
+    ) -> Result<(), AcpError> {
+        self.send_cmd(ClientCmd::ApplySettings { options, mode })
+            .await
+    }
+
+    pub async fn reconcile_settings(&self) -> Result<(), AcpError> {
+        self.send_cmd(ClientCmd::ReconcileSettings).await
     }
 
     /// Removes a parked permission responder. A nonce belonging to an

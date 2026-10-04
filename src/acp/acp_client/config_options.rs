@@ -44,6 +44,8 @@ pub(super) struct SessionChannels {
     pub(super) mode_config_option_id: Option<String>,
     pub(super) thought_level_config_option_id: Option<String>,
     pub(super) model_option: Option<ModelOption>,
+    pub(super) current_values: std::collections::HashMap<String, String>,
+    pub(super) current_mode: Option<String>,
 }
 
 impl SessionChannels {
@@ -63,7 +65,45 @@ impl SessionChannels {
                 .and_then(thought_level_config_id)
                 .map(|id| id.0.to_string()),
             model_option: options.and_then(model_option),
+            current_values: options
+                .into_iter()
+                .flatten()
+                .filter_map(|option| match &option.kind {
+                    SessionConfigKind::Select(select) => {
+                        Some((option.id.0.to_string(), select.current_value.0.to_string()))
+                    }
+                    _ => None,
+                })
+                .collect(),
+            current_mode: modes.map(|modes| modes.current_mode_id.0.to_string()),
         }
+    }
+
+    pub(super) fn observe(&mut self, options: &[ConfigOptionDescriptor]) {
+        self.current_values = options
+            .iter()
+            .map(|option| (option.id.clone(), option.current_value.clone()))
+            .collect();
+        self.mode_config_option_id = options
+            .iter()
+            .find(|option| option.category == ConfigOptionCategory::Mode)
+            .map(|option| option.id.clone());
+        self.thought_level_config_option_id = options
+            .iter()
+            .find(|option| option.category == ConfigOptionCategory::ThoughtLevel)
+            .map(|option| option.id.clone());
+        self.model_option = options
+            .iter()
+            .find(|option| option.category == ConfigOptionCategory::Model)
+            .map(|option| ModelOption {
+                id: option.id.clone(),
+                current_value: option.current_value.clone(),
+                current_name: option
+                    .options
+                    .iter()
+                    .find(|choice| choice.value == option.current_value)
+                    .map(|choice| choice.name.clone()),
+            });
     }
 }
 
@@ -72,6 +112,8 @@ pub(super) enum ConfigOptionDispatchPurpose {
     Generic,
     Mode,
 }
+
+pub(super) type SettingOutcome = Result<Vec<Event>, Event>;
 
 fn config_option_success_events(
     options: Vec<SessionConfigOption>,
@@ -115,8 +157,7 @@ pub(super) fn dispatch_set_config_option(
     config_id: String,
     value: String,
     purpose: ConfigOptionDispatchPurpose,
-    event_tx: mpsc::Sender<Event>,
-) -> JoinHandle<bool> {
+) -> JoinHandle<SettingOutcome> {
     info!(
         target: "acp.protocol",
         "sending session/set_config_option {config_id}={value}"
@@ -131,20 +172,19 @@ pub(super) fn dispatch_set_config_option(
             .await
             .map_err(|_| "Settings request timed out".to_string())
             .and_then(|result| result.map_err(|error| error.to_string()));
-        let applied = result.is_ok();
-        let events = match result {
-            Ok(resp) => config_option_success_events(resp.config_options, value, purpose),
+        match result {
+            Ok(resp) => Ok(config_option_success_events(
+                resp.config_options,
+                value,
+                purpose,
+            )),
             Err(reason) => {
                 warn!(target: "acp.protocol", "session/set_config_option failed: {reason}");
-                vec![config_option_failure_event(
+                Err(config_option_failure_event(
                     config_id, value, reason, purpose,
-                )]
+                ))
             }
-        };
-        for event in events {
-            let _ = event_tx.send(event).await;
         }
-        applied
     })
 }
 
@@ -340,9 +380,8 @@ pub(super) fn dispatch_set_mode(
     acp_session_id: &SessionId,
     mode_id: String,
     channels: &SessionChannels,
-    event_tx: mpsc::Sender<Event>,
     while_prompting: bool,
-) -> Option<JoinHandle<bool>> {
+) -> Option<JoinHandle<SettingOutcome>> {
     let target = resolve_mode_set_target(
         &mode_id,
         &channels.available_mode_ids,
@@ -359,7 +398,6 @@ pub(super) fn dispatch_set_mode(
             config_id.to_string(),
             mode_id,
             ConfigOptionDispatchPurpose::Mode,
-            event_tx,
         ));
     }
     info!(
@@ -376,18 +414,15 @@ pub(super) fn dispatch_set_mode(
             .await
             .map_err(|_| "Settings request timed out".to_string())
             .and_then(|result| result.map_err(|error| error.to_string()));
-        let applied = result.is_ok();
-        let event = match result {
-            Ok(_) => Event::CurrentModeChanged {
+        match result {
+            Ok(_) => Ok(vec![Event::CurrentModeChanged {
                 current_mode_id: mode_id,
-            },
+            }]),
             Err(reason) => {
                 warn!(target: "acp.protocol", while_prompting, "session/set_mode failed: {reason}");
-                Event::ModeSwitchFailed { mode_id, reason }
+                Err(Event::ModeSwitchFailed { mode_id, reason })
             }
-        };
-        let _ = event_tx.send(event).await;
-        applied
+        }
     }))
 }
 

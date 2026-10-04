@@ -1157,6 +1157,7 @@ fn event_kind(event: &crate::acp::Event) -> &'static str {
         Event::PromptRejected { .. } => "prompt_rejected",
         Event::AgentSwitched { .. } => "agent_switched",
         Event::SessionNotice { .. } => "session_notice",
+        Event::SettingApplicationChanged { .. } => "setting_application_changed",
     }
 }
 
