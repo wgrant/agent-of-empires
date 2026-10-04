@@ -200,6 +200,41 @@ pub async fn acp_set_config_option(
 #[serde(deny_unknown_fields)]
 pub struct UpdateLaunchOptionsRequest {
     pub yolo_mode: Option<bool>,
+    pub auto_compaction: Option<crate::acp::compaction::Budget>,
+    pub restart: Option<bool>,
+}
+
+pub async fn acp_launch_options(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Response {
+    let (agent, tokens) = {
+        let instances = state.instances.read().await;
+        let Some(instance) = instances.iter().find(|instance| instance.id == id) else {
+            return session_not_found();
+        };
+        let agent = instance
+            .agent_name
+            .as_deref()
+            .filter(|name| !name.is_empty())
+            .unwrap_or(&instance.tool)
+            .to_string();
+        (agent, instance.auto_compact_tokens)
+    };
+    let applied = state.acp_supervisor.compaction_budget(&id).await;
+    let worker_state = state.acp_supervisor.worker_state(&id).await;
+    let running = worker_state == crate::daemon::AcpWorkerState::Running;
+    Json(serde_json::json!({
+        "auto_compaction": {
+            "tokens": tokens,
+            "bounds": crate::acp::compaction::bounds(&agent),
+            "applied_known": running && applied.is_some(),
+            "applied_tokens": applied.flatten(),
+            "running": running,
+            "starting": worker_state == crate::daemon::AcpWorkerState::Resuming,
+        }
+    }))
+    .into_response()
 }
 
 #[derive(Debug, Serialize)]
@@ -233,7 +268,7 @@ pub async fn acp_update_launch_options(
         Ok(json) => json,
         Err(rejection) => return rejection.into_response(),
     };
-    let Some(yolo_mode) = req.yolo_mode else {
+    if req.yolo_mode.is_none() && req.auto_compaction.is_none() {
         return (
             StatusCode::BAD_REQUEST,
             Json(serde_json::json!({
@@ -242,11 +277,11 @@ pub async fn acp_update_launch_options(
             })),
         )
             .into_response();
-    };
+    }
 
     let instance_lock = state.instance_lock(&id).await;
     let _guard = instance_lock.lock().await;
-    let (profile, agent, previous) = {
+    let (profile, agent, previous, previous_tokens) = {
         let instances = state.instances.read().await;
         let Some(instance) = instances.iter().find(|instance| instance.id == id) else {
             return session_not_found();
@@ -260,10 +295,29 @@ pub async fn acp_update_launch_options(
             .filter(|name| !name.is_empty())
             .unwrap_or(instance.tool.as_str())
             .to_string();
-        (instance.source_profile.clone(), agent, instance.yolo_mode)
+        (
+            instance.source_profile.clone(),
+            agent,
+            instance.yolo_mode,
+            instance.auto_compact_tokens,
+        )
     };
+    let yolo_mode = req.yolo_mode.unwrap_or(previous);
+    let tokens = req
+        .auto_compaction
+        .map_or(previous_tokens, |budget| budget.tokens);
+    if req.auto_compaction.is_some() {
+        if let Err(message) = crate::acp::compaction::validate(&agent, tokens) {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"message": message})),
+            )
+                .into_response();
+        }
+    }
+    let restart = req.restart.unwrap_or(true);
 
-    if yolo_mode && !supports_yolo_launch(&agent) {
+    if req.yolo_mode == Some(true) && !supports_yolo_launch(&agent) {
         return (
             StatusCode::BAD_REQUEST,
             Json(serde_json::json!({
@@ -273,7 +327,7 @@ pub async fn acp_update_launch_options(
         )
             .into_response();
     }
-    if previous == yolo_mode {
+    if previous == yolo_mode && previous_tokens == tokens && req.auto_compaction.is_none() {
         return Json(UpdateLaunchOptionsResponse {
             status: "unchanged",
             restarted: false,
@@ -302,6 +356,7 @@ pub async fn acp_update_launch_options(
                 anyhow::bail!("session disappeared while updating launch options");
             };
             instance.yolo_mode = yolo_mode;
+            instance.auto_compact_tokens = tokens;
             Ok(())
         })
     })
@@ -324,6 +379,7 @@ pub async fn acp_update_launch_options(
                 .into_response();
         };
         instance.yolo_mode = yolo_mode;
+        instance.auto_compact_tokens = tokens;
     }
 
     let generation = state
@@ -336,6 +392,14 @@ pub async fn acp_update_launch_options(
                 .flatten()
                 .map(|record| record.generation)
         });
+    if !restart || (req.auto_compaction.is_some() && generation.is_none()) {
+        return Json(UpdateLaunchOptionsResponse {
+            status: "saved_for_next_start",
+            restarted: false,
+            yolo_mode,
+        })
+        .into_response();
+    }
     let id_for_restart = id.clone();
     let _ = tokio::task::spawn_blocking(move || {
         if let Some(generation) = generation {
@@ -362,6 +426,74 @@ mod tests {
     use super::*;
     use crate::acp::state::{ConfigOptionChoice, ConfigOptionDescriptor};
     use crate::session::test_support::isolate_app_dir;
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn compaction_settings_persist_without_waking_dormant_agents() {
+        let _tmp = isolate_app_dir();
+        let mut instance = crate::session::Instance::new("budget", "/tmp");
+        instance.view = crate::session::View::Structured;
+        instance.source_profile = "default".into();
+        let id = instance.id.clone();
+        let storage = crate::session::Storage::new_unwatched("default").unwrap();
+        storage
+            .update(|instances, _| {
+                instances.push(instance.clone());
+                Ok(())
+            })
+            .unwrap();
+        let state = crate::server::test_support::build_test_app_state(vec![instance]);
+        for (tokens, restart, expected_status) in [
+            (Some(200_000), false, StatusCode::OK),
+            (Some(99_999), false, StatusCode::BAD_REQUEST),
+            (Some(300_000), true, StatusCode::OK),
+            (None, false, StatusCode::OK),
+        ] {
+            let previous = state.instances.read().await[0].auto_compact_tokens;
+            let response = acp_update_launch_options(
+                State(state.clone()),
+                Path(id.clone()),
+                Ok(Json(UpdateLaunchOptionsRequest {
+                    yolo_mode: None,
+                    auto_compaction: Some(crate::acp::compaction::Budget { tokens }),
+                    restart: Some(restart),
+                })),
+            )
+            .await
+            .into_response();
+            assert_eq!(response.status(), expected_status);
+            let expected = if expected_status.is_success() {
+                tokens
+            } else {
+                previous
+            };
+            assert_eq!(
+                state.instances.read().await[0].auto_compact_tokens,
+                expected
+            );
+            assert_eq!(storage.load().unwrap()[0].auto_compact_tokens, expected);
+            assert!(state.acp_supervisor.running_identity(&id).is_none());
+            let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap();
+            if expected_status.is_success() {
+                let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+                assert_eq!(body["status"], "saved_for_next_start");
+                assert_eq!(body["restarted"], false);
+            }
+        }
+        let response = acp_launch_options(State(state), Path(id)).await;
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(body["auto_compaction"]["tokens"], serde_json::Value::Null);
+        assert_eq!(
+            body["auto_compaction"]["bounds"],
+            serde_json::json!([100000, 1000000])
+        );
+        assert_eq!(body["auto_compaction"]["applied_known"], false);
+    }
 
     #[test]
     fn launch_yolo_support_covers_env_and_acp_mode_agents() {

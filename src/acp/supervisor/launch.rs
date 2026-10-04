@@ -379,8 +379,16 @@ impl<S: BroadcastSink> Supervisor<S> {
                 )
             };
 
+        let auto_compact_tokens = crate::acp::compaction::load_budget(
+            req.source_profile.clone(),
+            req.session_id.clone(),
+            req.agent.clone(),
+        )
+        .await
+        .map_err(|e| SupervisorError::Acp(AcpError::Spawn(e)))?;
         Ok((
             SpawnConfig {
+                auto_compact_tokens,
                 agent_key: req.agent.clone(),
                 tool: req.tool.clone(),
                 spec,

@@ -176,6 +176,7 @@ impl Instance {
         self.resume_probe_failed_sid = None;
         self.active_execution = None;
         self.acp_effort = None;
+        self.auto_compact_tokens = None;
         self.agent_model = None;
         self.agent_provider = None;
         self.import_pending = None;
