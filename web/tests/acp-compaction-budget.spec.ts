@@ -43,19 +43,31 @@ test("mobile context settings save without restart and require confirmation to a
   await waitForComposerConnected(page);
   await openSessionSettings(page);
   const context = page.getByRole("region", { name: "Context management" });
-  await expect(context.getByRole("button")).toHaveCount(0);
-  await page.getByLabel("Auto-compaction", { exact: true }).selectOption("custom");
+  await expect(context.getByRole("button")).toHaveCount(1);
+  await page.getByTestId("auto-compaction").click();
+  await page.getByTestId("auto-compaction-value-custom").click();
   const input = page.getByLabel("Working context budget (tokens)");
   await input.fill("200000");
   await expect(page.getByTestId("session-settings-dialog").getByRole("status")).toHaveText("Unsaved changes.");
   for (const control of [
-    context.getByRole("combobox"),
     input,
     page.getByRole("button", { name: "Save changes" }),
     page.getByRole("button", { name: "Save and restart…" }),
   ]) {
     expect(await control.evaluate((node) => node.getBoundingClientRect().height)).toBeGreaterThanOrEqual(32);
   }
+  for (const width of [360, 412]) {
+    await page.setViewportSize({ width, height: 915 });
+    const inputBox = await input.boundingBox();
+    const pickerBox = await page.getByTestId("auto-compaction").boundingBox();
+    expect(inputBox).not.toBeNull();
+    expect(pickerBox).not.toBeNull();
+    expect(Math.abs(inputBox!.y + inputBox!.height / 2 - pickerBox!.y - pickerBox!.height / 2)).toBeLessThan(1);
+    expect(inputBox!.x + inputBox!.width).toBeLessThan(pickerBox!.x);
+    expect(pickerBox!.x + pickerBox!.width).toBeLessThan(width);
+    expect(await context.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
+  }
+  await page.screenshot({ path: "test-results/compaction-budget-mobile-custom.png" });
   await page.getByRole("button", { name: "Save changes" }).click();
   await expect.poll(() => patches).toEqual([{ auto_compaction: { tokens: 200000 }, restart: false }]);
   await expect(page.getByRole("region", { name: "Pending settings" })).toContainText(
@@ -67,9 +79,10 @@ test("mobile context settings save without restart and require confirmation to a
   expect(patches).toHaveLength(1);
   await page.screenshot({ path: "test-results/compaction-budget-mobile-confirm.png" });
   await page.getByRole("button", { name: "Cancel restart" }).click();
-  await page.getByLabel("Auto-compaction", { exact: true }).selectOption("default");
+  await page.getByTestId("auto-compaction").click();
+  await page.getByTestId("auto-compaction-value-default").click();
   await page.getByRole("button", { name: "Save changes" }).click();
   await expect.poll(() => patches).toHaveLength(2);
   expect(patches[1]).toEqual({ auto_compaction: { tokens: null }, restart: false });
-  await expect(context.getByRole("button")).toHaveCount(0);
+  await expect(context.getByRole("button")).toHaveCount(1);
 });

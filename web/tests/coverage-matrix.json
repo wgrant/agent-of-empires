@@ -15,7 +15,7 @@
       "components": ["web/src/components/acp/CompactionBudgetControl.tsx", "web/src/components/acp/SessionSettings.tsx"]
     },
     {
-      "id": "acp.session-compaction-budget.mobile-touch-targets",
+      "id": "acp.session-compaction-budget.mobile-touch-targets-and-inline-editor",
       "kind": "mocked-playwright",
       "risk": "high",
       "specs": ["tests/acp-compaction-budget.spec.ts"],

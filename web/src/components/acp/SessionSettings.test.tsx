@@ -180,7 +180,8 @@ describe("SessionSettingsControl", () => {
     settings.auto_compaction.applied_known = false;
     mount([MODEL]);
     fireEvent.click(trigger());
-    fireEvent.change(await screen.findByLabelText("Auto-compaction"), { target: { value: "custom" } });
+    fireEvent.click(await screen.findByTestId("auto-compaction"));
+    fireEvent.click(screen.getByTestId("auto-compaction-value-custom"));
     fireEvent.change(screen.getByLabelText("Working context budget (tokens)"), { target: { value: "200000" } });
     fireEvent.click(screen.getByTestId("config-option-model"));
     fireEvent.click(screen.getByTestId("config-option-model-value-sonnet"));
@@ -207,7 +208,8 @@ describe("SessionSettingsControl", () => {
   it("guards unsaved dismissal and preserves rejected-save drafts", async () => {
     mount([MODEL]);
     fireEvent.click(trigger());
-    fireEvent.change(await screen.findByLabelText("Auto-compaction"), { target: { value: "custom" } });
+    fireEvent.click(await screen.findByTestId("auto-compaction"));
+    fireEvent.click(screen.getByTestId("auto-compaction-value-custom"));
     fireEvent.keyDown(document, { key: "Escape" });
     expect(screen.getByText(/Discard unsaved agent settings/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Keep editing" }));
@@ -226,7 +228,8 @@ describe("SessionSettingsControl", () => {
   it("requires confirmation before restarting and batches the budget with the restart", async () => {
     mount([MODEL]);
     fireEvent.click(trigger());
-    fireEvent.change(await screen.findByLabelText("Auto-compaction"), { target: { value: "custom" } });
+    fireEvent.click(await screen.findByTestId("auto-compaction"));
+    fireEvent.click(screen.getByTestId("auto-compaction-value-custom"));
     fireEvent.click(screen.getByRole("button", { name: "Save and restart…" }));
     expect(screen.getByText(/Restarting interrupts/)).toBeTruthy();
     expect(requests).toHaveLength(0);
