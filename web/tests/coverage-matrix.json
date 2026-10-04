@@ -21,7 +21,7 @@
       ]
     },
     {
-      "id": "acp.session-compaction-budget.mobile-touch-targets-and-inline-editor",
+      "id": "acp.session-compaction-budget.mobile-inline-editor-and-stable-dialog",
       "kind": "mocked-playwright",
       "risk": "high",
       "specs": ["tests/acp-compaction-budget.spec.ts"],

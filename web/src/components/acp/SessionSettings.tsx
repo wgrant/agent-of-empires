@@ -3,6 +3,7 @@
 
 import { ArrowLeftRight, Clock3, Settings2 } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 import { useSessionThinkingDisplay } from "../../hooks/useSessionThinkingDisplay";
 import { useAgentSettings } from "../../hooks/useAgentSettings";
@@ -41,6 +42,7 @@ interface Props {
   summary: ComposerStatusParts;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  dialogContainer?: HTMLElement | null;
 }
 
 /** The permission segment is tinted by mode id so destructive modes stand out without opening the dialog. */
@@ -130,20 +132,22 @@ export function SessionSettingsControl(props: Props) {
           <Clock3 data-testid="session-settings-pending" className="h-3 w-3 shrink-0 text-text-dim" aria-hidden />
         )}
       </button>
-      {open && (
-        <SessionSettingsDialog
-          sessionId={props.sessionId}
-          agent={props.summary.agent}
-          channel={channel}
-          configOptions={options}
-          snapshot={snapshot}
-          pending={pending}
-          loadError={settings.error}
-          save={settings.save}
-          launchOptions={launchOptions}
-          onClose={() => setOpen(false)}
-        />
-      )}
+      {open &&
+        createPortal(
+          <SessionSettingsDialog
+            sessionId={props.sessionId}
+            agent={props.summary.agent}
+            channel={channel}
+            configOptions={options}
+            snapshot={snapshot}
+            pending={pending}
+            loadError={settings.error}
+            save={settings.save}
+            launchOptions={launchOptions}
+            onClose={() => setOpen(false)}
+          />,
+          props.dialogContainer ?? document.body,
+        )}
     </>
   );
 }
