@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, within, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useAgentSettings } from "../../hooks/useAgentSettings";
+import type { AgentSettingsSnapshot } from "../../lib/agentSettings";
 
 import type { ConfigOptionDescriptor } from "../../lib/acpTypes";
 import { consumePendingSwitchAgent } from "../../lib/switchAgentTrigger";
@@ -11,6 +13,40 @@ import { SessionSettingsControl } from "./SessionSettings";
 afterEach(() => {
   cleanup();
   localStorage.clear();
+  vi.unstubAllGlobals();
+});
+
+let settings: AgentSettingsSnapshot;
+let requests: Record<string, unknown>[];
+let fetchMock: ReturnType<typeof vi.fn>;
+beforeEach(() => {
+  settings = {
+    agent: "claude",
+    running: true,
+    starting: false,
+    mode_id: null,
+    selectors: [],
+    config_options: [],
+    yolo_mode: { enabled: false, applied_known: true, applied_enabled: false },
+    auto_compaction: { tokens: null, bounds: [100000, 1000000], applied_known: true, applied_tokens: null },
+  };
+  requests = [];
+  fetchMock = vi.fn(async (_url: unknown, init?: RequestInit) => {
+    if (init?.method === "PATCH") {
+      const patch = JSON.parse(String(init.body));
+      requests.push(patch);
+      if (patch.auto_compaction) settings.auto_compaction.tokens = patch.auto_compaction.tokens;
+      if (patch.yolo_mode !== undefined) settings.yolo_mode.enabled = patch.yolo_mode;
+      if (patch.config_options)
+        settings.selectors = patch.config_options.map((option: { config_id: string; value: string }) => ({
+          ...option,
+          category: option.config_id === "mode" ? "mode" : "model",
+        }));
+      return new Response("{}", { status: 200 });
+    }
+    return new Response(JSON.stringify(settings), { status: 200 });
+  });
+  vi.stubGlobal("fetch", fetchMock);
 });
 
 const MODE: ConfigOptionDescriptor = {
@@ -34,24 +70,27 @@ const MODEL: ConfigOptionDescriptor = {
   ],
 };
 
-function mount(configOptions: ConfigOptionDescriptor[], setConfigOption = vi.fn()) {
-  render(
-    <AgentProfileProvider toolKey="claude">
-      <SessionSettingsControl
-        sessionId="s1"
-        currentAgent="claude"
-        yoloMode={false}
-        availableModes={[]}
-        currentModeId={null}
-        legacyMode="default"
-        configOptions={configOptions}
-        pendingConfigOption={null}
-        setConfigOption={setConfigOption}
-        summary={{ agent: "Claude", permission: "Default", model: "Opus", effort: null }}
-      />
-    </AgentProfileProvider>,
-  );
-  return { setConfigOption };
+function mount(configOptions: ConfigOptionDescriptor[]) {
+  function Harness() {
+    const controller = useAgentSettings("s1", true);
+    return (
+      <AgentProfileProvider toolKey="claude">
+        <SessionSettingsControl
+          sessionId="s1"
+          currentAgent="claude"
+          yoloMode={false}
+          availableModes={[]}
+          currentModeId={null}
+          legacyMode="default"
+          configOptions={configOptions}
+          pendingConfigOption={null}
+          summary={{ agent: "Claude", permission: "Default", model: "Opus", effort: null }}
+          settings={controller}
+        />
+      </AgentProfileProvider>
+    );
+  }
+  render(<Harness />);
 }
 
 const trigger = () => screen.getByTestId("session-settings-trigger");
@@ -67,14 +106,23 @@ describe("SessionSettingsControl", () => {
     expect(dialog()).toBeNull();
   });
 
-  it("changes the mode in place and keeps the dialog open", () => {
-    const { setConfigOption } = mount([MODE, MODEL]);
+  it("drafts the mode, saves explicitly, and keeps the dialog open", async () => {
+    mount([MODE, MODEL]);
     fireEvent.click(trigger());
     const mode = screen.getByTestId("session-mode");
     expect(mode.getAttribute("aria-label")).toMatch(/Default/);
     fireEvent.click(mode);
     fireEvent.click(within(screen.getByRole("menu")).getByRole("menuitem", { name: /Bypass Permissions/ }));
-    expect(setConfigOption).toHaveBeenCalledWith("mode", "bypassPermissions");
+    expect(requests).toHaveLength(0);
+    await waitFor(() =>
+      expect((screen.getByRole("button", { name: "Save changes" }) as HTMLButtonElement).disabled).toBe(false),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() =>
+      expect(requests).toEqual([
+        { config_options: [{ config_id: "mode", value: "bypassPermissions" }], restart: false },
+      ]),
+    );
     expect(dialog()).not.toBeNull();
   });
 
@@ -120,10 +168,69 @@ describe("SessionSettingsControl", () => {
     expect(consumePendingSwitchAgent("s1")).toBe(true);
   });
 
-  it("closes from Done", () => {
+  it("closes clean settings from Close", () => {
     mount([MODEL]);
     fireEvent.click(trigger());
-    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
     expect(dialog()).toBeNull();
+  });
+
+  it("saves a dormant model and budget together and keeps pending visible after closing", async () => {
+    settings.running = false;
+    settings.auto_compaction.applied_known = false;
+    mount([MODEL]);
+    fireEvent.click(trigger());
+    fireEvent.change(await screen.findByLabelText("Auto-compaction"), { target: { value: "custom" } });
+    fireEvent.change(screen.getByLabelText("Working context budget (tokens)"), { target: { value: "200000" } });
+    fireEvent.click(screen.getByTestId("config-option-model"));
+    fireEvent.click(screen.getByTestId("config-option-model-value-sonnet"));
+    expect(screen.queryByRole("button", { name: /restart/i })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() =>
+      expect(requests).toEqual([
+        {
+          config_options: [{ config_id: "model", value: "sonnet" }],
+          auto_compaction: { tokens: 200000 },
+          restart: false,
+        },
+      ]),
+    );
+    expect(await screen.findByText("2 settings pending")).toBeTruthy();
+    expect(screen.getAllByText(/Applies when the agent starts/).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(screen.getByTestId("session-settings-pending")).toBeTruthy();
+    fireEvent.click(trigger());
+    expect(screen.getByTestId("config-option-model").textContent).toContain("Sonnet");
+    expect(screen.getByText("2 settings pending")).toBeTruthy();
+  });
+
+  it("guards unsaved dismissal and preserves rejected-save drafts", async () => {
+    mount([MODEL]);
+    fireEvent.click(trigger());
+    fireEvent.change(await screen.findByLabelText("Auto-compaction"), { target: { value: "custom" } });
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.getByText(/Discard unsaved agent settings/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Keep editing" }));
+    fetchMock.mockImplementationOnce(
+      async () => new Response(JSON.stringify({ message: "Save rejected" }), { status: 403 }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    expect(await screen.findByRole("alert")).toHaveProperty("textContent", "Save rejected");
+    expect(screen.getByRole("status").textContent).toBe("Unsaved changes.");
+    expect((screen.getByLabelText("Working context budget (tokens)") as HTMLInputElement).value).toBe("100000");
+    fireEvent.click(screen.getByRole("button", { name: "Discard…" }));
+    fireEvent.click(screen.getByRole("button", { name: "Discard changes" }));
+    expect(dialog()).toBeNull();
+  });
+
+  it("requires confirmation before restarting and batches the budget with the restart", async () => {
+    mount([MODEL]);
+    fireEvent.click(trigger());
+    fireEvent.change(await screen.findByLabelText("Auto-compaction"), { target: { value: "custom" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save and restart…" }));
+    expect(screen.getByText(/Restarting interrupts/)).toBeTruthy();
+    expect(requests).toHaveLength(0);
+    fireEvent.click(screen.getByRole("button", { name: "Restart agent" }));
+    await waitFor(() => expect(requests).toEqual([{ auto_compaction: { tokens: 100000 }, restart: true }]));
   });
 });

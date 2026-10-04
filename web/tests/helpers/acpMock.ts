@@ -12,6 +12,7 @@
 // drops the duplicates.
 
 import { expect, type Page, type WebSocketRoute } from "@playwright/test";
+import type { AgentSettingsSnapshot, AgentSettingsPatch } from "../../src/lib/agentSettings";
 
 /** Parsed `POST .../acp/prompt` request body. `prompt_id` is the
  *  client-minted id the daemon echoes back on `UserPromptSent`, so a spec can
@@ -221,6 +222,31 @@ export async function mockAcpSession(page: Page, opts: AcpSessionMockOptions = {
     telemetryPings: [],
     pushEvents,
   };
+  const savedSettings: AgentSettingsSnapshot = {
+    agent: "claude",
+    running: true,
+    starting: false,
+    selectors: [],
+    config_options: [],
+    mode_id: null,
+    yolo_mode: { enabled: opts.yoloMode ?? false, applied_known: true, applied_enabled: opts.yoloMode ?? false },
+    auto_compaction: { tokens: null, bounds: [100000, 1000000], applied_known: true, applied_tokens: null },
+  };
+  await page.route("**/api/sessions/*/acp/launch-options", async (r) => {
+    if (r.request().method() === "PATCH") {
+      const patch = r.request().postDataJSON() as AgentSettingsPatch;
+      if (patch.auto_compaction) savedSettings.auto_compaction.tokens = patch.auto_compaction.tokens;
+      if (patch.yolo_mode !== undefined) savedSettings.yolo_mode.enabled = patch.yolo_mode;
+      if (patch.mode_id !== undefined) savedSettings.mode_id = patch.mode_id;
+      for (const option of patch.config_options ?? []) {
+        savedSettings.selectors = savedSettings.selectors.filter((saved) => saved.config_id !== option.config_id);
+        savedSettings.selectors.push({ ...option, category: option.config_id === "mode" ? "mode" : "model" });
+        handle.configOptionBodies.push(option);
+      }
+      await r.fulfill({ json: { status: "applying", restarted: false } });
+      for (const option of patch.config_options ?? []) pushEvents(opts.onConfigOption?.(option) ?? []);
+    } else await r.fulfill({ json: savedSettings });
+  });
 
   await page.route("**/api/login/status", (r) => r.fulfill({ json: { required: false, authenticated: true } }));
   for (const path of [
@@ -289,7 +315,9 @@ export async function mockAcpSession(page: Page, opts: AcpSessionMockOptions = {
   // everything interesting arrives over the WebSocket. Registered before
   // the prompt/config-option captures so those (later, more specific)
   // routes win Playwright's reverse-registration-order matching.
-  await page.route("**/api/sessions/*/acp/**", (r) => r.fulfill({ json: {} }));
+  await page.route("**/api/sessions/*/acp/**", (r) =>
+    r.request().url().endsWith("/launch-options") ? r.fallback() : r.fulfill({ json: {} }),
+  );
   // Replay endpoint: serve the frame log with the real recent-first
   // paging contract so the client's cold-open (tail via `before`) and
   // scroll-up (older pages via `before`) paths are exercised, not stubbed.

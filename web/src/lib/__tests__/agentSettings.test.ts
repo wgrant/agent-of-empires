@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { applicationText, pendingAgentSettings, type AgentSettingsSnapshot } from "../agentSettings";
+import {
+  applicationText,
+  pendingAgentSettings,
+  reconcileLaunchIntent,
+  type AgentSettingsSnapshot,
+} from "../agentSettings";
 
 const snapshot: AgentSettingsSnapshot = {
   agent: "opencode",
@@ -53,5 +58,31 @@ describe("pending settings", () => {
     expect(pendingAgentSettings({ ...defaults, mode_id: "plan" }, [], "default")).toEqual([
       { id: "legacy_mode", name: "Mode", application: "confirmation", reason: undefined },
     ]);
+  });
+
+  it("retains explicit default and approvals-on changes until the agent confirms them", () => {
+    const unknown = {
+      ...snapshot,
+      selectors: [],
+      yolo_mode: { enabled: false, applied_known: false, applied_enabled: null },
+      auto_compaction: { ...snapshot.auto_compaction, tokens: null, applied_known: false },
+    };
+    const intent = { auto_compaction: { tokens: null }, yolo_mode: false };
+    expect(reconcileLaunchIntent(unknown, intent)).toEqual(intent);
+    expect(pendingAgentSettings(unknown, [], null, null, null, intent).map((setting) => setting.id)).toEqual([
+      "auto_compaction",
+      "yolo_mode",
+    ]);
+    expect(
+      reconcileLaunchIntent(
+        {
+          ...unknown,
+          yolo_mode: { ...unknown.yolo_mode, applied_known: true, applied_enabled: false },
+          auto_compaction: { ...unknown.auto_compaction, applied_known: true, applied_tokens: null },
+        },
+        intent,
+      ),
+    ).toEqual({});
+    expect(reconcileLaunchIntent(snapshot, intent)).toEqual({});
   });
 });

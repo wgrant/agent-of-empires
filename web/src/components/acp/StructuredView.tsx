@@ -658,6 +658,8 @@ function ComposerDock({
           configOptions={state.configOptions}
           pendingConfigOption={state.pendingConfigOption}
           setConfigOption={ctx.setConfigOption}
+          configOptionSwitchFailed={state.configOptionSwitchFailed}
+          modeSwitchFailed={state.modeSwitchFailed}
           sessionUsage={state.sessionUsage}
           authStatus={state.authStatus}
           quota={state.quota}
