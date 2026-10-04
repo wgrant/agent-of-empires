@@ -297,11 +297,18 @@ export function ChoiceDropdown({
     const recompute = () => {
       const rect = ref.current?.getBoundingClientRect();
       if (!rect) return;
+      // Dialog bodies clip menus independently of the screen's viewport.
+      const body = ref.current?.closest("[data-dialog-body]")?.getBoundingClientRect();
+      const viewportTop = Math.max(vv?.offsetTop ?? 0, body?.top ?? -Infinity);
+      const viewportBottom = Math.min(
+        (vv?.offsetTop ?? 0) + (vv?.height ?? window.innerHeight),
+        body?.bottom ?? Infinity,
+      );
       setMenuLayout(
         computeMenuLayout(
           rect,
-          vv?.height ?? window.innerHeight,
-          vv?.offsetTop ?? 0,
+          Math.max(0, viewportBottom - viewportTop),
+          viewportTop,
           vv?.width ?? window.innerWidth,
           searchable ? SEARCHABLE_MENU_MAX_HEIGHT_CAP : MENU_MAX_HEIGHT_CAP,
         ),
@@ -356,7 +363,7 @@ export function ChoiceDropdown({
           style={{ maxHeight: menuLayout.maxHeight }}
           role="menu"
         >
-          <div className="border-b border-surface-800 px-3 py-1.5">
+          <div className="shrink-0 border-b border-surface-800 px-3 py-1.5">
             <div className="text-[10px] uppercase tracking-wider text-text-dim">{label}</div>
             {note && <div className="mt-0.5 text-[11px] text-text-dim">{note}</div>}
             {searchable && (
@@ -376,7 +383,7 @@ export function ChoiceDropdown({
               />
             )}
           </div>
-          <div className="overflow-y-auto">
+          <div className="min-h-0 overflow-y-auto">
             {shownChoices.length === 0 && <div className="px-3 py-2 text-[12px] text-text-dim">No matches</div>}
             {groups
               ? [...groups].map(([provider, members]) => (

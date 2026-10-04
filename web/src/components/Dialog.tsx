@@ -43,7 +43,7 @@ export function Dialog({
             {title}
           </h2>
         </div>
-        <div id={`${id}-desc`} className={bodyClassName}>
+        <div id={`${id}-desc`} data-dialog-body className={bodyClassName}>
           {children}
         </div>
         <div className="flex justify-end gap-3 px-5 py-3 border-t border-surface-700">{footer}</div>
