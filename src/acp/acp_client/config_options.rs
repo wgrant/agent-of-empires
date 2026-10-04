@@ -113,7 +113,7 @@ pub(super) enum ConfigOptionDispatchPurpose {
     Mode,
 }
 
-pub(super) type SettingOutcome = Result<Vec<Event>, Event>;
+pub(super) type SettingOutcome = Result<Vec<Event>, Box<Event>>;
 
 fn config_option_success_events(
     options: Vec<SessionConfigOption>,
@@ -180,9 +180,9 @@ pub(super) fn dispatch_set_config_option(
             )),
             Err(reason) => {
                 warn!(target: "acp.protocol", "session/set_config_option failed: {reason}");
-                Err(config_option_failure_event(
+                Err(Box::new(config_option_failure_event(
                     config_id, value, reason, purpose,
-                ))
+                )))
             }
         }
     })
@@ -420,7 +420,7 @@ pub(super) fn dispatch_set_mode(
             }]),
             Err(reason) => {
                 warn!(target: "acp.protocol", while_prompting, "session/set_mode failed: {reason}");
-                Err(Event::ModeSwitchFailed { mode_id, reason })
+                Err(Box::new(Event::ModeSwitchFailed { mode_id, reason }))
             }
         }
     }))

@@ -354,7 +354,7 @@ impl Session {
             .iter()
             .any(|newer| newer.key == pending.key);
         let outcome = outcome.unwrap_or_else(|error| {
-            Err(config_option_failure_event(
+            Err(Box::new(config_option_failure_event(
                 pending.key.clone(),
                 match &pending.change {
                     SettingChange::Config { value, .. } | SettingChange::Mode(value) => {
@@ -363,7 +363,7 @@ impl Session {
                 },
                 error.to_string(),
                 ConfigOptionDispatchPurpose::Generic,
-            ))
+            )))
         });
         match outcome {
             Ok(events) => {
@@ -416,8 +416,7 @@ impl Session {
                         .await;
                 }
             }
-            Err(event) if pending.retry_when_idle && !superseded => {
-                let _ = event;
+            Err(_) if pending.retry_when_idle && !superseded => {
                 pending.deferred = true;
                 pending.retry_when_idle = false;
                 self.setting_status(&pending, SettingApplicationStatus::Queued)
@@ -425,14 +424,14 @@ impl Session {
                 self.pending_settings.push(pending);
             }
             Err(event) if !superseded => {
-                let reason = match &event {
+                let reason = match event.as_ref() {
                     Event::ConfigOptionSwitchFailed { reason, .. }
                     | Event::ModeSwitchFailed { reason, .. } => reason.clone(),
                     _ => "Could not apply setting".into(),
                 };
                 self.setting_status(&pending, SettingApplicationStatus::Failed { reason })
                     .await;
-                self.shared.emit(event).await;
+                self.shared.emit(*event).await;
             }
             Err(_) => {}
         }
