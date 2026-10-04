@@ -1,6 +1,7 @@
 import { test, expect } from "./helpers/mockedTest";
 import {
   agentMessageChunk,
+  configOptionsUpdated,
   mockAcpSession,
   openSessionSettings,
   openStructuredSession,
@@ -115,4 +116,82 @@ test("mobile context settings save without restart and require confirmation to a
   await page.getByRole("button", { name: "Close", exact: true }).click();
   await expect(page.getByTestId("composer-compaction-budget")).toHaveCount(0);
   expect(await viewport.evaluate((node) => node.clientHeight)).toBe(heightBefore);
+});
+
+test("a custom budget leaves room for the mobile permission summary, queue and stop", async ({ page }) => {
+  await page.setViewportSize({ width: 412, height: 915 });
+  const mock = await mockAcpSession(page, {
+    queuedPrompts: [{ id: "queued-review", text: "Follow up" }],
+    initialEvents: [
+      configOptionsUpdated([
+        {
+          id: "model",
+          name: "Model",
+          category: "model",
+          current_value: "opus",
+          options: [{ value: "opus", name: "Opus 5.5" }],
+        },
+      ]),
+      agentMessageChunk("Ready."),
+      usageUpdated({
+        used: 71000,
+        size: 1000000,
+        cost: null,
+        quota: {
+          windows: [
+            {
+              id: "five_hour",
+              duration_mins: 300,
+              used_percent: 92,
+              resets_at: new Date(Date.now() + 3600000).toISOString(),
+            },
+            {
+              id: "seven_day",
+              duration_mins: 10080,
+              used_percent: 37,
+              resets_at: new Date(Date.now() + 86400000).toISOString(),
+            },
+          ],
+          limited: false,
+          observed_at: new Date().toISOString(),
+        },
+      }),
+      stopped(),
+    ],
+  });
+  await page.route(`**/api/sessions/${mock.sessionId}/acp/launch-options`, (route) =>
+    route.fulfill({
+      json: {
+        agent: "claude",
+        running: true,
+        starting: false,
+        selectors: [],
+        config_options: [],
+        mode_id: null,
+        yolo_mode: { enabled: false, applied_known: true, applied_enabled: false },
+        auto_compaction: { tokens: 1000000, bounds: [100000, 1000000], applied_known: true, applied_tokens: null },
+      },
+    }),
+  );
+  await openStructuredSession(page, mock);
+  const strip = page.getByTestId("composer-mobile-status");
+  await expect(strip.getByTestId("composer-compaction-budget")).toBeVisible();
+  mock.pushEvents(["AgentTurnStarted"]);
+  const stop = strip.getByRole("button", { name: "Stop", exact: true });
+  await expect(stop).toBeVisible();
+  await expect(strip.getByTestId("composer-mobile-queued-count")).toHaveText("Q1");
+  for (const width of [320, 360, 412]) {
+    await page.setViewportSize({ width, height: 915 });
+    const summary = strip.getByTestId("composer-mobile-summary");
+    await expect(summary).toContainText("Default");
+    expect((await summary.boundingBox())!.width).toBeGreaterThanOrEqual(40);
+    expect(await strip.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
+    expect((await stop.boundingBox())!.x + (await stop.boundingBox())!.width).toBeLessThanOrEqual(width);
+    await expect(strip.getByTestId("composer-quota-window").nth(1)).toBeHidden();
+    await page.screenshot({ path: `test-results/compaction-budget-busy-${width}.png` });
+  }
+  const usage = strip.getByTestId("composer-usage");
+  await usage.click();
+  await usage.hover();
+  await expect(page.getByRole("tooltip")).toContainText("7d: 37% used");
 });
