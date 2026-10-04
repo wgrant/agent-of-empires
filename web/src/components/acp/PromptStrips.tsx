@@ -1,5 +1,5 @@
 import { Fragment, useState } from "react";
-import { AlertTriangle, Check, ChevronDown, Clock, Paperclip, RotateCcw, SendHorizontal, X } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, Clock, Info, Paperclip, RotateCcw, SendHorizontal, X } from "lucide-react";
 
 import { useIsCoarsePointer } from "../../hooks/useIsCoarsePointer";
 import type { QueuedPrompt, SessionNotice } from "../../lib/acpTypes";
@@ -228,8 +228,8 @@ export function SessionNoticesStrip({
       ? "warning"
       : "info";
   return (
-    <Strip tone={noticeTone(strongest).strip}>
-      <ul className="space-y-1">
+    <div className={`border-t ${noticeTone(strongest).strip} px-4 py-2`}>
+      <ul className="mx-auto max-w-3xl space-y-1 xl:max-w-4xl 2xl:max-w-5xl">
         {notices.map((notice) => {
           const tone = noticeTone(notice.severity);
           const Icon = notice.severity === "error" ? AlertTriangle : Info;
@@ -254,7 +254,7 @@ export function SessionNoticesStrip({
           );
         })}
       </ul>
-    </Strip>
+    </div>
   );
 }
 

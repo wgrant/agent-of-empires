@@ -72,6 +72,15 @@ describe("historyWindowStart", () => {
     ["cuts after a completed visual block", () => transcript(10, 10), 30, 80],
     ["hard-cuts one huge turn", hugeTurn, 150, 351],
     ["does not skip ahead to diff comments", diffTurn, 10, 30],
+    [
+      "cuts after a session advisory",
+      () => [
+        ...Array.from({ length: 30 }, (_, i) => row("advisory", i)),
+        ...Array.from({ length: 10 }, (_, i) => row("message", i)),
+      ],
+      10,
+      30,
+    ],
     ["pages through a long goal turn", longGoalTurn, DEFAULT_HISTORY_WINDOW, 152],
     ["pulls back to a Task parent (#2313)", () => subagentTranscript(100, 50), 40, 101],
     ["keeps a cut on the Task parent", () => subagentTranscript(100, 50), 51, 101],
