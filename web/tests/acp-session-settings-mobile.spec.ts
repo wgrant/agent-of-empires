@@ -23,6 +23,13 @@ test("the first model remains selectable below the settings title", async ({ pag
             { value: "older", name: "Sonnet 5" },
           ],
         },
+        {
+          id: "effort",
+          name: "Effort",
+          category: "thought_level",
+          current_value: "medium",
+          options: [{ value: "medium", name: "Medium" }],
+        },
       ]),
     ],
   });
@@ -39,6 +46,11 @@ test("the first model remains selectable below the settings title", async ({ pag
   const menuBounds = await menu.boundingBox();
   expect(menuBounds!.y).toBeGreaterThanOrEqual(bounds!.y);
   expect(menuBounds!.y + menuBounds!.height).toBeLessThanOrEqual(bounds!.y + bounds!.height);
+  const triggerBounds = await page.getByTestId("config-option-model").boundingBox();
+  const availableAbove = triggerBounds!.y - bounds!.y;
+  const availableBelow = bounds!.y + bounds!.height - triggerBounds!.y - triggerBounds!.height;
+  expect(availableBelow).toBeGreaterThan(availableAbove);
+  expect(menuBounds!.y).toBeGreaterThanOrEqual(triggerBounds!.y + triggerBounds!.height);
   await page.getByRole("menuitem", { name: /Opus 5.5/ }).click();
   await expect(page.getByTestId("config-option-model")).toContainText("Opus 5.5");
   await page.getByRole("button", { name: "Apply", exact: true }).click();

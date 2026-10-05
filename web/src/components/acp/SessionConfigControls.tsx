@@ -155,12 +155,16 @@ function computeMenuLayout(
   viewportTop = 0,
   viewportWidth = Infinity,
   cap = MENU_MAX_HEIGHT_CAP,
+  preferRoomierSide = false,
 ): MenuLayout {
   const spaceAbove = rect.top - viewportTop - MENU_VIEWPORT_MARGIN;
   const spaceBelow = viewportTop + viewportHeight - rect.bottom - MENU_VIEWPORT_MARGIN;
   let direction: "up" | "down";
   let available: number;
-  if (spaceAbove >= MENU_MAX_HEIGHT_FLOOR) {
+  if (preferRoomierSide) {
+    direction = spaceBelow > spaceAbove ? "down" : "up";
+    available = Math.max(spaceAbove, spaceBelow);
+  } else if (spaceAbove >= MENU_MAX_HEIGHT_FLOOR) {
     direction = "up";
     available = spaceAbove;
   } else if (spaceBelow >= MENU_MAX_HEIGHT_FLOOR || spaceBelow > spaceAbove) {
@@ -310,7 +314,8 @@ export function ChoiceDropdown({
           Math.max(0, viewportBottom - viewportTop),
           viewportTop,
           vv?.width ?? window.innerWidth,
-          searchable ? SEARCHABLE_MENU_MAX_HEIGHT_CAP : MENU_MAX_HEIGHT_CAP,
+          body ? viewportBottom - viewportTop : searchable ? SEARCHABLE_MENU_MAX_HEIGHT_CAP : MENU_MAX_HEIGHT_CAP,
+          !!body,
         ),
       );
     };
