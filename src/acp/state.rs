@@ -1223,7 +1223,11 @@ impl AcpState {
             Event::UserPromptSent { .. } | Event::UserDiffCommentsPrompt { .. } => self.open_turn(),
             Event::PromptCapabilities { steering, .. } => self.steering = steering,
             Event::AcpSessionAssigned { .. } => {
-                self.setting_applications.clear();
+                // Keep canonical alias confirmations, not prior-generation operations.
+                self.setting_applications.retain(|_, application| {
+                    application.revision = 0;
+                    application.status == SettingApplicationStatus::Applied
+                });
                 self.config_option_switch_failed = None;
                 self.startup_error = None;
                 self.rate_limit = None;
@@ -1409,6 +1413,7 @@ impl AcpState {
         self.current_plan = None;
         self.mode = SessionMode::Default;
         self.config_options = Vec::new();
+        self.setting_applications.clear();
         self.config_option_switch_failed = None;
         self.last_agent_switch = Some(AgentSwitchInfo {
             from,

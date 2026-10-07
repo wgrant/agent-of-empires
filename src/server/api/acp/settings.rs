@@ -31,23 +31,28 @@ pub(super) fn pending_selector(
         .setting_applications
         .get(id)
         .filter(|operation| operation.value == desired);
+    let matches_observed = observed == Some(desired)
+        || operation.is_some_and(|operation| {
+            operation.status == SettingApplicationStatus::Applied
+                && operation
+                    .applied_value
+                    .as_deref()
+                    .is_some_and(|value| observed == Some(value))
+        });
     let (application, reason) = if !running && !starting {
+        if matches_observed {
+            return None;
+        }
         ("next_start", None)
     } else if let Some(operation) = operation {
         match &operation.status {
             SettingApplicationStatus::Applying => ("applying", None),
             SettingApplicationStatus::Queued => ("queued", None),
-            _ if observed == Some(desired) => return None,
-            SettingApplicationStatus::Applied
-                if operation
-                    .applied_value
-                    .as_deref()
-                    .is_some_and(|value| observed == Some(value)) =>
-            {
-                return None
-            }
+            _ if matches_observed => return None,
             SettingApplicationStatus::Failed { reason } => ("rejected", Some(reason.clone())),
-            SettingApplicationStatus::Applied => ("confirmation", None),
+            SettingApplicationStatus::Applied => {
+                (if starting { "applying" } else { "confirmation" }, None)
+            }
         }
     } else if observed == Some(desired) {
         return None;
@@ -160,20 +165,17 @@ mod tests {
             })
             .unwrap();
         assert_eq!(control.setting_applications["model"].value, "high");
-        assert_eq!(
-            pending_selector(
-                "model",
-                "Model",
-                "high",
-                Some("high"),
-                &control,
-                false,
-                false
-            )
-            .unwrap()
-            .application,
-            "next_start"
-        );
+        for (observed, expected) in [
+            (Some("high"), None),
+            (Some("low"), Some("next_start")),
+            (None, Some("next_start")),
+        ] {
+            assert_eq!(
+                pending_selector("model", "Model", "high", observed, &control, false, false)
+                    .map(|pending| pending.application),
+                expected
+            );
+        }
         control
             .apply_event(Event::SettingApplicationChanged {
                 config_id: "model".into(),
@@ -195,16 +197,18 @@ mod tests {
             false
         )
         .is_none());
-        assert!(pending_selector(
-            "model",
-            "Model",
-            "high",
-            Some("canonical-high"),
-            &control,
-            true,
-            false
-        )
-        .is_none());
+        for running in [false, true] {
+            assert!(pending_selector(
+                "model",
+                "Model",
+                "high",
+                Some("canonical-high"),
+                &control,
+                running,
+                false
+            )
+            .is_none());
+        }
         assert_eq!(
             pending_selector(
                 "model",
@@ -231,7 +235,20 @@ mod tests {
                 acp_session_id: "new".into(),
             })
             .unwrap();
-        assert!(control.setting_applications.is_empty());
+        assert_eq!(control.setting_applications.len(), 1);
+        assert_eq!(control.setting_applications["model"].revision, 0);
+        for (running, observed, expected) in [
+            (false, Some("canonical-high"), None),
+            (true, Some("canonical-high"), None),
+            (false, Some("low"), Some("next_start")),
+            (false, None, Some("next_start")),
+        ] {
+            assert_eq!(
+                pending_selector("model", "Model", "high", observed, &control, running, false)
+                    .map(|pending| pending.application),
+                expected
+            );
+        }
         assert!(control.config_option_switch_failed.is_none());
         assert_eq!(
             pending_selector("model", "Model", "high", Some("low"), &control, false, true)
@@ -239,6 +256,26 @@ mod tests {
                 .application,
             "applying"
         );
+        control
+            .apply_event(Event::SettingApplicationChanged {
+                config_id: "model".into(),
+                application: SettingApplication {
+                    value: "low".into(),
+                    applied_value: None,
+                    revision: 1,
+                    status: SettingApplicationStatus::Applying,
+                },
+            })
+            .unwrap();
+        assert_eq!(control.setting_applications["model"].value, "low");
+        control
+            .apply_event(Event::AgentSwitched {
+                from: "claude".into(),
+                to: "codex".into(),
+                reason: "user".into(),
+            })
+            .unwrap();
+        assert!(control.setting_applications.is_empty());
     }
 
     #[test]
