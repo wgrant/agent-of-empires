@@ -502,6 +502,7 @@ export function Composer(props: Props) {
                 <SessionSettingsControl
                   sessionId={sessionId}
                   currentAgent={props.currentAgent}
+                  providerSwitch={provider}
                   authStatus={props.authStatus}
                   yoloMode={props.yoloMode ?? false}
                   availableModes={props.availableModes}

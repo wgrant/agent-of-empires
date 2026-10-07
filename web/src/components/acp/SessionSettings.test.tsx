@@ -10,6 +10,7 @@ import { consumePendingSwitchAgent } from "../../lib/switchAgentTrigger";
 import { sessionThinkingDisplayKey } from "../../lib/thinkingDisplay";
 import { AgentProfileProvider } from "../../lib/agentProfileContext";
 import { SessionSettingsControl } from "./SessionSettings";
+import type { useProviderSwitch } from "./useProviderSwitch";
 
 afterEach(() => {
   cleanup();
@@ -88,7 +89,11 @@ const MODEL: ConfigOptionDescriptor = {
   ],
 };
 
-function mount(configOptions: ConfigOptionDescriptor[], turnActive = false) {
+function mount(
+  configOptions: ConfigOptionDescriptor[],
+  turnActive = false,
+  providerSwitch?: ReturnType<typeof useProviderSwitch>,
+) {
   function Harness() {
     const controller = useAgentSettings("s1", true);
     const [open, setOpen] = useState(false);
@@ -97,6 +102,7 @@ function mount(configOptions: ConfigOptionDescriptor[], turnActive = false) {
         <SessionSettingsControl
           sessionId="s1"
           currentAgent="claude"
+          providerSwitch={providerSwitch}
           authStatus={{ kind: "account", label: "Claude Team", account: { email: "user@example.com" } }}
           yoloMode={false}
           availableModes={[]}
@@ -120,6 +126,32 @@ const trigger = () => screen.getByTestId("session-settings-trigger");
 const dialog = () => screen.queryByTestId("session-settings-dialog");
 
 describe("SessionSettingsControl", () => {
+  it("offers provider switching even without agent config options", async () => {
+    const set = vi.fn(async () => {});
+    mount([], false, { current: "api", pending: null, set });
+    fireEvent.click(trigger());
+    fireEvent.click(screen.getByTestId("config-option-aoe-provider"));
+    fireEvent.click(screen.getByTestId("config-option-aoe-provider-value-bedrock"));
+    await waitFor(() => expect(set).toHaveBeenCalledWith("bedrock"));
+    await waitFor(() => expect(dialog()).toBeNull());
+  });
+
+  it("prevents provider switching during a turn or with unapplied drafts", async () => {
+    const set = vi.fn(async () => {});
+    mount([MODEL], true, { current: "api", pending: null, set });
+    fireEvent.click(trigger());
+    expect(screen.getByTestId("config-option-aoe-provider").hasAttribute("disabled")).toBe(true);
+    expect(screen.getByTestId("config-option-aoe-provider").title).toContain("turn finishes");
+    cleanup();
+    mount([MODEL], false, { current: "api", pending: null, set });
+    fireEvent.click(trigger());
+    fireEvent.click(screen.getByTestId("config-option-model"));
+    fireEvent.click(screen.getByTestId("config-option-model-value-sonnet"));
+    expect(screen.getByTestId("config-option-aoe-provider").hasAttribute("disabled")).toBe(true);
+    expect(screen.getByTestId("config-option-aoe-provider").title).toContain("Apply or cancel");
+    expect(set).not.toHaveBeenCalled();
+  });
+
   it("keeps the reported account in the settings dialog, not the summary chip", () => {
     mount([MODEL]);
     expect(screen.queryByText("Claude Team")).toBeNull();

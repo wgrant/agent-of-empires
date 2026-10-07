@@ -2739,6 +2739,7 @@
     },
     {
       "id": "acp.config-pickers",
+      "notes": "SessionSettings tests cover provider availability without agent options and locking during turns or unapplied drafts.",
       "kind": "live-playwright",
       "risk": "medium",
       "specs": [
