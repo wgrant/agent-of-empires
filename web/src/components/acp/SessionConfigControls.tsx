@@ -104,12 +104,14 @@ export function SessionConfigControls({
         </ConfigRow>
       )}
       {onSetProvider && (
-        <ModelDropdown
-          option={providerDescriptor(provider)}
-          pending={providerPending ?? null}
-          onSelect={(value) => onSetProvider(value)}
-          lockedReason={providerLockedReason}
-        />
+        <ConfigRow label="Provider">
+          <ModelDropdown
+            option={providerDescriptor(provider)}
+            pending={providerPending ?? null}
+            onSelect={(value) => onSetProvider(value)}
+            lockedReason={providerLockedReason}
+          />
+        </ConfigRow>
       )}
     </div>
   );

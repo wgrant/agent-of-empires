@@ -24,12 +24,14 @@ import { BRAND_BUTTON, Dialog } from "../Dialog";
 import { compactModelName, composerStatusText, type ComposerStatusParts } from "./composerStatus";
 import { CompactionBudgetControl } from "./CompactionBudgetControl";
 import { AuthStatusHint } from "./ComposerControls";
+import type { useProviderSwitch } from "./useProviderSwitch";
 import { ChoiceDropdown, ConfigRow, SessionConfigControls } from "./SessionConfigControls";
 
 interface Props {
   sessionId: string;
   currentAgent: AcpState["agent"];
   authStatus?: AcpState["authStatus"];
+  providerSwitch?: ReturnType<typeof useProviderSwitch>;
   yoloMode: boolean;
   availableModes: AcpState["availableModes"];
   currentModeId: string | null;
@@ -128,6 +130,7 @@ export function SessionSettingsControl(props: Props) {
             sessionId={props.sessionId}
             agent={props.summary.agent}
             authStatus={props.authStatus ?? null}
+            providerSwitch={props.providerSwitch}
             channel={channel}
             configOptions={options}
             snapshot={snapshot}
@@ -181,6 +184,7 @@ function SessionSettingsDialog({
   sessionId,
   agent,
   authStatus,
+  providerSwitch,
   channel,
   configOptions,
   snapshot,
@@ -194,6 +198,7 @@ function SessionSettingsDialog({
   sessionId: string;
   agent: string;
   authStatus: AcpState["authStatus"];
+  providerSwitch?: ReturnType<typeof useProviderSwitch>;
   channel: ModeChannel | null;
   configOptions: AcpState["configOptions"];
   snapshot: AgentSettingsSnapshot | null;
@@ -415,11 +420,28 @@ function SessionSettingsDialog({
                     />
                   </ConfigRow>
                 )}
-                {hasSessionConfigControls(draftOptions) && (
+                {(hasSessionConfigControls(draftOptions) || providerSwitch?.set) && (
                   <SessionConfigControls
                     configOptions={draftOptions}
                     pendingConfigOption={null}
                     selectedLabel="Selected"
+                    provider={providerSwitch?.current}
+                    providerPending={providerSwitch?.pending}
+                    onSetProvider={
+                      providerSwitch?.set
+                        ? async (value) => {
+                            await providerSwitch.set?.(value);
+                            onClose();
+                          }
+                        : undefined
+                    }
+                    providerLockedReason={
+                      dirty
+                        ? "Apply or cancel changes before switching providers"
+                        : turnActive
+                          ? "Switch providers once the turn finishes"
+                          : null
+                    }
                     onSetConfigOption={(id, value) => setDraft((previous) => ({ ...previous, [id]: value }))}
                   />
                 )}
