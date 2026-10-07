@@ -34,6 +34,8 @@ fn spawn_config(env: Vec<(String, String)>) -> SpawnConfig {
         default_effort: None,
         default_mode: None,
         default_model: None,
+        auto_compact_tokens: None,
+        extensions: Default::default(),
         socket_path: None,
         stored_acp_session_id: None,
         fork_from: None,

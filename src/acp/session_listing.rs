@@ -65,6 +65,8 @@ async fn list_with_spec(
         default_effort_explicit: false,
         default_mode: None,
         default_model: None,
+        auto_compact_tokens: None,
+        extensions: Default::default(),
         socket_path: None,
         stored_acp_session_id: None,
         fork_from: None,
