@@ -3,6 +3,16 @@
   "description": "Surface/flow coverage matrix for the agent-of-empires web dashboard. Every component file under web/src/components/** must appear in at least one entry's `components` list (covered, deferred, or out-of-scope), or in coverage-matrix.exempt.json. CI validates this on every PR via tests/validate-coverage-matrix.mjs.",
   "surfaces": [
     {
+      "id": "acp.compaction-independent-threshold-markers-keyboard-drag-and-mobile",
+      "kind": "mocked-playwright",
+      "risk": "high",
+      "specs": ["tests/acp-compaction-budget.spec.ts"],
+      "components": [
+        "web/src/components/acp/CompactionThresholdScale.tsx",
+        "web/src/components/acp/CompactionBudgetControl.tsx"
+      ]
+    },
+    {
       "id": "acp.claude-idle-compaction-opt-in-minimum-and-restart",
       "kind": "vitest",
       "risk": "high",

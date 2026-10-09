@@ -10,6 +10,8 @@ import {
   waitForComposerConnected,
 } from "./helpers/acpMock";
 
+test.use({ hasTouch: true });
+
 test("mobile context settings apply without restarting and retain a stable pending indicator", async ({ page }) => {
   await page.setViewportSize({ width: 412, height: 915 });
   const mock = await mockAcpSession(page, {
@@ -69,8 +71,7 @@ test("mobile context settings apply without restarting and retain a stable pendi
     const pickerBox = await page.getByTestId("auto-compaction").boundingBox();
     expect(inputBox).not.toBeNull();
     expect(pickerBox).not.toBeNull();
-    expect(Math.abs(inputBox!.y + inputBox!.height / 2 - pickerBox!.y - pickerBox!.height / 2)).toBeLessThan(1);
-    expect(inputBox!.x + inputBox!.width).toBeLessThan(pickerBox!.x);
+    expect(inputBox!.y).toBeGreaterThan(pickerBox!.y);
     expect(pickerBox!.x + pickerBox!.width).toBeLessThan(width);
     expect(await context.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
   }
@@ -117,6 +118,95 @@ test("mobile context settings apply without restarting and retain a stable pendi
   await expect(page.getByTestId("session-settings-dialog")).toHaveCount(0);
   await expect(page.getByTestId("composer-compaction-budget")).toHaveCount(0);
   expect(await viewport.evaluate((node) => node.clientHeight)).toBe(heightBefore);
+});
+
+test("context markers drag independently on mobile and remain reachable at coincident values", async ({ page }) => {
+  await page.setViewportSize({ width: 393, height: 852 });
+  const mock = await mockAcpSession(page, { initialEvents: [agentMessageChunk("Ready."), stopped()] });
+  await page.route(`**/api/sessions/${mock.sessionId}/acp/launch-options`, (route) =>
+    route.fulfill({
+      json: {
+        agent: "claude",
+        running: true,
+        starting: false,
+        selectors: [],
+        config_options: [],
+        mode_id: null,
+        pending: [],
+        yolo_mode: { enabled: false, requires_restart: false, applied_known: true, applied_enabled: false },
+        auto_compaction: {
+          tokens: 200000,
+          bounds: [100000, 1000000],
+          applied_known: true,
+          applied_tokens: 200000,
+          idle_supported: true,
+          idle_tokens: 200000,
+          idle_applied_known: true,
+          idle_applied_tokens: 200000,
+          prompt_cache: { refreshedAt: 1791584100000, expiresAt: 1791587700000, ttlMs: 3600000, contextTokens: 211000 },
+        },
+      },
+    }),
+  );
+  await openStructuredSession(page, mock);
+  await waitForComposerConnected(page);
+  await openSessionSettings(page);
+  const auto = page.getByRole("slider", { name: "Auto-compaction threshold" });
+  const idle = page.getByRole("slider", { name: "Idle compaction minimum" });
+  await auto.scrollIntoViewIfNeeded();
+  const autoBox = (await auto.boundingBox())!;
+  const idleBox = (await idle.boundingBox())!;
+  expect(autoBox.width).toBeGreaterThanOrEqual(44);
+  expect(idleBox.y).toBeGreaterThan(autoBox.y);
+  const scale = (await page.getByTestId("compaction-scale").boundingBox())!;
+  await page.mouse.move(autoBox.x + autoBox.width / 2, autoBox.y + autoBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(scale.x + scale.width * 0.8, autoBox.y + autoBox.height / 2, { steps: 8 });
+  await page.mouse.up();
+  await expect(page.getByLabel("Working context budget (tokens)")).toHaveValue("800000");
+  await expect(idle).toHaveAttribute("aria-valuenow", "200000");
+  const touch = await page.context().newCDPSession(page);
+  const touchBox = (await idle.boundingBox())!;
+  const touchY = touchBox.y + touchBox.height / 2;
+  await touch.send("Input.dispatchTouchEvent", {
+    type: "touchStart",
+    touchPoints: [{ x: touchBox.x + touchBox.width / 2, y: touchY }],
+  });
+  await touch.send("Input.dispatchTouchEvent", {
+    type: "touchMove",
+    touchPoints: [{ x: scale.x + scale.width * 0.5, y: touchY }],
+  });
+  await touch.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  await expect(page.getByLabel("Idle compaction minimum context (tokens)")).toHaveValue("500000");
+  await expect(auto).toHaveAttribute("aria-valuenow", "800000");
+  await touch.detach();
+  await idle.focus();
+  await idle.press("End");
+  await expect(page.getByLabel("Idle compaction minimum context (tokens)")).toHaveValue("1000000");
+  await auto.focus();
+  await auto.press("End");
+  await expect(auto).toHaveAttribute("aria-valuenow", "1000000");
+  await idle.click();
+  await expect(idle).toBeFocused();
+  await auto.click();
+  await expect(auto).toBeFocused();
+  await page.getByLabel("Working context budget (tokens)").fill("800000");
+  await page.getByLabel("Idle compaction minimum context (tokens)").fill("200000");
+  await page.getByRole("heading", { name: "Context management" }).click();
+  await page.screenshot({ path: "test-results/compaction-scale-mobile.png", animations: "disabled" });
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await openSessionSettings(page);
+  await expect(auto).toHaveAttribute("aria-valuenow", "200000");
+  await page.getByLabel("Working context budget (tokens)").fill("800000");
+  await page.getByRole("heading", { name: "Context management" }).click();
+  await page.screenshot({ path: "test-results/compaction-scale-desktop.png", animations: "disabled" });
+  await page.getByTestId("auto-compaction").click();
+  await page.getByTestId("auto-compaction-value-default").click();
+  await page.getByTestId("idle-compaction").click();
+  await page.getByTestId("idle-compaction-value-off").click();
+  await expect(page.getByTestId("compaction-scale")).toHaveCount(0);
+  await page.screenshot({ path: "test-results/compaction-scale-default.png", animations: "disabled" });
 });
 
 test("a custom budget leaves room for the mobile permission summary, queue and stop", async ({ page }) => {

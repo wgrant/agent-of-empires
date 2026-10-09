@@ -10,13 +10,15 @@ function Form({
   initial = null,
   disabled = false,
   idle = false,
+  initialIdle = null,
 }: {
   initial?: string | null;
   disabled?: boolean;
   idle?: boolean;
+  initialIdle?: string | null;
 }) {
   const [value, setValue] = useState(initial);
-  const [idleValue, setIdleValue] = useState<string | null>(null);
+  const [idleValue, setIdleValue] = useState<string | null>(initialIdle);
   return (
     <CompactionBudgetControl
       state={{
@@ -37,13 +39,13 @@ function Form({
 
 it("keeps the default quiet and edits a custom budget without its own save buttons", () => {
   render(<Form />);
-  expect(screen.getByText("Uses the agent’s default compaction policy.")).toBeTruthy();
+  expect(screen.queryByTestId("compaction-scale")).toBeNull();
   expect(screen.getAllByRole("button")).toHaveLength(1);
   expect(screen.queryByLabelText("Working context budget (tokens)")).toBeNull();
   fireEvent.click(screen.getByTestId("auto-compaction"));
   fireEvent.click(screen.getByTestId("auto-compaction-value-custom"));
   expect((screen.getByLabelText("Working context budget (tokens)") as HTMLInputElement).value).toBe("100000");
-  expect(screen.getByText(/May lose detail/)).toBeTruthy();
+  expect(screen.getByText(/may lose detail/)).toBeTruthy();
   fireEvent.change(screen.getByLabelText("Working context budget (tokens)"), { target: { value: "200000" } });
   expect(screen.queryByRole("alert")).toBeNull();
   fireEvent.click(screen.getByTestId("auto-compaction"));
@@ -80,7 +82,43 @@ it("validates empty, fractional and out-of-range budgets and disables editing du
   expect(screen.queryByRole("alert")).toBeNull();
   view.rerender(<Form disabled />);
   expect(screen.getByTestId("auto-compaction").matches(":disabled")).toBe(true);
-  expect(input).toHaveProperty("disabled", true);
+  expect(input.matches(":disabled")).toBe(true);
+  expect(screen.getByRole("slider").matches(":disabled")).toBe(true);
+});
+
+it("edits independent, crossing and coincident thresholds with keyboard and numeric controls", () => {
+  render(<Form initial="200000" idle initialIdle="200000" />);
+  const auto = screen.getByRole("slider", { name: "Auto-compaction threshold" });
+  const idle = screen.getByRole("slider", { name: "Idle compaction minimum" });
+  expect(auto.getAttribute("aria-valuenow")).toBe("200000");
+  expect(idle.getAttribute("aria-valuenow")).toBe("200000");
+  fireEvent.keyDown(idle, { key: "ArrowRight", shiftKey: true });
+  expect(screen.getByLabelText("Idle compaction minimum context (tokens)")).toHaveProperty("value", "210000");
+  expect(auto.getAttribute("aria-valuenow")).toBe("200000");
+  for (const [key, value] of [
+    ["ArrowLeft", "199000"],
+    ["Home", "100000"],
+    ["End", "1000000"],
+    ["PageDown", "990000"],
+    ["ArrowUp", "991000"],
+    ["PageUp", "1000000"],
+  ]) {
+    fireEvent.keyDown(auto, { key });
+    expect(screen.getByLabelText("Working context budget (tokens)")).toHaveProperty("value", value);
+  }
+  fireEvent.keyDown(auto, { key: "ArrowRight" });
+  expect(auto.getAttribute("aria-valuenow")).toBe("1000000");
+  fireEvent.change(screen.getByLabelText("Working context budget (tokens)"), { target: { value: "150000" } });
+  expect(auto.getAttribute("aria-valuenow")).toBe("150000");
+  fireEvent.change(screen.getByLabelText("Working context budget (tokens)"), { target: { value: "" } });
+  expect(screen.queryByRole("slider", { name: "Auto-compaction threshold" })).toBeNull();
+  expect(idle.getAttribute("aria-valuenow")).toBe("210000");
+});
+
+it("does not invent an agent-default threshold when only idle compaction is enabled", () => {
+  render(<Form idle initialIdle="300000" />);
+  expect(screen.queryByRole("slider", { name: "Auto-compaction threshold" })).toBeNull();
+  expect(screen.getByRole("slider", { name: "Idle compaction minimum" }).getAttribute("aria-valuenow")).toBe("300000");
 });
 
 it("does not offer an unsupported setting", () => {
@@ -111,7 +149,7 @@ it("shows observed cache timing without presenting it as a guaranteed cache hit"
       onChange={() => {}}
     />,
   );
-  expect(screen.getByText(/Last cache activity/).textContent).toContain("Estimated expiry");
-  expect(screen.getByText(/Last cache activity/).textContent).toContain("60 min lifetime");
+  expect(screen.getByText(/Cache timing · estimated expiry/)).toBeTruthy();
+  expect(screen.getByText("60 min")).toBeTruthy();
   expect(screen.queryByText(/Cache timing unavailable/)).toBeNull();
 });

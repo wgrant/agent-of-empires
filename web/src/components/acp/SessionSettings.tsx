@@ -484,35 +484,35 @@ function SessionSettingsDialog({
                     {yoloChanged && yoloValue && <p className="text-[11px] text-status-warning">{option.warning}</p>}
                   </div>
                 ))}
-                {budget && (
-                  <div className="flex flex-col gap-1">
-                    <CompactionBudgetControl
-                      state={budget}
-                      value={budgetValue}
-                      disabled={saving}
-                      onChange={(value) => setBudgetDraft({ value })}
-                      idleValue={idleValue}
-                      onIdleChange={(value) => setIdleDraft({ value })}
-                    />
-                    {budget.bounds &&
-                      (budgetChanged ||
-                        idleChanged ||
-                        pending.some(
-                          (setting) => setting.id === "auto_compaction" || setting.id === "idle_compaction",
-                        )) && (
-                        <p className="text-[11px] text-text-dim">
-                          {snapshot?.running || snapshot?.starting
-                            ? "Changes require a restart."
-                            : "Applies when the agent starts."}
-                        </p>
-                      )}
-                    {snapshot?.running && budget.bounds && !budget.applied_known && (
-                      <p className="text-[11px] text-text-dim">The running agent’s compaction budget is unknown.</p>
-                    )}
-                  </div>
-                )}
               </div>
             </Section>
+            {budget && (
+              <div className="flex flex-col gap-1">
+                <CompactionBudgetControl
+                  state={budget}
+                  value={budgetValue}
+                  disabled={saving}
+                  onChange={(value) => setBudgetDraft({ value })}
+                  idleValue={idleValue}
+                  onIdleChange={(value) => setIdleDraft({ value })}
+                />
+                {budget.bounds &&
+                  (budgetChanged ||
+                    idleChanged ||
+                    pending.some(
+                      (setting) => setting.id === "auto_compaction" || setting.id === "idle_compaction",
+                    )) && (
+                    <p className="text-[11px] text-text-dim">
+                      {snapshot?.running || snapshot?.starting
+                        ? "Changes require a restart."
+                        : "Applies when the agent starts."}
+                    </p>
+                  )}
+                {snapshot?.running && budget.bounds && !budget.applied_known && (
+                  <p className="text-[11px] text-text-dim">The running agent’s compaction budget is unknown.</p>
+                )}
+              </div>
+            )}
             <Section label="Display">
               <ThinkingDisplayRow
                 value={thinkingDraft}

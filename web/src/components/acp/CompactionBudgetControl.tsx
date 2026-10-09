@@ -1,4 +1,7 @@
+import { useId } from "react";
 import type { AgentSettingsSnapshot } from "../../lib/agentSettings";
+import { formatTokens } from "../../lib/turnUsage";
+import { CompactionThresholdScale } from "./CompactionThresholdScale";
 import { ChoiceDropdown, ConfigRow } from "./SessionConfigControls";
 
 interface Props {
@@ -10,112 +13,181 @@ interface Props {
   onIdleChange?: (value: string | null) => void;
 }
 
+function validTokens(value: string | null, bounds: readonly [number, number]): number | null {
+  const tokens = Number(value);
+  return value !== null && value !== "" && Number.isSafeInteger(tokens) && tokens >= bounds[0] && tokens <= bounds[1]
+    ? tokens
+    : null;
+}
+const IDLE_BOUNDS = [100000, 1000000] as const;
+
+function TokenInput({
+  label,
+  name,
+  value,
+  bounds,
+  onChange,
+}: {
+  label: string;
+  name: string;
+  value: string;
+  bounds: readonly [number, number];
+  onChange: (value: string) => void;
+}) {
+  const errorId = useId();
+  const valid = validTokens(value, bounds) !== null;
+  return (
+    <div className="flex flex-col gap-1">
+      <ConfigRow label={name}>
+        <label className="flex min-w-0 items-center gap-1.5 text-[11px] text-text-secondary">
+          <input
+            aria-label={label}
+            aria-invalid={!valid}
+            aria-describedby={valid ? undefined : errorId}
+            type="number"
+            min={bounds[0]}
+            max={bounds[1]}
+            step="1000"
+            value={value}
+            onChange={(event) => onChange(event.target.value)}
+            className="min-h-8 w-24 min-w-0 rounded-md border border-surface-700 bg-surface-800/60 px-2 py-1 text-xs tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+          />
+          tokens
+        </label>
+      </ConfigRow>
+      {!valid && (
+        <p id={errorId} role="alert" className="text-[11px] text-status-warning">
+          Enter {bounds[0].toLocaleString()} to {bounds[1].toLocaleString()} tokens.
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function CompactionBudgetControl({ state, value, disabled, onChange, idleValue = null, onIdleChange }: Props) {
   if (!state.bounds) return null;
   const custom = value !== null;
-  const valid =
-    !custom ||
-    (value !== "" &&
-      Number.isSafeInteger(Number(value)) &&
-      Number(value) >= state.bounds[0] &&
-      Number(value) <= state.bounds[1]);
+  const idle = !!state.idle_supported && !!onIdleChange;
+  const idleEnabled = idle && idleValue !== null;
+  const autoTokens = validTokens(value, state.bounds);
+  const idleTokens = idleEnabled ? validTokens(idleValue, IDLE_BOUNDS) : null;
+  const cache = state.prompt_cache;
+  const time = (at: number) => new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   return (
-    <details aria-label="Context management" className="flex flex-col gap-1 text-xs" open>
-      <summary className="cursor-pointer py-1 text-text-secondary">Compaction</summary>
-      {state.idle_supported && (
-        <p className="text-[11px] text-text-dim">
-          {state.prompt_cache
-            ? `Last cache activity ${new Date(state.prompt_cache.refreshedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}. Estimated expiry ${new Date(state.prompt_cache.expiresAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} (${Math.round(state.prompt_cache.ttlMs / 60000)} min lifetime).`
-            : "Cache timing unavailable until a timed request reports cache usage."}
-        </p>
-      )}
-      <fieldset disabled={disabled} className="min-w-0">
-        <ConfigRow label="Auto-compaction">
-          <div className="flex min-w-0 items-center justify-end gap-1.5">
-            {custom && (
-              <label className="flex min-w-0 items-center gap-1 text-[11px] text-text-secondary">
-                <input
-                  aria-label="Working context budget (tokens)"
-                  type="number"
-                  min={state.bounds[0]}
-                  max={state.bounds[1]}
-                  step="1000"
-                  value={value}
-                  disabled={disabled}
-                  onChange={(e) => onChange(e.target.value)}
-                  className="min-h-8 w-20 min-w-0 rounded-md border border-surface-700 bg-surface-800/60 px-2 py-1 text-[11px] tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                />
-                <span>tokens</span>
-              </label>
-            )}
-            <ChoiceDropdown
-              label="Auto-compaction"
-              choices={[
-                { value: "default", name: "Default", description: "Use the agent’s default compaction policy" },
-                { value: "custom", name: "Custom", description: "Set a working context budget in tokens" },
-              ]}
-              current={custom ? "custom" : "default"}
-              onSelect={(value) => onChange(value === "custom" ? String(state.tokens ?? state.bounds![0]) : null)}
-              testId="auto-compaction"
-              selectedLabel="Selected"
-            />
-          </div>
+    <section aria-label="Context management" className="flex min-w-0 flex-col gap-2">
+      <h3 className="text-[10px] uppercase tracking-wider text-text-dim">Context management</h3>
+      <fieldset disabled={disabled} className="flex min-w-0 flex-col gap-2">
+        {(custom || idleEnabled) && (
+          <CompactionThresholdScale
+            maximum={state.bounds[1]}
+            contextTokens={cache?.contextTokens}
+            markers={[
+              ...(autoTokens === null
+                ? []
+                : [
+                    {
+                      label: "Auto-compaction threshold",
+                      value: autoTokens,
+                      minimum: state.bounds[0],
+                      maximum: state.bounds[1],
+                      onChange,
+                    },
+                  ]),
+              ...(idleTokens === null
+                ? []
+                : [
+                    {
+                      label: "Idle compaction minimum",
+                      value: idleTokens,
+                      minimum: IDLE_BOUNDS[0],
+                      maximum: IDLE_BOUNDS[1],
+                      idle: true,
+                      onChange: onIdleChange!,
+                    },
+                  ]),
+            ]}
+          />
+        )}
+        <ConfigRow label={custom ? "◆ Auto-compaction" : "Auto-compaction"}>
+          <ChoiceDropdown
+            label="Auto-compaction"
+            choices={[
+              { value: "default", name: "Default", description: "Use the agent’s default compaction policy" },
+              { value: "custom", name: "Custom", description: "Set a compaction threshold in tokens" },
+            ]}
+            current={custom ? "custom" : "default"}
+            onSelect={(selected) => onChange(selected === "custom" ? String(state.tokens ?? state.bounds![0]) : null)}
+            testId="auto-compaction"
+            selectedLabel="Selected"
+          />
         </ConfigRow>
+        {custom && (
+          <TokenInput
+            label="Working context budget (tokens)"
+            name="Threshold"
+            value={value}
+            bounds={state.bounds}
+            onChange={onChange}
+          />
+        )}
+        {idle && (
+          <>
+            <ConfigRow label={idleEnabled ? "● Compact while idle" : "Compact while idle"}>
+              <ChoiceDropdown
+                label="Compact while idle"
+                choices={[
+                  { value: "off", name: "Off" },
+                  { value: "on", name: "On" },
+                ]}
+                current={idleEnabled ? "on" : "off"}
+                onSelect={(selected) => onIdleChange!(selected === "off" ? null : "200000")}
+                testId="idle-compaction"
+                selectedLabel="Selected"
+              />
+            </ConfigRow>
+            {idleEnabled && (
+              <TokenInput
+                label="Idle compaction minimum context (tokens)"
+                name="Minimum context"
+                value={idleValue!}
+                bounds={IDLE_BOUNDS}
+                onChange={onIdleChange!}
+              />
+            )}
+          </>
+        )}
       </fieldset>
-      <p className="text-[11px] text-text-dim">
-        {custom
-          ? "Changes when compaction happens, not the model window. May lose detail without reducing cost."
-          : "Uses the agent’s default compaction policy."}
-      </p>
-      {!valid && (
-        <p role="alert" className="text-amber-300">
-          Enter {state.bounds[0].toLocaleString()} to {state.bounds[1].toLocaleString()} tokens.
+      {(custom || idleEnabled) && (
+        <p className="text-[11px] text-text-secondary">
+          {custom && "Auto-compaction overrides the agent’s policy, not the model window. "}
+          {idleEnabled && "Idle compaction runs before estimated cache expiry above the minimum context. "}
+          Compaction uses tokens and may lose detail.
         </p>
       )}
-      {state.idle_supported && onIdleChange && (
-        <fieldset disabled={disabled} className="mt-2 flex min-w-0 flex-col gap-1">
-          <ConfigRow label="Before cache expiry">
-            <ChoiceDropdown
-              label="Before cache expiry"
-              choices={[
-                { value: "off", name: "Off" },
-                { value: "on", name: "When idle" },
-              ]}
-              current={idleValue === null ? "off" : "on"}
-              onSelect={(selected) => onIdleChange(selected === "off" ? null : "200000")}
-              testId="idle-compaction"
-              selectedLabel="Selected"
-            />
-          </ConfigRow>
-          {idleValue !== null && (
-            <ConfigRow label="Minimum context">
-              <label className="flex items-center gap-1 text-[11px] text-text-secondary">
-                <input
-                  aria-label="Idle compaction minimum context (tokens)"
-                  type="number"
-                  min={100000}
-                  max={1000000}
-                  step={1000}
-                  value={idleValue}
-                  onChange={(event) => onIdleChange(event.target.value)}
-                  className="min-h-8 w-24 rounded-md border border-surface-700 bg-surface-800/60 px-2 py-1 text-[11px]"
-                />
-                tokens
-              </label>
-            </ConfigRow>
+      {state.idle_supported && (
+        <details className="text-[11px] text-text-secondary">
+          <summary className="cursor-pointer py-1">
+            Cache timing{cache ? ` · estimated expiry ${time(cache.expiresAt)}` : " · unavailable"}
+          </summary>
+          {cache ? (
+            <dl className="mt-1 grid grid-cols-[1fr_auto] gap-x-2 gap-y-1 tabular-nums">
+              <dt>Last cache activity</dt>
+              <dd>{time(cache.refreshedAt)}</dd>
+              <dt>Estimated expiry</dt>
+              <dd>{time(cache.expiresAt)}</dd>
+              <dt>Observed lifetime</dt>
+              <dd>{Math.round(cache.ttlMs / 60000)} min</dd>
+              <dt>Context at last request</dt>
+              <dd>{formatTokens(cache.contextTokens)} tokens</dd>
+            </dl>
+          ) : (
+            <p>Cache timing is available after a timed request reports cache usage.</p>
           )}
-          <p className="text-[11px] text-text-dim">
-            Compacts large, idle conversations before estimated cache expiry. Uses tokens and may lose detail. Skips
-            unknown cache timing; keeps the agent awake long enough to compact.
-          </p>
-          {idleValue !== null &&
-            (!Number.isSafeInteger(Number(idleValue)) || Number(idleValue) < 100000 || Number(idleValue) > 1000000) && (
-              <p role="alert" className="text-status-warning">
-                Enter 100,000 to 1,000,000 tokens.
-              </p>
-            )}
-        </fieldset>
+          {idleEnabled && (
+            <p className="mt-1">Skips unknown cache timing and keeps an eligible agent awake long enough to compact.</p>
+          )}
+        </details>
       )}
-    </details>
+    </section>
   );
 }
