@@ -66,6 +66,7 @@ pub async fn probe_agent(agent: &str) -> anyhow::Result<bool> {
         provider_routing: Vec::new(),
         base_host_environment: Vec::new(),
         auto_compact_tokens: None,
+        idle_compact_tokens: None,
     };
 
     // Probe-scoped id so it never collides with a real structured-view worker.

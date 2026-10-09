@@ -599,6 +599,11 @@ pub(super) fn map_update_to_events(
         }
         SessionUpdate::UsageUpdate(u) => {
             let usage = SessionUsage {
+                prompt_cache: u
+                    .meta
+                    .as_ref()
+                    .and_then(|m| m.get("_claude/prompt_cache"))
+                    .and_then(|v| serde_json::from_value(v.clone()).ok()),
                 used: u.used,
                 size: u.size,
                 quota: super::quota::quota_from_meta(u.meta.as_ref(), chrono::Utc::now()),
@@ -1646,6 +1651,31 @@ mod tests {
         assert!((cost.amount - 0.42).abs() < f64::EPSILON);
         assert_eq!(cost.currency, "USD");
         assert!(usage.quota.is_none());
+        for (value, expected) in [
+            (
+                serde_json::json!({"refreshedAt": 1000, "expiresAt": 3601000, "ttlMs": 3600000, "contextTokens": 210000}),
+                true,
+            ),
+            (serde_json::Value::Null, false),
+            (serde_json::json!({"expiresAt": "unknown"}), false),
+        ] {
+            let events = claude(SessionUpdate::UsageUpdate(
+                UsageUpdate::new(1, 2).meta(
+                    serde_json::json!({"_claude/prompt_cache": value})
+                        .as_object()
+                        .unwrap()
+                        .clone(),
+                ),
+            ));
+            let [Event::UsageUpdated { usage }] = events.as_slice() else {
+                panic!("missing usage")
+            };
+            assert_eq!(usage.prompt_cache.is_some(), expected);
+            if let Some(cache) = &usage.prompt_cache {
+                assert_eq!(cache.expires_at - cache.refreshed_at, 3600000);
+                assert_eq!(cache.context_tokens, 210000);
+            }
+        }
 
         let with_quota = UsageUpdate::new(1, 2).meta(
             serde_json::json!({"_claude/rateLimit": {

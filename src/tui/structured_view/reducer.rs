@@ -572,6 +572,7 @@ mod tests {
             },
             Event::UsageUpdated {
                 usage: SessionUsage {
+                    prompt_cache: None,
                     used: 5_000,
                     size: 200_000,
                     cost: None,

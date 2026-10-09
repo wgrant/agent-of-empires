@@ -17,6 +17,13 @@ use crate::acp::runner_lifecycle::WorkerPhase;
 use crate::acp::state::Event;
 
 impl<S: BroadcastSink> Supervisor<S> {
+    pub async fn idle_compaction_budget(&self, session_id: &str) -> Option<Option<u64>> {
+        let workers = self.workers.lock().await;
+        match &workers.get(session_id)?.kind {
+            WorkerKind::Runner { spawn_config } => Some(spawn_config.idle_compact_tokens),
+            _ => None,
+        }
+    }
     pub async fn launch_yolo(&self, session_id: &str) -> Option<bool> {
         let workers = self.workers.lock().await;
         let WorkerKind::Runner { spawn_config } = &workers.get(session_id)?.kind else {

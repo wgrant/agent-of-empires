@@ -713,6 +713,7 @@ async fn refresh_saved_settings(session_id: &str, config: &mut SpawnConfig) {
         }
     };
     config.auto_compact_tokens = instance.auto_compact_tokens;
+    config.idle_compact_tokens = instance.idle_compact_tokens;
     if instance.agent_model.is_some() {
         set_spawn_model(config, instance.agent_model);
     }

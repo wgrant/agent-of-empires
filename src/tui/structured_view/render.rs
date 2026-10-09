@@ -2071,6 +2071,7 @@ mod tests {
 
     fn usage(used: u64, size: u64) -> SessionUsage {
         SessionUsage {
+            prompt_cache: None,
             used,
             size,
             cost: None,
@@ -2639,6 +2640,7 @@ mod tests {
             })
         };
         let with_cost = |used, size, cost| SessionUsage {
+            prompt_cache: None,
             used,
             size,
             cost,

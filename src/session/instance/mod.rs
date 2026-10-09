@@ -194,6 +194,8 @@ pub struct Instance {
     pub yolo_mode: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auto_compact_tokens: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub idle_compact_tokens: Option<u64>,
     #[serde(default)]
     pub status: Status,
     pub created_at: DateTime<Utc>,

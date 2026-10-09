@@ -389,6 +389,12 @@ impl<S: BroadcastSink> Supervisor<S> {
         Ok((
             SpawnConfig {
                 auto_compact_tokens,
+                idle_compact_tokens: crate::acp::compaction::load_idle_budget(
+                    req.source_profile.clone(),
+                    req.session_id.clone(),
+                )
+                .await
+                .map_err(|e| SupervisorError::Acp(AcpError::Spawn(e)))?,
                 agent_key: req.agent.clone(),
                 tool: req.tool.clone(),
                 spec,

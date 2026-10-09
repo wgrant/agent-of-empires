@@ -317,6 +317,7 @@ async fn persist_agent_switch(
         inst.import_pending = None;
         inst.acp_effort = None;
         inst.auto_compact_tokens = None;
+        inst.idle_compact_tokens = None;
         inst.agent_model = model.map(str::to_string);
     };
     {

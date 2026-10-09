@@ -381,12 +381,20 @@ impl AcpClient {
     ) -> Result<Self, AcpError> {
         let mut environment = config.provider_env.clone();
         environment.extend(config.host_environment.clone());
-        let overrides = crate::acp::compaction::environment(
+        let mut overrides = crate::acp::compaction::environment(
             &config.agent_key,
             config.auto_compact_tokens,
             &environment,
         )
         .map_err(AcpError::Spawn)?;
+        if matches!(config.agent_key.as_str(), "claude" | "claude-code") {
+            overrides.push((
+                "AOE_CLAUDE_IDLE_COMPACT_MIN_TOKENS".into(),
+                config
+                    .idle_compact_tokens
+                    .map_or_else(String::new, |n| n.to_string()),
+            ));
+        }
         let destination = if config.sandbox_info.is_some() {
             &mut config.provider_env
         } else {

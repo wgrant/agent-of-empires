@@ -40,6 +40,7 @@ pub struct SpawnConfig {
     /// `AOE_AGENT_MODEL`. Skipped when already current.
     pub default_model: Option<String>,
     pub auto_compact_tokens: Option<u64>,
+    pub idle_compact_tokens: Option<u64>,
     pub extensions: ClientExtensions,
     /// Runner socket; `None` spawns the agent over in-proc stdio.
     pub socket_path: Option<PathBuf>,

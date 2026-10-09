@@ -8,6 +8,35 @@ pub struct Budget {
     pub tokens: Option<u64>,
 }
 
+pub async fn load_idle_budget(
+    profile: Option<String>,
+    session_id: String,
+) -> Result<Option<u64>, String> {
+    let Some(profile) = profile else {
+        return Ok(None);
+    };
+    tokio::task::spawn_blocking(move || {
+        let storage = crate::session::Storage::new_unwatched(&profile)?;
+        Ok::<_, anyhow::Error>(
+            storage
+                .load()?
+                .iter()
+                .find(|i| i.id == session_id)
+                .and_then(|i| i.idle_compact_tokens),
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())
+}
+
+pub fn validate_idle(agent: &str, tokens: Option<u64>) -> Result<(), String> {
+    if tokens.is_some() && !matches!(agent, "claude" | "claude-code") {
+        return Err("Idle compaction is only supported for Claude".into());
+    }
+    validate("claude", tokens)
+}
+
 pub async fn load_budget(
     profile: Option<String>,
     session_id: String,
@@ -146,6 +175,14 @@ mod tests {
 
     #[test]
     fn budgets_preserve_defaults_and_merge_only_the_threshold() {
+        for (agent, tokens, valid) in [
+            ("claude", Some(200_000), true),
+            ("claude", Some(99_999), false),
+            ("codex", Some(200_000), false),
+            ("opencode", None, true),
+        ] {
+            assert_eq!(validate_idle(agent, tokens).is_ok(), valid);
+        }
         let existing = vec![(
             "CODEX_CONFIG".into(),
             r#"{"personality":"friendly","model_context_window":258000}"#.into(),

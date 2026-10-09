@@ -1777,6 +1777,7 @@ mod tests {
         let tokens = Event::TurnOutputTokens { tokens: 40 };
         let usage = Event::UsageUpdated {
             usage: crate::acp::state::SessionUsage {
+                prompt_cache: None,
                 used: 1,
                 size: 2,
                 quota: None,

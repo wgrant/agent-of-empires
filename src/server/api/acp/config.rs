@@ -146,6 +146,7 @@ pub async fn acp_set_config_option(
 pub struct UpdateLaunchOptionsRequest {
     pub yolo_mode: Option<bool>,
     pub auto_compaction: Option<crate::acp::compaction::Budget>,
+    pub idle_compaction: Option<crate::acp::compaction::Budget>,
     pub restart: Option<bool>,
     #[serde(default)]
     pub config_options: Vec<SetConfigOptionRequest>,
@@ -283,6 +284,20 @@ pub async fn acp_launch_options(
             pending.push(setting);
         }
     }
+    let idle_applied = state.acp_supervisor.idle_compaction_budget(&id).await;
+    if matches!(agent, "claude" | "claude-code") {
+        if let Some(setting) = pending_launch(
+            "idle_compaction",
+            "Idle compaction",
+            instance.idle_compact_tokens.is_some(),
+            idle_applied.is_some(),
+            idle_applied == Some(instance.idle_compact_tokens),
+            running,
+            starting,
+        ) {
+            pending.push(setting);
+        }
+    }
     Json(serde_json::json!({
         "agent": agent,
         "running": running,
@@ -298,6 +313,11 @@ pub async fn acp_launch_options(
             "applied_enabled": applied_yolo,
         },
         "auto_compaction": {
+            "idle_supported": matches!(agent, "claude" | "claude-code"),
+            "prompt_cache": control.usage.as_ref().and_then(|u| u.prompt_cache.as_ref()),
+            "idle_tokens": instance.idle_compact_tokens,
+            "idle_applied_known": idle_applied.is_some(),
+            "idle_applied_tokens": idle_applied.flatten(),
             "tokens": instance.auto_compact_tokens,
             "bounds": crate::acp::compaction::bounds(agent),
             "applied_known": budget_known,
@@ -340,6 +360,7 @@ pub async fn acp_update_launch_options(
     };
     if req.yolo_mode.is_none()
         && req.auto_compaction.is_none()
+        && req.idle_compaction.is_none()
         && req.config_options.is_empty()
         && req.mode_id.is_none()
         && req.restart != Some(true)
@@ -356,7 +377,7 @@ pub async fn acp_update_launch_options(
 
     let instance_lock = state.instance_lock(&id).await;
     let _guard = instance_lock.lock().await;
-    let (profile, agent, previous, previous_tokens) = {
+    let (profile, agent, previous, previous_tokens, previous_idle_tokens) = {
         let instances = state.instances.read().await;
         let Some(instance) = instances.iter().find(|instance| instance.id == id) else {
             return session_not_found();
@@ -375,6 +396,7 @@ pub async fn acp_update_launch_options(
             agent,
             instance.yolo_mode,
             instance.auto_compact_tokens,
+            instance.idle_compact_tokens,
         )
     };
     let yolo_mode = req.yolo_mode.unwrap_or(previous);
@@ -480,6 +502,18 @@ pub async fn acp_update_launch_options(
         }
     }
     let restart = req.restart.unwrap_or(false);
+    let idle_tokens = req
+        .idle_compaction
+        .map_or(previous_idle_tokens, |budget| budget.tokens);
+    if req.idle_compaction.is_some() {
+        if let Err(message) = crate::acp::compaction::validate_idle(&agent, idle_tokens) {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"message": message})),
+            )
+                .into_response();
+        }
+    }
 
     if req.yolo_mode.is_some() && !supports_yolo_launch(&agent) {
         return (
@@ -494,6 +528,7 @@ pub async fn acp_update_launch_options(
     if previous == yolo_mode
         && previous_tokens == tokens
         && req.auto_compaction.is_none()
+        && req.idle_compaction.is_none()
         && selectors.is_empty()
         && !restart
     {
@@ -527,6 +562,7 @@ pub async fn acp_update_launch_options(
             };
             instance.yolo_mode = yolo_mode;
             instance.auto_compact_tokens = tokens;
+            instance.idle_compact_tokens = idle_tokens;
             for (selector, value) in &persisted_selectors {
                 selector.apply(instance, value.clone());
             }
@@ -553,6 +589,7 @@ pub async fn acp_update_launch_options(
         };
         instance.yolo_mode = yolo_mode;
         instance.auto_compact_tokens = tokens;
+        instance.idle_compact_tokens = idle_tokens;
         for (selector, value) in &selectors {
             selector.apply(instance, value.clone());
         }
@@ -762,6 +799,7 @@ mod tests {
                 Ok(Json(UpdateLaunchOptionsRequest {
                     yolo_mode: None,
                     auto_compaction: Some(crate::acp::compaction::Budget { tokens }),
+                    idle_compaction: Some(crate::acp::compaction::Budget { tokens }),
                     restart: Some(restart),
                     ..Default::default()
                 })),
@@ -779,6 +817,11 @@ mod tests {
                 expected
             );
             assert_eq!(storage.load().unwrap()[0].auto_compact_tokens, expected);
+            assert_eq!(
+                state.instances.read().await[0].idle_compact_tokens,
+                expected
+            );
+            assert_eq!(storage.load().unwrap()[0].idle_compact_tokens, expected);
             assert!(state.acp_supervisor.running_identity(&id).is_none());
             let body = axum::body::to_bytes(response.into_body(), usize::MAX)
                 .await

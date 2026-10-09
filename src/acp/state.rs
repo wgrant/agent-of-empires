@@ -177,6 +177,8 @@ pub struct AgentSwitchInfo {
 /// The agent's last-reported context-window usage and cumulative cost.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionUsage {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt_cache: Option<PromptCache>,
     pub used: u64,
     pub size: u64,
     #[serde(default)]
@@ -188,6 +190,16 @@ pub struct SessionUsage {
     /// The model behind the latest reply, when the agent names it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+}
+
+/// Cache timing estimated by the harness from its latest request.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PromptCache {
+    pub refreshed_at: i64,
+    pub expires_at: i64,
+    pub ttl_ms: u64,
+    pub context_tokens: u64,
 }
 
 /// A task's cumulative spend, as the adapter reports it.
@@ -1590,6 +1602,7 @@ mod tests {
             (
                 Event::UsageUpdated {
                     usage: SessionUsage {
+                        prompt_cache: None,
                         used: 1,
                         size: 2,
                         quota: None,
@@ -2393,6 +2406,7 @@ mod tests {
                 },
                 Event::UsageUpdated {
                     usage: SessionUsage {
+                        prompt_cache: None,
                         used: 5_000,
                         size: 200_000,
                         cost: Some(UsageCost {

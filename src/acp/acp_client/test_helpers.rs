@@ -71,6 +71,7 @@ pub(super) fn env_test_spawn_config(cwd: std::path::PathBuf) -> SpawnConfig {
         claude_store_pin: None,
         base_host_environment: vec![],
         auto_compact_tokens: None,
+        idle_compact_tokens: None,
     }
 }
 
@@ -120,5 +121,6 @@ pub(super) fn reset_fake_spawn_config(
         claude_store_pin: None,
         base_host_environment: vec![],
         auto_compact_tokens: None,
+        idle_compact_tokens: None,
     }
 }

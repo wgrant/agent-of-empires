@@ -112,6 +112,28 @@ fn should_auto_stop(
             .is_some_and(|ms| now_ms.saturating_sub(ms) >= i64::from(threshold_secs) * 1000)
 }
 
+fn retains_for_compaction(
+    now_ms: i64,
+    minimum: Option<u64>,
+    cache: Option<&crate::acp::state::PromptCache>,
+) -> bool {
+    let (Some(minimum), Some(cache)) = (minimum, cache) else {
+        return false;
+    };
+    if !matches!(cache.ttl_ms, 300_000 | 3_600_000)
+        || cache.context_tokens < minimum
+        || cache.refreshed_at > now_ms
+    {
+        return false;
+    }
+    // Match the adapter's 90% deadline, with a bounded delivery grace.
+    now_ms
+        < cache
+            .refreshed_at
+            .saturating_add((cache.ttl_ms * 9 / 10 + (cache.ttl_ms / 20).min(60_000)) as i64)
+        && now_ms < cache.expires_at
+}
+
 fn set_dormant(inst: &mut Instance, dormant: bool) {
     if dormant {
         inst.mark_idle_dormant();
@@ -194,6 +216,32 @@ pub(super) async fn reap_idle_workers(state: &Arc<AppState>) {
         if !should_auto_stop(now_ms, last_ms, idle_secs, false) {
             continue;
         }
+        let minimum = match state.acp_supervisor.idle_compaction_budget(&id).await {
+            Some(applied) => applied,
+            None => state
+                .instances
+                .read()
+                .await
+                .iter()
+                .find(|i| {
+                    i.id == id
+                        && matches!(
+                            i.agent_name.as_deref().unwrap_or(&i.tool),
+                            "claude" | "claude-code"
+                        )
+                })
+                .and_then(|i| i.idle_compact_tokens),
+        };
+        if minimum.is_some() {
+            let control = state.session_service.fold_control_state(&id).await;
+            if retains_for_compaction(
+                now_ms,
+                minimum,
+                control.usage.as_ref().and_then(|u| u.prompt_cache.as_ref()),
+            ) {
+                continue;
+            }
+        }
         // Re-check mid-turn: a turn may have started since the snapshot.
         let in_flight = query_store(
             &state.acp_event_store,
@@ -234,6 +282,26 @@ mod tests {
     use crate::acp::state::{SessionUsage, ToolCall, UsageCost};
     use crate::acp::Event;
     use chrono::Utc;
+
+    #[test]
+    fn compaction_defers_dormancy_without_disabling_it() {
+        let cache = crate::acp::state::PromptCache {
+            refreshed_at: 0,
+            expires_at: 3_600_000,
+            ttl_ms: 3_600_000,
+            context_tokens: 210_000,
+        };
+        for (now, minimum, observed, expected) in [
+            (300_000, Some(200_000), Some(&cache), true),
+            (3_300_000, Some(200_000), Some(&cache), false),
+            (3_600_000, Some(200_000), Some(&cache), false),
+            (300_000, Some(300_000), Some(&cache), false),
+            (300_000, None, Some(&cache), false),
+            (300_000, Some(200_000), None, false),
+        ] {
+            assert_eq!(retains_for_compaction(now, minimum, observed), expected);
+        }
+    }
 
     #[test]
     fn should_auto_stop_policy() {
@@ -277,6 +345,7 @@ mod tests {
         fn usage(cost: bool) -> Event {
             Event::UsageUpdated {
                 usage: SessionUsage {
+                    prompt_cache: None,
                     used: 400_000,
                     size: 1_000_000,
                     cost: cost.then(|| UsageCost {
