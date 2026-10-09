@@ -39,6 +39,7 @@ beforeEach(() => {
       const patch = JSON.parse(String(init.body));
       requests.push(patch);
       if (patch.auto_compaction) settings.auto_compaction.tokens = patch.auto_compaction.tokens;
+      if (patch.idle_compaction) settings.auto_compaction.idle_tokens = patch.idle_compaction.tokens;
       if (patch.yolo_mode !== undefined) settings.yolo_mode.enabled = patch.yolo_mode;
       if (patch.config_options)
         settings.selectors = patch.config_options.map((option: { config_id: string; value: string }) => ({
@@ -46,6 +47,15 @@ beforeEach(() => {
           category: option.config_id === "mode" ? "mode" : "model",
         }));
       settings.pending = [
+        ...(settings.auto_compaction.idle_tokens
+          ? [
+              {
+                id: "idle_compaction",
+                name: "Idle compaction",
+                application: settings.running ? ("restart" as const) : ("next_start" as const),
+              },
+            ]
+          : []),
         ...(patch.config_options ?? []).map((option: { config_id: string }) => ({
           id: option.config_id,
           name: option.config_id === "mode" ? "Mode" : "Model",
@@ -123,6 +133,20 @@ function mount(
 }
 
 const trigger = () => screen.getByTestId("session-settings-trigger");
+
+it("saves idle compaction as a pending launch setting and offers a restart", async () => {
+  settings.auto_compaction.idle_supported = true;
+  settings.auto_compaction.idle_applied_known = true;
+  settings.auto_compaction.idle_applied_tokens = null;
+  mount([MODEL], false);
+  fireEvent.click(trigger());
+  fireEvent.click(await screen.findByTestId("idle-compaction"));
+  fireEvent.click(screen.getByTestId("idle-compaction-value-on"));
+  expect(screen.getByRole("button", { name: "Apply & restart" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Apply", exact: true }));
+  await waitFor(() => expect(requests).toEqual([{ idle_compaction: { tokens: 200000 }, restart: false }]));
+  await waitFor(() => expect(screen.getByTestId("session-settings-pending")).toBeTruthy());
+});
 const dialog = () => screen.queryByTestId("session-settings-dialog");
 
 describe("SessionSettingsControl", () => {

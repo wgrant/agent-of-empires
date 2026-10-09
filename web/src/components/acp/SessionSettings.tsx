@@ -212,6 +212,7 @@ function SessionSettingsDialog({
   const doneRef = useRef<HTMLButtonElement | null>(null);
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [budgetDraft, setBudgetDraft] = useState<{ value: string | null } | null>(null);
+  const [idleDraft, setIdleDraft] = useState<{ value: string | null } | null>(null);
   const [yoloDraft, setYoloDraft] = useState<boolean | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -241,9 +242,17 @@ function SessionSettingsDialog({
   const budget = snapshot?.auto_compaction;
   const budgetValue = budgetDraft ? budgetDraft.value : (budget?.tokens?.toString() ?? null);
   const budgetChanged = budgetDraft !== null && budget != null && budgetValue !== (budget.tokens?.toString() ?? null);
+  const idleValue = idleDraft ? idleDraft.value : (budget?.idle_tokens?.toString() ?? null);
+  const idleChanged = idleDraft !== null && idleValue !== (budget?.idle_tokens?.toString() ?? null);
+  const validIdle =
+    idleValue === null ||
+    (idleValue !== "" &&
+      Number.isSafeInteger(Number(idleValue)) &&
+      Number(idleValue) >= 100_000 &&
+      Number(idleValue) <= 1_000_000);
   const yoloValue = yoloDraft ?? snapshot?.yolo_mode.enabled ?? launchOptions[0]?.enabled ?? false;
   const yoloChanged = yoloDraft !== null && yoloValue !== snapshot?.yolo_mode.enabled;
-  const agentDirty = changedSelectors.length > 0 || budgetChanged || yoloChanged;
+  const agentDirty = changedSelectors.length > 0 || budgetChanged || yoloChanged || idleChanged;
   const dirty = agentDirty || thinkingChanged;
   const validBudget =
     budgetValue === null ||
@@ -263,7 +272,13 @@ function SessionSettingsDialog({
     (snapshot?.yolo_mode.applied_known
       ? yoloValue !== snapshot.yolo_mode.applied_enabled
       : yoloChanged || pending.some((setting) => setting.id === "yolo_mode"));
-  const canRestart = (snapshot?.running || snapshot?.starting) && (budgetNeedsRestart || yoloNeedsRestart);
+  const idleNeedsRestart =
+    budget?.idle_supported &&
+    (budget.idle_applied_known
+      ? (idleValue === null ? null : Number(idleValue)) !== budget.idle_applied_tokens
+      : idleChanged || pending.some((setting) => setting.id === "idle_compaction"));
+  const canRestart =
+    (snapshot?.running || snapshot?.starting) && (budgetNeedsRestart || yoloNeedsRestart || idleNeedsRestart);
   const rejected = pending.filter((setting) => setting.application === "rejected");
   const dismiss = () => {
     if (!saving) onClose();
@@ -285,6 +300,7 @@ function SessionSettingsDialog({
       ...(config.length > 0 && { config_options: config }),
       ...(mode !== undefined && { mode_id: mode }),
       ...(budgetChanged && { auto_compaction: { tokens: budgetValue === null ? null : Number(budgetValue) } }),
+      ...(idleChanged && { idle_compaction: { tokens: idleValue === null ? null : Number(idleValue) } }),
       ...(yoloChanged && { yolo_mode: yoloValue }),
       restart,
     };
@@ -339,7 +355,7 @@ function SessionSettingsDialog({
             <button
               type="button"
               className={`${button} ${BRAND_BUTTON}`}
-              disabled={saving || (agentDirty && !snapshot) || !validBudget}
+              disabled={saving || (agentDirty && !snapshot) || !validBudget || !validIdle}
               onClick={() => void saveChanges(false)}
             >
               {saving ? "Applying…" : dirty ? "Apply" : "Retry"}
@@ -349,7 +365,7 @@ function SessionSettingsDialog({
             <button
               type="button"
               className={`${button} ${confirmRestart ? BRAND_BUTTON : ""}`}
-              disabled={saving || !validBudget}
+              disabled={saving || !validBudget || !validIdle}
               onClick={() => {
                 if (!confirmRestart && turnActive) {
                   setConfirmRestart(true);
@@ -475,9 +491,15 @@ function SessionSettingsDialog({
                       value={budgetValue}
                       disabled={saving}
                       onChange={(value) => setBudgetDraft({ value })}
+                      idleValue={idleValue}
+                      onIdleChange={(value) => setIdleDraft({ value })}
                     />
                     {budget.bounds &&
-                      (budgetChanged || pending.some((setting) => setting.id === "auto_compaction")) && (
+                      (budgetChanged ||
+                        idleChanged ||
+                        pending.some(
+                          (setting) => setting.id === "auto_compaction" || setting.id === "idle_compaction",
+                        )) && (
                         <p className="text-[11px] text-text-dim">
                           {snapshot?.running || snapshot?.starting
                             ? "Changes require a restart."

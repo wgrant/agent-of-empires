@@ -6,14 +6,31 @@ import { CompactionBudgetControl } from "./CompactionBudgetControl";
 
 afterEach(cleanup);
 
-function Form({ initial = null, disabled = false }: { initial?: string | null; disabled?: boolean }) {
+function Form({
+  initial = null,
+  disabled = false,
+  idle = false,
+}: {
+  initial?: string | null;
+  disabled?: boolean;
+  idle?: boolean;
+}) {
   const [value, setValue] = useState(initial);
+  const [idleValue, setIdleValue] = useState<string | null>(null);
   return (
     <CompactionBudgetControl
-      state={{ tokens: null, bounds: [100000, 1000000], applied_known: true, applied_tokens: null }}
+      state={{
+        tokens: null,
+        bounds: [100000, 1000000],
+        applied_known: true,
+        applied_tokens: null,
+        idle_supported: idle,
+      }}
       value={value}
       disabled={disabled}
       onChange={setValue}
+      idleValue={idleValue}
+      onIdleChange={setIdleValue}
     />
   );
 }
@@ -32,6 +49,24 @@ it("keeps the default quiet and edits a custom budget without its own save butto
   fireEvent.click(screen.getByTestId("auto-compaction"));
   fireEvent.click(screen.getByTestId("auto-compaction-value-default"));
   expect(screen.queryByLabelText("Working context budget (tokens)")).toBeNull();
+});
+
+it("offers opt-in idle compaction only on supported agents and validates its minimum", () => {
+  const view = render(<Form />);
+  expect(screen.queryByTestId("idle-compaction")).toBeNull();
+  view.rerender(<Form idle />);
+  expect(screen.queryByLabelText("Idle compaction minimum context (tokens)")).toBeNull();
+  fireEvent.click(screen.getByTestId("idle-compaction"));
+  fireEvent.click(screen.getByTestId("idle-compaction-value-on"));
+  const input = screen.getByLabelText("Idle compaction minimum context (tokens)");
+  expect(input).toHaveProperty("value", "200000");
+  fireEvent.change(input, { target: { value: "99999" } });
+  expect(screen.getByRole("alert").textContent).toContain("100,000 to 1,000,000");
+  fireEvent.change(input, { target: { value: "200000" } });
+  expect(screen.queryByRole("alert")).toBeNull();
+  fireEvent.click(screen.getByTestId("idle-compaction"));
+  fireEvent.click(screen.getByTestId("idle-compaction-value-off"));
+  expect(screen.queryByLabelText("Idle compaction minimum context (tokens)")).toBeNull();
 });
 
 it("validates empty, fractional and out-of-range budgets and disables editing during save", () => {
@@ -58,4 +93,25 @@ it("does not offer an unsupported setting", () => {
     />,
   );
   expect(screen.queryByLabelText("Auto-compaction")).toBeNull();
+});
+
+it("shows observed cache timing without presenting it as a guaranteed cache hit", () => {
+  render(
+    <CompactionBudgetControl
+      state={{
+        tokens: null,
+        bounds: [100000, 1000000],
+        applied_known: true,
+        applied_tokens: null,
+        idle_supported: true,
+        prompt_cache: { refreshedAt: 1000, expiresAt: 3601000, ttlMs: 3600000, contextTokens: 210000 },
+      }}
+      value={null}
+      disabled={false}
+      onChange={() => {}}
+    />,
+  );
+  expect(screen.getByText(/Last cache activity/).textContent).toContain("Estimated expiry");
+  expect(screen.getByText(/Last cache activity/).textContent).toContain("60 min lifetime");
+  expect(screen.queryByText(/Cache timing unavailable/)).toBeNull();
 });

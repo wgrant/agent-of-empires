@@ -14,6 +14,11 @@ export interface AgentSettingsSnapshot {
     bounds: [number, number] | null;
     applied_known: boolean;
     applied_tokens: number | null;
+    idle_supported?: boolean;
+    prompt_cache?: { refreshedAt: number; expiresAt: number; ttlMs: number; contextTokens: number } | null;
+    idle_tokens?: number | null;
+    idle_applied_known?: boolean;
+    idle_applied_tokens?: number | null;
   };
 }
 
@@ -22,6 +27,7 @@ export interface AgentSettingsPatch {
   mode_id?: string;
   yolo_mode?: boolean;
   auto_compaction?: { tokens: number | null };
+  idle_compaction?: { tokens: number | null };
   restart?: boolean;
 }
 
