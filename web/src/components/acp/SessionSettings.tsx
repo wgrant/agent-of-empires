@@ -288,12 +288,17 @@ function SessionSettingsDialog({
   const saveForStart = compactionOnly && (budgetNeedsRestart || idleNeedsRestart);
   const compactionStatus =
     budgetChanged || idleChanged
-      ? "Unsaved changes"
+      ? compactionPending.length
+        ? "Unsaved changes · saved settings also pending"
+        : "Unsaved changes"
       : compactionPending.length
-        ? `Saved · ${compactionPending
-            .map((setting) => applicationText(setting.application).toLowerCase())
-            .filter((text, index, all) => all.indexOf(text) === index)
-            .join("; ")}`
+        ? [
+            "Saved for next start",
+            ...compactionPending
+              .filter((setting) => setting.application !== "next_start")
+              .map((setting) => applicationText(setting.application).toLowerCase())
+              .filter((text, index, all) => all.indexOf(text) === index),
+          ].join(" · ")
         : undefined;
   const rejected = pending.filter((setting) => setting.application === "rejected");
   const dismiss = () => {
@@ -389,7 +394,7 @@ function SessionSettingsDialog({
                 } else void saveChanges(true);
               }}
             >
-              {saving ? "Applying…" : "Apply & restart"}
+              {saving ? "Applying…" : dirty || confirmRestart ? "Apply & restart" : "Restart to apply"}
             </button>
           )}
         </>

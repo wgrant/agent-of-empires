@@ -58,7 +58,9 @@ it("offers opt-in idle compaction only on supported agents and validates its min
   expect(screen.queryByTestId("idle-compaction")).toBeNull();
   view.rerender(<Form idle />);
   expect(screen.queryByLabelText("Idle compaction minimum context (tokens)")).toBeNull();
+  expect(screen.queryByText("Cache observations")).toBeNull();
   fireEvent.click(screen.getByTestId("idle-compaction"));
+  expect(screen.getByText("Cache observations")).toBeTruthy();
   const input = screen.getByLabelText("Idle compaction minimum context (tokens)");
   expect(input).toHaveProperty("value", "200000");
   fireEvent.change(input, { target: { value: "99999" } });
@@ -68,6 +70,7 @@ it("offers opt-in idle compaction only on supported agents and validates its min
   fireEvent.change(input, { target: { value: "350000" } });
   fireEvent.click(screen.getByTestId("idle-compaction"));
   expect(screen.queryByLabelText("Idle compaction minimum context (tokens)")).toBeNull();
+  expect(screen.queryByText("Cache observations")).toBeNull();
   fireEvent.click(screen.getByTestId("idle-compaction"));
   expect(screen.getByLabelText("Idle compaction minimum context (tokens)")).toHaveProperty("value", "350000");
 });
@@ -113,7 +116,7 @@ it("edits independent, crossing and coincident thresholds with keyboard and nume
   expect(auto.getAttribute("aria-valuenow")).toBe("150000");
   fireEvent.change(screen.getByLabelText("Working context budget (tokens)"), { target: { value: "" } });
   expect(screen.queryByRole("slider", { name: "Auto-compaction threshold" })).toBeNull();
-  expect(screen.getByText("Enter a valid value")).toBeTruthy();
+  expect(screen.getByRole("alert").textContent).toContain("100,000 to 1,000,000");
   expect(idle.getAttribute("aria-valuenow")).toBe("210000");
 });
 
@@ -154,15 +157,20 @@ it("separates edited policy from the running policy and explains crossing thresh
     policyStatus: "Unsaved changes",
   };
   const view = render(<CompactionBudgetControl {...props} running />);
-  expect(screen.getByText("Agent currently uses 300k tokens.")).toBeTruthy();
-  expect(screen.getByText("Applied policy unknown.")).toBeTruthy();
+  expect(screen.getByText("Automatic threshold: 300k tokens")).toBeTruthy();
+  expect(screen.getByText("Idle compaction: Unknown")).toBeTruthy();
   expect(screen.getByText("Unsaved changes")).toBeTruthy();
-  expect(screen.getByText(/idle compaction may rarely become eligible/)).toBeTruthy();
+  expect(screen.getByText(/automatic compaction will usually happen first/)).toBeTruthy();
   view.rerender(<CompactionBudgetControl {...props} running={false} />);
-  expect(screen.queryByText(/Agent currently uses/)).toBeNull();
-  expect(screen.queryByText("Applied policy unknown.")).toBeNull();
-  view.rerender(<CompactionBudgetControl {...props} state={{ ...state, applied_tokens: 200000 }} running />);
-  expect(screen.queryByText(/Agent currently uses/)).toBeNull();
+  expect(screen.queryByLabelText("Running compaction settings")).toBeNull();
+  view.rerender(
+    <CompactionBudgetControl
+      {...props}
+      state={{ ...state, applied_tokens: 200000, idle_applied_known: true, idle_applied_tokens: 250000 }}
+      running
+    />,
+  );
+  expect(screen.queryByLabelText("Running compaction settings")).toBeNull();
 });
 
 it("shows observed cache timing without presenting it as a guaranteed cache hit", () => {
@@ -177,11 +185,13 @@ it("shows observed cache timing without presenting it as a guaranteed cache hit"
         prompt_cache: { refreshedAt: 1000, expiresAt: 3601000, ttlMs: 3600000, contextTokens: 210000 },
       }}
       value={null}
+      idleValue="200000"
+      onIdleChange={() => {}}
       disabled={false}
       onChange={() => {}}
     />,
   );
-  expect(screen.getByText(/Cache timing · expired/)).toBeTruthy();
+  expect(screen.getByText("Estimated cache expiry has passed.")).toBeTruthy();
   expect(screen.getByText("60 min")).toBeTruthy();
   expect(screen.queryByText(/Cache timing unavailable/)).toBeNull();
 });

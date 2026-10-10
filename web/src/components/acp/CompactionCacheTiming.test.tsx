@@ -18,14 +18,14 @@ it("ages the cache estimate despite frequent snapshot refreshes and dates old ob
     contextTokens: 211000,
   };
   const view = render(<CompactionCacheTiming cache={cache} enabled />);
-  expect(screen.getByText(/Cache timing · estimated expiry/)).toBeTruthy();
+  expect(screen.getByText(/Estimated cache expiry:/)).toBeTruthy();
   expect(screen.getByText(/Oct 9/)).toBeTruthy();
   for (let i = 0; i < 5; i++) {
     act(() => vi.advanceTimersByTime(2000));
     view.rerender(<CompactionCacheTiming cache={{ ...cache }} enabled />);
   }
-  expect(screen.getByText("Cache timing · expired")).toBeTruthy();
+  expect(screen.getByText("Estimated cache expiry has passed.")).toBeTruthy();
   view.rerender(<CompactionCacheTiming cache={undefined} enabled />);
-  expect(screen.getByText("Cache timing · unavailable")).toBeTruthy();
-  expect(screen.getByText(/Unknown timing is skipped/)).toBeTruthy();
+  expect(screen.getByText(/Cache timing unknown; idle compaction cannot be scheduled/)).toBeTruthy();
+  expect(screen.getByText(/A request must report cache usage/)).toBeTruthy();
 });

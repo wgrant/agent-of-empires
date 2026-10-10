@@ -255,8 +255,8 @@ describe("SessionSettingsControl", () => {
     mount([MODEL]);
     await waitFor(() => expect(trigger().getAttribute("aria-label")).toContain("Restart required"));
     fireEvent.click(trigger());
-    expect(screen.getByRole("button", { name: "Apply & restart" })).toBeTruthy();
-    expect(screen.getByText("Saved · restart required")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Restart to apply" })).toBeTruthy();
+    expect(screen.getByText("Saved for next start · restart required")).toBeTruthy();
   });
   it("shows the summary and tints only the permission for a destructive mode", () => {
     mount([{ ...MODE, current_value: "bypassPermissions" }, MODEL]);
@@ -395,7 +395,7 @@ describe("SessionSettingsControl", () => {
     fireEvent.click(trigger());
     expect(screen.getByTestId("config-option-model").textContent).toContain("Sonnet");
     expect(screen.getByText("1 setting pending")).toBeTruthy();
-    expect(screen.getByText("Saved · applies when the agent starts")).toBeTruthy();
+    expect(screen.getByText("Saved for next start")).toBeTruthy();
   });
 
   it("cancels unsaved edits directly and preserves rejected-apply drafts", async () => {
@@ -417,6 +417,25 @@ describe("SessionSettingsControl", () => {
     expect((screen.getByLabelText("Working context budget (tokens)") as HTMLInputElement).value).toBe("100000");
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(dialog()).toBeNull();
+  });
+
+  it("distinguishes a new draft from saved pending and running compaction settings", async () => {
+    settings.auto_compaction.tokens = 800000;
+    settings.auto_compaction.applied_tokens = 200000;
+    settings.pending = [{ id: "auto_compaction", name: "Auto-compaction", application: "restart" }];
+    mount([MODEL]);
+    fireEvent.click(trigger());
+    const input = await screen.findByLabelText("Working context budget (tokens)");
+    expect(input).toHaveProperty("value", "800000");
+    expect(screen.getByText("Saved for next start · restart required")).toBeTruthy();
+    expect(screen.getByText("Automatic threshold: 200k tokens")).toBeTruthy();
+    fireEvent.change(input, { target: { value: "300000" } });
+    expect(screen.getByText("Unsaved changes · saved settings also pending")).toBeTruthy();
+    expect(screen.getByText("Automatic threshold: 200k tokens")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    fireEvent.click(trigger());
+    expect(screen.getByLabelText("Working context budget (tokens)")).toHaveProperty("value", "800000");
+    expect(requests).toHaveLength(0);
   });
 
   it("requires confirmation before restarting and batches the budget with the restart", async () => {
@@ -441,7 +460,7 @@ describe("SessionSettingsControl", () => {
     mount([MODEL]);
     fireEvent.click(trigger());
     await screen.findByTestId("auto-compaction");
-    fireEvent.click(screen.getByRole("button", { name: "Apply & restart" }));
+    fireEvent.click(screen.getByRole("button", { name: "Restart to apply" }));
     await waitFor(() => expect(requests).toEqual([{ restart: true }]));
     await waitFor(() => expect(dialog()).toBeNull());
     fireEvent.click(trigger());

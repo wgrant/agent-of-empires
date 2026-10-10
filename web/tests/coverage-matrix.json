@@ -17,14 +17,14 @@
       "components": ["web/src/components/acp/CompactionCard.tsx"]
     },
     {
-      "id": "acp.compaction-cache-estimate-freshness",
+      "id": "acp.compaction-cache-estimate-freshness-and-unknown-expired-observations",
       "kind": "vitest",
       "risk": "medium",
       "specs": ["src/components/acp/CompactionCacheTiming.test.tsx"],
       "components": ["web/src/components/acp/CompactionCacheTiming.tsx"]
     },
     {
-      "id": "acp.compaction-independent-threshold-markers-keyboard-drag-and-mobile",
+      "id": "acp.compaction-grouped-threshold-editors-keyboard-drag-mobile-and-running-comparison",
       "kind": "mocked-playwright",
       "risk": "high",
       "specs": ["tests/acp-compaction-budget.spec.ts"],

@@ -63,29 +63,6 @@ function TokenInput({
     </span>
   );
 }
-function AppliedPolicy({
-  value,
-  known,
-  applied,
-  running,
-  idle,
-}: {
-  value: string | null;
-  known?: boolean;
-  applied?: number | null;
-  running?: boolean;
-  idle?: boolean;
-}) {
-  if (!running || (known && (value === null ? null : Number(value)) === applied)) return null;
-  return (
-    <p className="text-[11px] text-text-secondary">
-      {!known
-        ? "Applied policy unknown."
-        : `Agent currently uses ${applied == null ? (idle ? "Off" : "its default policy") : formatTokens(applied) + " tokens"}.`}
-    </p>
-  );
-}
-
 export function CompactionBudgetControl({
   state,
   value,
@@ -112,13 +89,40 @@ export function CompactionBudgetControl({
   const idleEnabled = idle && idleValue !== null;
   const autoTokens = validTokens(value, state.bounds);
   const idleTokens = idleEnabled ? validTokens(idleValue, IDLE_BOUNDS) : null;
+  const differs =
+    running &&
+    (!state.applied_known ||
+      (value === null ? null : Number(value)) !== state.applied_tokens ||
+      (idle &&
+        (!state.idle_applied_known || (idleValue === null ? null : Number(idleValue)) !== state.idle_applied_tokens)));
+  const applied = (known: boolean | undefined, tokens: number | null | undefined, fallback: string) =>
+    !known ? "Unknown" : tokens == null ? fallback : `${formatTokens(tokens)} tokens`;
   return (
     <section aria-label="Context management" className="flex min-w-0 flex-col gap-2">
       <h3 className="text-[10px] uppercase tracking-wider text-text-dim">Context management</h3>
-      <fieldset disabled={disabled} className="flex min-w-0 flex-col gap-2">
-        <div className="flex flex-col gap-1">
+      {policyStatus && (
+        <p role="status" className="text-xs font-medium text-text-primary">
+          {policyStatus}
+        </p>
+      )}
+      {differs && (
+        <div
+          className="border-l-2 border-surface-600 pl-2 text-[11px] text-text-secondary"
+          aria-label="Running compaction settings"
+        >
+          <p className="font-medium">Running agent</p>
+          <p>Automatic threshold: {applied(state.applied_known, state.applied_tokens, "Agent default")}</p>
+          {idle && <p>Idle compaction: {applied(state.idle_applied_known, state.idle_applied_tokens, "Off")}</p>}
+        </div>
+      )}
+      <fieldset disabled={disabled} className="flex min-w-0 flex-col gap-3">
+        <div className="flex flex-col gap-1" role="group" aria-label="Automatic compaction">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="text-xs text-text-secondary">Auto-compaction</span>
+            <span className="text-xs font-medium text-text-primary">Automatic compaction</span>
+          </div>
+          <p className="text-[11px] text-text-secondary">Compact when context reaches the threshold.</p>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-xs text-text-secondary">{custom ? "Custom threshold" : "Agent default"}</span>
             <div className="flex flex-wrap items-start justify-end gap-1.5">
               {custom && (
                 <TokenInput
@@ -134,15 +138,35 @@ export function CompactionBudgetControl({
                 className={BUTTON}
                 onClick={() => setAuto(custom ? null : (lastAuto.current ?? String(state.tokens ?? state.bounds![0])))}
               >
-                {custom ? "Use default" : "Default · Customize"}
+                {custom ? "Use default" : "Customize"}
               </button>
             </div>
           </div>
-          <AppliedPolicy value={value} known={state.applied_known} applied={state.applied_tokens} running={running} />
+          {custom ? (
+            <CompactionThresholdScale
+              maximum={state.bounds[1]}
+              markers={[
+                {
+                  label: "Auto-compaction threshold",
+                  value: autoTokens,
+                  minimum: state.bounds[0],
+                  maximum: state.bounds[1],
+                  onChange: setAuto,
+                },
+              ]}
+            />
+          ) : (
+            <p className="text-[11px] text-text-secondary">The agent chooses its own threshold.</p>
+          )}
         </div>
         {idle && (
-          <div className="flex flex-col gap-1">
-            <ConfigRow label="Before cache expiry">
+          <div
+            className="flex flex-col gap-1 border-t border-surface-700 pt-3"
+            role="group"
+            aria-label="Idle compaction"
+          >
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-xs font-medium text-text-primary">Compact while idle</span>
               <button
                 type="button"
                 role="switch"
@@ -154,12 +178,10 @@ export function CompactionBudgetControl({
               >
                 {idleEnabled ? "On" : "Off"}
               </button>
-            </ConfigRow>
-            <p className="text-[11px] text-text-secondary">
-              Attempt compaction before estimated cache expiry when idle.
-            </p>
+            </div>
+            <p className="text-[11px] text-text-secondary">Attempt compaction before the prompt cache expires.</p>
             {idleEnabled && (
-              <ConfigRow label="Minimum context">
+              <ConfigRow label="Only when context is at least">
                 <TokenInput
                   label="Idle compaction minimum context (tokens)"
                   value={idleValue!}
@@ -168,62 +190,33 @@ export function CompactionBudgetControl({
                 />
               </ConfigRow>
             )}
-            <AppliedPolicy
-              value={idleValue}
-              known={state.idle_applied_known}
-              applied={state.idle_applied_tokens}
-              running={running}
-              idle
-            />
+            {idleEnabled && (
+              <CompactionThresholdScale
+                maximum={IDLE_BOUNDS[1]}
+                markers={[
+                  {
+                    label: "Idle compaction minimum",
+                    value: idleTokens,
+                    minimum: IDLE_BOUNDS[0],
+                    maximum: IDLE_BOUNDS[1],
+                    onChange: setIdle,
+                  },
+                ]}
+              />
+            )}
+            {autoTokens !== null && idleTokens !== null && idleTokens >= autoTokens && (
+              <p className="text-[11px] text-status-warning">
+                The idle minimum ({formatTokens(idleTokens)}) is at or above the automatic threshold (
+                {formatTokens(autoTokens)}), so automatic compaction will usually happen first.
+              </p>
+            )}
+            {idleEnabled && <CompactionCacheTiming cache={state.prompt_cache} enabled />}
           </div>
         )}
-        {(custom || idleEnabled) && (
-          <CompactionThresholdScale
-            maximum={state.bounds[1]}
-            contextTokens={state.prompt_cache?.contextTokens}
-            status={policyStatus}
-            markers={[
-              ...(custom
-                ? [
-                    {
-                      label: "Auto-compaction threshold",
-                      value: autoTokens,
-                      minimum: state.bounds[0],
-                      maximum: state.bounds[1],
-                      onChange: setAuto,
-                    },
-                  ]
-                : []),
-              ...(idleEnabled
-                ? [
-                    {
-                      label: "Idle compaction minimum",
-                      value: idleTokens,
-                      minimum: IDLE_BOUNDS[0],
-                      maximum: IDLE_BOUNDS[1],
-                      idle: true,
-                      onChange: setIdle,
-                    },
-                  ]
-                : []),
-            ]}
-          />
-        )}
       </fieldset>
-      {!(custom || idleEnabled) && policyStatus && (
-        <p role="status" className="text-[11px] text-text-secondary">
-          {policyStatus}
-        </p>
-      )}
-      {autoTokens !== null && idleTokens !== null && idleTokens >= autoTokens && (
-        <p className="text-[11px] text-text-secondary">
-          The idle minimum is at or above auto-compaction; idle compaction may rarely become eligible.
-        </p>
-      )}
       {(custom || idleEnabled) && (
         <p className="text-[11px] text-text-secondary">Compaction uses tokens and may lose detail.</p>
       )}
-      {state.idle_supported && <CompactionCacheTiming cache={state.prompt_cache} enabled={idleEnabled} />}
     </section>
   );
 }

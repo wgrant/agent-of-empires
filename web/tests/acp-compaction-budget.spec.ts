@@ -77,10 +77,11 @@ test("mobile context settings apply without restarting and retain a stable pendi
   await expect.poll(() => patches).toEqual([{ auto_compaction: { tokens: 200000 }, restart: false }]);
   await expect(page.getByTestId("session-settings-dialog")).toHaveCount(0);
   await openSessionSettings(page);
-  await expect(context).toContainText("Saved · restart required");
+  await expect(context).toContainText("Saved for next start · restart required");
+  await expect(context.getByLabel("Running compaction settings")).toContainText("Automatic threshold: Agent default");
   await page.screenshot({ path: "test-results/compaction-budget-mobile-pending.png" });
   expect(patches).toHaveLength(1);
-  await expect(page.getByRole("button", { name: "Apply & restart" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Restart to apply" })).toBeVisible();
   await page.getByRole("button", { name: "Close", exact: true }).click();
   await page.setViewportSize({ width: 1200, height: 915 });
   await expect(page.getByTestId("composer-footer").getByTestId("composer-compaction-budget")).toBeVisible();
@@ -152,18 +153,22 @@ test("context markers drag independently on mobile and remain reachable at coinc
   const idleBox = (await idle.boundingBox())!;
   expect(autoBox.width).toBeGreaterThanOrEqual(44);
   expect(idleBox.y).toBeGreaterThanOrEqual(autoBox.y + autoBox.height);
-  const scale = (await page.getByTestId("compaction-scale").boundingBox())!;
-  const edgeX = autoBox.x + autoBox.width - 2;
+  await expect(page.getByRole("group", { name: "Automatic compaction", exact: true }).getByRole("slider")).toHaveCount(
+    1,
+  );
+  await expect(page.getByRole("group", { name: "Idle compaction", exact: true }).getByRole("slider")).toHaveCount(1);
+  const scale = (await page.getByTestId("compaction-scale").first().boundingBox())!;
+  const edgeX = Math.round(autoBox.x + autoBox.width - 2);
   await page.mouse.move(edgeX, autoBox.y + autoBox.height / 2);
   await page.mouse.down();
   await page.mouse.move(edgeX + 1, autoBox.y + autoBox.height / 2);
   await page.mouse.up();
-  const expected = 200000 + Math.round(1000000 / scale.width / 1000) * 1000;
+  const expected = 200000 + Math.round(900000 / scale.width / 1000) * 1000;
   await expect(auto).toHaveAttribute("aria-valuenow", String(expected));
   await page.getByLabel("Working context budget (tokens)").fill("200000");
   await page.mouse.move(autoBox.x + autoBox.width / 2, autoBox.y + autoBox.height / 2);
   await page.mouse.down();
-  await page.mouse.move(scale.x + scale.width * 0.8, autoBox.y + autoBox.height / 2, { steps: 8 });
+  await page.mouse.move(scale.x + scale.width * (700000 / 900000), autoBox.y + autoBox.height / 2, { steps: 8 });
   await page.mouse.up();
   await expect(page.getByLabel("Working context budget (tokens)")).toHaveValue("800000");
   await expect(idle).toHaveAttribute("aria-valuenow", "200000");
@@ -176,7 +181,7 @@ test("context markers drag independently on mobile and remain reachable at coinc
   });
   await touch.send("Input.dispatchTouchEvent", {
     type: "touchMove",
-    touchPoints: [{ x: scale.x + scale.width * 0.5, y: touchY }],
+    touchPoints: [{ x: scale.x + scale.width * (400000 / 900000), y: touchY }],
   });
   await touch.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
   await expect(page.getByLabel("Idle compaction minimum context (tokens)")).toHaveValue("500000");
@@ -288,7 +293,7 @@ test("a custom budget leaves room for the mobile permission summary, queue and s
   await expect(page.getByRole("tooltip")).toContainText("7d: 37% used");
   await strip.getByTestId("composer-compaction-budget").click();
   await expect(page.getByTestId("session-settings-dialog")).toBeVisible();
-  await page.getByRole("button", { name: "Apply & restart" }).click();
+  await page.getByRole("button", { name: "Restart to apply" }).click();
   await expect(page.getByRole("heading", { name: "Restart the agent?" })).toBeVisible();
   await expect(page.getByTestId("auto-compaction")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Back", exact: true })).toBeFocused();

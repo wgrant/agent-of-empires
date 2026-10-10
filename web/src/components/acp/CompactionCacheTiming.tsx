@@ -20,29 +20,37 @@ export function CompactionCacheTiming({
     new Date(at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
   const expired = cache && cache.expiresAt <= now;
   return (
-    <details className="text-[11px] text-text-secondary">
-      <summary className="cursor-pointer py-1">
-        Cache timing · {cache ? (expired ? "expired" : `estimated expiry ${stamp(cache.expiresAt)}`) : "unavailable"}
-      </summary>
-      {cache ? (
-        <dl className="mt-1 grid grid-cols-[1fr_auto] gap-x-2 gap-y-1 tabular-nums">
-          <dt>Last cache activity</dt>
-          <dd>{stamp(cache.refreshedAt)}</dd>
-          <dt>Estimated expiry</dt>
-          <dd>{stamp(cache.expiresAt)}</dd>
-          <dt>Observed lifetime</dt>
-          <dd>{Math.round(cache.ttlMs / 60000)} min</dd>
-          <dt>Context at last observed request</dt>
-          <dd>{formatTokens(cache.contextTokens)} tokens</dd>
-        </dl>
-      ) : (
-        <p>Cache timing is available after a timed request reports cache usage.</p>
-      )}
-      {enabled && (
-        <p className="mt-1">
-          Unknown timing is skipped. An eligible agent is kept awake long enough to attempt compaction.
-        </p>
-      )}
-    </details>
+    <div className="text-[11px] text-text-secondary">
+      <p>
+        {cache
+          ? expired
+            ? "Estimated cache expiry has passed."
+            : `Estimated cache expiry: ${stamp(cache.expiresAt)}.`
+          : "Cache timing unknown; idle compaction cannot be scheduled from this observation."}
+      </p>
+      <details>
+        <summary className="cursor-pointer py-1">Cache observations</summary>
+        {cache ? (
+          <dl className="mt-1 grid grid-cols-[1fr_auto] gap-x-2 gap-y-1 tabular-nums">
+            <dt>Last observed request</dt>
+            <dd>{stamp(cache.refreshedAt)}</dd>
+            <dt>Estimated expiry</dt>
+            <dd>{stamp(cache.expiresAt)}</dd>
+            <dt>Estimated lifetime</dt>
+            <dd>{Math.round(cache.ttlMs / 60000)} min</dd>
+            <dt>Context at that request</dt>
+            <dd>{formatTokens(cache.contextTokens)} tokens</dd>
+          </dl>
+        ) : (
+          <p>A request must report cache usage before timing can be estimated.</p>
+        )}
+        {enabled && (
+          <p className="mt-1">
+            Expiry is an estimate, not a guaranteed cache hit. When idle compaction is scheduled, the agent stays awake
+            until the attempt.
+          </p>
+        )}
+      </details>
+    </div>
   );
 }
