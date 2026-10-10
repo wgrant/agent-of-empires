@@ -12,11 +12,12 @@ interface Marker {
 
 /** Separate lanes keep coincident thresholds independently reachable. */
 function ThresholdMarker({ marker, scaleMax }: { marker: Marker; scaleMax: number }) {
-  const dragging = useRef<number | null>(null);
+  const dragging = useRef<{ id: number; x: number; value: number; width: number } | null>(null);
   const set = (tokens: number) => marker.onChange(String(Math.min(marker.maximum, Math.max(marker.minimum, tokens))));
   const move = (event: PointerEvent<HTMLButtonElement>) => {
-    const rect = event.currentTarget.parentElement!.getBoundingClientRect();
-    if (rect.width > 0) set(Math.round((((event.clientX - rect.left) / rect.width) * scaleMax) / 1000) * 1000);
+    const start = dragging.current;
+    if (start && start.width > 0)
+      set(start.value + Math.round((((event.clientX - start.x) / start.width) * scaleMax) / 1000) * 1000);
   };
   const key = (event: KeyboardEvent<HTMLButtonElement>) => {
     const step = event.shiftKey ? 10000 : 1000;
@@ -45,21 +46,26 @@ function ThresholdMarker({ marker, scaleMax }: { marker: Marker; scaleMax: numbe
       aria-valuenow={marker.value}
       aria-valuetext={`${marker.value.toLocaleString()} tokens`}
       title={`${marker.label}: ${marker.value.toLocaleString()} tokens. Drag or use arrow keys.`}
-      style={{ left: `${(marker.value / scaleMax) * 100}%`, top: marker.idle ? 32 : 0 }}
+      style={{ left: `${(marker.value / scaleMax) * 100}%`, top: marker.idle ? 48 : 0 }}
       className="absolute z-10 flex h-11 w-11 -translate-x-1/2 touch-none items-center justify-center rounded-md text-brand-400 focus-visible:outline-2 focus-visible:outline-brand-400 disabled:opacity-50"
       onKeyDown={key}
       onPointerDown={(event) => {
-        if (event.button !== 0) return;
+        if (event.button !== 0 || dragging.current) return;
         event.preventDefault();
         event.currentTarget.focus();
-        dragging.current = event.pointerId;
+        dragging.current = {
+          id: event.pointerId,
+          x: event.clientX,
+          value: marker.value,
+          width: event.currentTarget.parentElement!.getBoundingClientRect().width,
+        };
         event.currentTarget.setPointerCapture(event.pointerId);
       }}
       onPointerMove={(event) => {
-        if (dragging.current === event.pointerId) move(event);
+        if (dragging.current?.id === event.pointerId && !event.currentTarget.matches(":disabled")) move(event);
       }}
       onPointerUp={(event) => {
-        if (dragging.current === event.pointerId) {
+        if (dragging.current?.id === event.pointerId) {
           dragging.current = null;
           event.currentTarget.releasePointerCapture(event.pointerId);
         }
@@ -98,7 +104,7 @@ export function CompactionThresholdScale({
         <span>Drag thresholds</span>
         {contextTokens !== undefined && <span>Last request {formatTokens(contextTokens)}</span>}
       </div>
-      <div className="relative mx-[22px] h-[76px]" data-testid="compaction-scale">
+      <div className="relative mx-[22px] h-[92px]" data-testid="compaction-scale">
         <div aria-hidden className="absolute top-[38px] h-px w-full bg-surface-600" />
         {contextTokens !== undefined && (
           <span

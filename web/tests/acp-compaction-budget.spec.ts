@@ -157,8 +157,16 @@ test("context markers drag independently on mobile and remain reachable at coinc
   const autoBox = (await auto.boundingBox())!;
   const idleBox = (await idle.boundingBox())!;
   expect(autoBox.width).toBeGreaterThanOrEqual(44);
-  expect(idleBox.y).toBeGreaterThan(autoBox.y);
+  expect(idleBox.y).toBeGreaterThanOrEqual(autoBox.y + autoBox.height);
   const scale = (await page.getByTestId("compaction-scale").boundingBox())!;
+  const edgeX = autoBox.x + autoBox.width - 2;
+  await page.mouse.move(edgeX, autoBox.y + autoBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(edgeX + 1, autoBox.y + autoBox.height / 2);
+  await page.mouse.up();
+  const expected = 200000 + Math.round(1000000 / scale.width / 1000) * 1000;
+  await expect(auto).toHaveAttribute("aria-valuenow", String(expected));
+  await page.getByLabel("Working context budget (tokens)").fill("200000");
   await page.mouse.move(autoBox.x + autoBox.width / 2, autoBox.y + autoBox.height / 2);
   await page.mouse.down();
   await page.mouse.move(scale.x + scale.width * 0.8, autoBox.y + autoBox.height / 2, { steps: 8 });
