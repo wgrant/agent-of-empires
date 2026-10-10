@@ -24,10 +24,11 @@ export function CompactionCard({ compaction }: { compaction: Compaction }) {
   const { status, title } = STATES[compaction.state] ?? STATES.completed!;
   const [open, setOpen] = useToolCardExpansion(status);
   const tokens = tokenChange(compaction);
-  const facts = [
-    compaction.trigger === "automatic" ? "auto" : compaction.trigger,
-    compaction.duration_ms != null ? formatDurationMs(compaction.duration_ms) : null,
-  ].filter(Boolean);
+  const trigger = {
+    automatic: "Automatic",
+    manual: "Manual",
+    idle: "Idle · before cache expiry",
+  }[compaction.trigger ?? ""];
   const summary = compaction.summary.trim();
   const expandable = summary !== "" || !!compaction.error;
   return (
@@ -36,12 +37,26 @@ export function CompactionCard({ compaction }: { compaction: Compaction }) {
       icon={<FoldVertical className="h-3.5 w-3.5" />}
       label="compaction"
       primary={
-        <>
-          <span>{title}</span>
-          {tokens && <span className="ml-2 text-text-dim">· {tokens}</span>}
-        </>
+        <span title={compaction.trigger === "idle" ? "Compaction before estimated prompt-cache expiry" : undefined}>
+          {title}
+        </span>
       }
-      meta={facts.length > 0 && <span className="text-[11px] text-text-dim">{facts.join(" · ")}</span>}
+      meta={
+        compaction.duration_ms != null && (
+          <span className="text-[11px] text-text-dim">{formatDurationMs(compaction.duration_ms)}</span>
+        )
+      }
+      subBody={
+        (trigger || tokens) && (
+          <div
+            data-testid="compaction-details"
+            className="flex flex-wrap gap-x-3 gap-y-1 px-3 pb-2 text-[11px] text-text-secondary"
+          >
+            {trigger && <span>{trigger}</span>}
+            {tokens && <span className="whitespace-nowrap tabular-nums">{tokens}</span>}
+          </div>
+        )
+      }
       // Without the agent's own measurement, time it from the recorded events.
       {...(compaction.duration_ms == null
         ? { startedAt: compaction.startedAt, endedAt: compaction.ended_at ?? undefined }

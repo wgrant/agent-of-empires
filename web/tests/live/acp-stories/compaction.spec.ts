@@ -37,8 +37,9 @@ test("a compaction folds into one card with its summary behind a toggle", async 
   await expect(page.getByText("AFTER_COMPACTION")).toBeVisible({ timeout: 15_000 });
   const card = page.getByRole("button", { name: /compaction.*Context compacted/ });
   await expect(card).toHaveCount(1);
-  await expect(card).toContainText("967k → 10k tokens");
-  await expect(card).toContainText("auto · 1m 12s");
+  await expect(page.getByTestId("compaction-details")).toContainText("967k → 10k tokens");
+  await expect(page.getByTestId("compaction-details")).toContainText("Automatic");
+  await expect(card).toContainText("1m 12s");
   await expect(page.getByText("KEPT_SUMMARY")).toHaveCount(0);
   await card.click();
   await expect(page.getByTestId("compaction-body").getByText("KEPT_SUMMARY")).toBeVisible();

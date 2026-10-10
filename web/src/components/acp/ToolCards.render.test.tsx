@@ -1103,11 +1103,29 @@ describe("CompactionCard", () => {
       post_tokens: 10_147,
       duration_ms: 72_000,
     });
-    expect(container.textContent).toContain("Context compacted· 967k → 10k tokens");
-    expect(container.textContent).toContain("auto · 1m 12s");
+    expect(container.textContent).toContain("Context compacted");
+    expect(container.textContent).toContain("967k → 10k tokens");
+    expect(container.textContent).toContain("Automatic");
+    expect(container.textContent).toContain("1m 12s");
     expect(queryByTestId("compaction-body")).toBeNull();
     fireEvent.click(getByRole("button"));
     expect(queryByTestId("compaction-body")?.textContent).toContain("Kept: the plan");
+  });
+
+  it.each([
+    ["automatic", "Automatic"],
+    ["manual", "Manual"],
+    ["idle", "Idle · before cache expiry"],
+  ])("identifies %s compaction without expanding the summary", (trigger, label) => {
+    const { container, queryByTestId } = card({
+      trigger,
+      pre_tokens: 211057,
+      post_tokens: 2071,
+      summary: "Retained context",
+    });
+    expect(container.textContent).toContain(label);
+    expect(container.textContent).toContain("211k → 2.1k tokens");
+    expect(queryByTestId("compaction-body")).toBeNull();
   });
 
   it.each([
