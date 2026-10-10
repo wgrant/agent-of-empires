@@ -141,13 +141,28 @@ it("saves idle compaction as a pending launch setting and offers a restart", asy
   mount([MODEL], false);
   fireEvent.click(trigger());
   fireEvent.click(await screen.findByTestId("idle-compaction"));
-  fireEvent.click(screen.getByTestId("idle-compaction-value-on"));
   expect(screen.getByRole("button", { name: "Apply & restart" })).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Apply", exact: true }));
+  fireEvent.click(screen.getByRole("button", { name: "Save for next start", exact: true }));
   await waitFor(() => expect(requests).toEqual([{ idle_compaction: { tokens: 200000 }, restart: false }]));
   await waitFor(() => expect(screen.getByTestId("session-settings-pending")).toBeTruthy());
 });
 const dialog = () => screen.queryByTestId("session-settings-dialog");
+
+it("keeps compaction rejection details with the policy and offers retry", async () => {
+  settings.auto_compaction.tokens = 200000;
+  settings.pending = [
+    {
+      id: "auto_compaction",
+      name: "Auto-compaction",
+      application: "rejected",
+      reason: "Agent refused the policy",
+    },
+  ];
+  mount([MODEL]);
+  fireEvent.click(trigger());
+  expect(await screen.findByText("Auto-compaction: Couldn’t apply. Agent refused the policy")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+});
 
 describe("SessionSettingsControl", () => {
   it("offers provider switching even without agent config options", async () => {
@@ -241,7 +256,7 @@ describe("SessionSettingsControl", () => {
     await waitFor(() => expect(trigger().getAttribute("aria-label")).toContain("Restart required"));
     fireEvent.click(trigger());
     expect(screen.getByRole("button", { name: "Apply & restart" })).toBeTruthy();
-    expect(screen.getByText("Changes require a restart.")).toBeTruthy();
+    expect(screen.getByText("Saved · restart required")).toBeTruthy();
   });
   it("shows the summary and tints only the permission for a destructive mode", () => {
     mount([{ ...MODE, current_value: "bypassPermissions" }, MODEL]);
@@ -361,7 +376,6 @@ describe("SessionSettingsControl", () => {
     mount([MODEL]);
     fireEvent.click(trigger());
     fireEvent.click(await screen.findByTestId("auto-compaction"));
-    fireEvent.click(screen.getByTestId("auto-compaction-value-custom"));
     fireEvent.change(screen.getByLabelText("Working context budget (tokens)"), { target: { value: "200000" } });
     fireEvent.click(screen.getByTestId("config-option-model"));
     fireEvent.click(screen.getByTestId("config-option-model-value-sonnet"));
@@ -380,27 +394,26 @@ describe("SessionSettingsControl", () => {
     expect(screen.getByTestId("session-settings-pending")).toBeTruthy();
     fireEvent.click(trigger());
     expect(screen.getByTestId("config-option-model").textContent).toContain("Sonnet");
-    expect(screen.getByText("2 settings pending")).toBeTruthy();
+    expect(screen.getByText("1 setting pending")).toBeTruthy();
+    expect(screen.getByText("Saved · applies when the agent starts")).toBeTruthy();
   });
 
   it("cancels unsaved edits directly and preserves rejected-apply drafts", async () => {
     mount([MODEL]);
     fireEvent.click(trigger());
     fireEvent.click(await screen.findByTestId("auto-compaction"));
-    fireEvent.click(screen.getByTestId("auto-compaction-value-custom"));
     fireEvent.keyDown(document, { key: "Escape" });
     expect(dialog()).toBeNull();
     expect(requests).toHaveLength(0);
     fireEvent.click(trigger());
     expect(screen.queryByLabelText("Working context budget (tokens)")).toBeNull();
     fireEvent.click(screen.getByTestId("auto-compaction"));
-    fireEvent.click(screen.getByTestId("auto-compaction-value-custom"));
     fetchMock.mockImplementationOnce(
       async () => new Response(JSON.stringify({ message: "Save rejected" }), { status: 403 }),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Apply", exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: "Save for next start", exact: true }));
     expect(await screen.findByRole("alert")).toHaveProperty("textContent", "Save rejected");
-    expect(screen.getByRole("status").textContent).toContain("other changes stay pending");
+    expect(screen.getByText("Unsaved changes")).toBeTruthy();
     expect((screen.getByLabelText("Working context budget (tokens)") as HTMLInputElement).value).toBe("100000");
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(dialog()).toBeNull();
@@ -410,7 +423,6 @@ describe("SessionSettingsControl", () => {
     mount([MODEL], true);
     fireEvent.click(trigger());
     fireEvent.click(await screen.findByTestId("auto-compaction"));
-    fireEvent.click(screen.getByTestId("auto-compaction-value-custom"));
     fireEvent.click(screen.getByRole("button", { name: "Apply & restart" }));
     expect(screen.getByText(/This interrupts the current turn/)).toBeTruthy();
     expect(screen.queryByTestId("auto-compaction")).toBeNull();
@@ -434,7 +446,6 @@ describe("SessionSettingsControl", () => {
     await waitFor(() => expect(dialog()).toBeNull());
     fireEvent.click(trigger());
     fireEvent.click(screen.getByTestId("auto-compaction"));
-    fireEvent.click(screen.getByTestId("auto-compaction-value-default"));
     expect(screen.queryByRole("button", { name: "Apply & restart" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.getByTestId("session-settings-pending")).toBeTruthy();

@@ -279,6 +279,22 @@ function SessionSettingsDialog({
       : idleChanged || pending.some((setting) => setting.id === "idle_compaction"));
   const canRestart =
     (snapshot?.running || snapshot?.starting) && (budgetNeedsRestart || yoloNeedsRestart || idleNeedsRestart);
+  const compactionPending = pending.filter(
+    (setting) => setting.id === "auto_compaction" || setting.id === "idle_compaction",
+  );
+  const visiblePending = pending.filter((setting) => !compactionPending.includes(setting));
+  const compactionOnly =
+    (budgetChanged || idleChanged) && changedSelectors.length === 0 && !yoloChanged && !thinkingChanged;
+  const saveForStart = compactionOnly && (budgetNeedsRestart || idleNeedsRestart);
+  const compactionStatus =
+    budgetChanged || idleChanged
+      ? "Unsaved changes"
+      : compactionPending.length
+        ? `Saved · ${compactionPending
+            .map((setting) => applicationText(setting.application).toLowerCase())
+            .filter((text, index, all) => all.indexOf(text) === index)
+            .join("; ")}`
+        : undefined;
   const rejected = pending.filter((setting) => setting.application === "rejected");
   const dismiss = () => {
     if (!saving) onClose();
@@ -358,7 +374,7 @@ function SessionSettingsDialog({
               disabled={saving || (agentDirty && !snapshot) || !validBudget || !validIdle}
               onClick={() => void saveChanges(false)}
             >
-              {saving ? "Applying…" : dirty ? "Apply" : "Retry"}
+              {saving ? "Applying…" : dirty ? (saveForStart ? "Save for next start" : "Apply") : "Retry"}
             </button>
           )}
           {canRestart && (
@@ -495,22 +511,16 @@ function SessionSettingsDialog({
                   onChange={(value) => setBudgetDraft({ value })}
                   idleValue={idleValue}
                   onIdleChange={(value) => setIdleDraft({ value })}
+                  running={snapshot?.running}
+                  policyStatus={compactionStatus}
                 />
-                {budget.bounds &&
-                  (budgetChanged ||
-                    idleChanged ||
-                    pending.some(
-                      (setting) => setting.id === "auto_compaction" || setting.id === "idle_compaction",
-                    )) && (
-                    <p className="text-[11px] text-text-dim">
-                      {snapshot?.running || snapshot?.starting
-                        ? "Changes require a restart."
-                        : "Applies when the agent starts."}
+                {compactionPending
+                  .filter((setting) => setting.reason)
+                  .map((setting) => (
+                    <p key={setting.id} className="text-[11px] text-text-secondary">
+                      {setting.name}: {applicationText(setting.application)}. {setting.reason}
                     </p>
-                  )}
-                {snapshot?.running && budget.bounds && !budget.applied_known && (
-                  <p className="text-[11px] text-text-dim">The running agent’s compaction budget is unknown.</p>
-                )}
+                  ))}
               </div>
             )}
             <Section label="Display">
@@ -523,17 +533,19 @@ function SessionSettingsDialog({
           </fieldset>
           {dirty && (
             <p role="status" className="text-xs text-text-dim">
-              {agentDirty
-                ? "Applies now where possible; other changes stay pending."
-                : "Applies to this session’s display only."}
+              {saveForStart
+                ? "Save for the next agent start, or restart to use these changes now."
+                : agentDirty
+                  ? "Applies now where possible; other changes stay pending."
+                  : "Applies to this session’s display only."}
             </p>
           )}
-          {pending.length > 0 && (
+          {visiblePending.length > 0 && (
             <section aria-label="Pending settings" className="flex flex-col gap-1 text-xs">
               <h3 className="font-medium text-text-primary">
-                {pending.length} {pending.length === 1 ? "setting" : "settings"} pending
+                {visiblePending.length} {visiblePending.length === 1 ? "setting" : "settings"} pending
               </h3>
-              {pending.map((setting) => (
+              {visiblePending.map((setting) => (
                 <p key={setting.id} className="text-text-dim">
                   {setting.name}: {applicationText(setting.application)}
                   {setting.reason ? `. ${setting.reason}` : ""}

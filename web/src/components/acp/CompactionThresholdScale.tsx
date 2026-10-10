@@ -1,4 +1,4 @@
-import { useRef, type KeyboardEvent, type PointerEvent } from "react";
+import { useId, useRef, type KeyboardEvent, type PointerEvent } from "react";
 import { formatTokens } from "../../lib/turnUsage";
 
 interface Marker {
@@ -11,7 +11,7 @@ interface Marker {
 }
 
 /** Separate lanes keep coincident thresholds independently reachable. */
-function ThresholdMarker({ marker, scaleMax }: { marker: Marker; scaleMax: number }) {
+function ThresholdMarker({ marker, scaleMax, describedBy }: { marker: Marker; scaleMax: number; describedBy: string }) {
   const dragging = useRef<{ id: number; x: number; value: number; width: number } | null>(null);
   const set = (tokens: number) => marker.onChange(String(Math.min(marker.maximum, Math.max(marker.minimum, tokens))));
   const move = (event: PointerEvent<HTMLButtonElement>) => {
@@ -41,12 +41,13 @@ function ThresholdMarker({ marker, scaleMax }: { marker: Marker; scaleMax: numbe
       type="button"
       role="slider"
       aria-label={marker.label}
+      aria-describedby={describedBy}
       aria-valuemin={marker.minimum}
       aria-valuemax={marker.maximum}
       aria-valuenow={marker.value}
       aria-valuetext={`${marker.value.toLocaleString()} tokens`}
       title={`${marker.label}: ${marker.value.toLocaleString()} tokens. Drag or use arrow keys.`}
-      style={{ left: `${(marker.value / scaleMax) * 100}%`, top: marker.idle ? 48 : 0 }}
+      style={{ left: `${(marker.value / scaleMax) * 100}%`, top: 0 }}
       className="absolute z-10 flex h-11 w-11 -translate-x-1/2 touch-none items-center justify-center rounded-md text-brand-400 focus-visible:outline-2 focus-visible:outline-brand-400 disabled:opacity-50"
       onKeyDown={key}
       onPointerDown={(event) => {
@@ -79,10 +80,6 @@ function ThresholdMarker({ marker, scaleMax }: { marker: Marker; scaleMax: numbe
     >
       <span
         aria-hidden
-        className={`absolute left-1/2 w-px bg-brand-400 ${marker.idle ? "top-[6px] h-3" : "bottom-[6px] h-3"}`}
-      />
-      <span
-        aria-hidden
         className={`relative h-3 w-3 border-2 border-brand-400 bg-surface-800 ${marker.idle ? "rounded-full" : "rotate-45"}`}
       />
     </button>
@@ -93,36 +90,58 @@ export function CompactionThresholdScale({
   maximum,
   markers,
   contextTokens,
+  status,
 }: {
   maximum: number;
-  markers: Marker[];
+  markers: (Omit<Marker, "value"> & { value: number | null })[];
   contextTokens?: number;
+  status?: string;
 }) {
+  const helpId = useId();
   return (
-    <div aria-label="Compaction thresholds" className="min-w-0">
-      <div className="flex justify-between gap-2 text-[11px] text-text-secondary">
-        <span>Drag thresholds</span>
-        {contextTokens !== undefined && <span>Last request {formatTokens(contextTokens)}</span>}
+    <div aria-label="Compaction policy editor" className="min-w-0">
+      <div className="flex flex-wrap justify-between gap-1 text-[11px] text-text-secondary">
+        <span className="font-medium">Compaction policy</span>
+        {status && <span role="status">{status}</span>}
       </div>
-      <div className="relative mx-[22px] h-[92px]" data-testid="compaction-scale">
-        <div aria-hidden className="absolute top-[38px] h-px w-full bg-surface-600" />
-        {contextTokens !== undefined && (
-          <span
-            data-testid="compaction-context-tick"
-            aria-hidden
-            title={`Context at last request: ${contextTokens.toLocaleString()} tokens`}
-            style={{ left: `${Math.min(100, (contextTokens / maximum) * 100)}%` }}
-            className="absolute top-[32px] h-3 w-px bg-text-secondary"
-          />
-        )}
+      <div className="mx-[22px]" data-testid="compaction-scale">
         {markers.map((marker) => (
-          <ThresholdMarker key={marker.label} marker={marker} scaleMax={maximum} />
+          <div key={marker.label} className="mt-2">
+            <div className="flex justify-between gap-2 text-[11px] text-text-secondary">
+              <span>{marker.idle ? "Idle minimum" : "Auto-compaction"}</span>
+              <span className="tabular-nums">
+                {marker.value === null ? "Enter a valid value" : formatTokens(marker.value) + " tokens"}
+              </span>
+            </div>
+            <div className="relative h-11">
+              <div aria-hidden className="absolute top-[22px] h-px w-full bg-surface-600" />
+              {contextTokens !== undefined && (
+                <span
+                  aria-hidden
+                  title={`Context at last observed request: ${contextTokens.toLocaleString()} tokens`}
+                  style={{ left: `${Math.min(100, (contextTokens / maximum) * 100)}%` }}
+                  className="absolute top-[16px] h-3 w-px bg-text-secondary"
+                />
+              )}
+              {marker.value !== null && (
+                <ThresholdMarker marker={{ ...marker, value: marker.value }} scaleMax={maximum} describedBy={helpId} />
+              )}
+            </div>
+          </div>
         ))}
+        <div className="flex justify-between text-[10px] tabular-nums text-text-secondary">
+          <span>0</span>
+          <span>{formatTokens(maximum)} tokens</span>
+        </div>
       </div>
-      <div className="flex justify-between text-[10px] tabular-nums text-text-secondary">
-        <span>0</span>
-        <span>{formatTokens(maximum)} tokens</span>
-      </div>
+      <p id={helpId} className="mt-1 text-[11px] text-text-secondary">
+        Policy editing scale, not model capacity. Drag or use arrow keys.
+      </p>
+      <p className="mt-1 text-[11px] text-text-secondary">
+        {contextTokens === undefined
+          ? "Context observation unavailable."
+          : `Context at last observed request: ${formatTokens(contextTokens)} tokens.`}
+      </p>
     </div>
   );
 }

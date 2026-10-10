@@ -52,15 +52,12 @@ test("mobile context settings apply without restarting and retain a stable pendi
   const context = page.getByRole("region", { name: "Context management" });
   await expect(context.getByRole("button")).toHaveCount(1);
   await page.getByTestId("auto-compaction").click();
-  await page.getByTestId("auto-compaction-value-custom").click();
   const input = page.getByLabel("Working context budget (tokens)");
   await input.fill("200000");
-  await expect(page.getByTestId("session-settings-dialog").getByRole("status")).toContainText(
-    "Applies now where possible",
-  );
+  await expect(context.getByText("Unsaved changes", { exact: true })).toBeVisible();
   for (const control of [
     input,
-    page.getByRole("button", { name: "Apply", exact: true }),
+    page.getByRole("button", { name: "Save for next start", exact: true }),
     page.getByRole("button", { name: "Apply & restart" }),
   ]) {
     expect(await control.evaluate((node) => node.getBoundingClientRect().height)).toBeGreaterThanOrEqual(32);
@@ -71,18 +68,16 @@ test("mobile context settings apply without restarting and retain a stable pendi
     const pickerBox = await page.getByTestId("auto-compaction").boundingBox();
     expect(inputBox).not.toBeNull();
     expect(pickerBox).not.toBeNull();
-    expect(inputBox!.y).toBeGreaterThan(pickerBox!.y);
+    expect(Math.abs(inputBox!.y - pickerBox!.y)).toBeLessThanOrEqual(1);
     expect(pickerBox!.x + pickerBox!.width).toBeLessThan(width);
     expect(await context.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
   }
   await page.screenshot({ path: "test-results/compaction-budget-mobile-custom.png" });
-  await page.getByRole("button", { name: "Apply", exact: true }).click();
+  await page.getByRole("button", { name: "Save for next start", exact: true }).click();
   await expect.poll(() => patches).toEqual([{ auto_compaction: { tokens: 200000 }, restart: false }]);
   await expect(page.getByTestId("session-settings-dialog")).toHaveCount(0);
   await openSessionSettings(page);
-  await expect(page.getByRole("region", { name: "Pending settings" })).toContainText(
-    "Auto-compaction: Restart required",
-  );
+  await expect(context).toContainText("Saved · restart required");
   await page.screenshot({ path: "test-results/compaction-budget-mobile-pending.png" });
   expect(patches).toHaveLength(1);
   await expect(page.getByRole("button", { name: "Apply & restart" })).toBeVisible();
@@ -111,7 +106,6 @@ test("mobile context settings apply without restarting and retain a stable pendi
   expect(await viewport.evaluate((node) => node.clientHeight)).toBe(heightBefore);
   await expect(page.getByLabel("Message the agent")).not.toBeFocused();
   await page.getByTestId("auto-compaction").click();
-  await page.getByTestId("auto-compaction-value-default").click();
   await page.getByRole("button", { name: "Apply", exact: true }).click();
   await expect.poll(() => patches).toHaveLength(2);
   expect(patches[1]).toEqual({ auto_compaction: { tokens: null }, restart: false });
@@ -210,9 +204,7 @@ test("context markers drag independently on mobile and remain reachable at coinc
   await page.getByRole("heading", { name: "Context management" }).click();
   await page.screenshot({ path: "test-results/compaction-scale-desktop.png", animations: "disabled" });
   await page.getByTestId("auto-compaction").click();
-  await page.getByTestId("auto-compaction-value-default").click();
   await page.getByTestId("idle-compaction").click();
-  await page.getByTestId("idle-compaction-value-off").click();
   await expect(page.getByTestId("compaction-scale")).toHaveCount(0);
   await page.screenshot({ path: "test-results/compaction-scale-default.png", animations: "disabled" });
 });
