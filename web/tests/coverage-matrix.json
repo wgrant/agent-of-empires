@@ -3374,7 +3374,7 @@
       "components": ["web/src/components/acp/WrapToggle.tsx"]
     },
     {
-      "id": "acp.tool-run-folding",
+      "id": "acp.tool-run-folding-and-transient-scroll-clamps",
       "kind": "mocked-playwright",
       "risk": "medium",
       "specs": [
@@ -3386,6 +3386,7 @@
       "components": [
         "web/src/components/acp/ToolExpansion.tsx",
         "web/src/components/acp/GroupToolCards.tsx",
+        "web/src/components/acp/useTranscriptScroll.ts",
         "web/src/lib/toolAnchor.ts"
       ]
     },

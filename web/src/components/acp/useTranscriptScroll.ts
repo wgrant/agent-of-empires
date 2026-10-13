@@ -286,7 +286,7 @@ export function useTranscriptScroll({
       }
       // A card remounted elsewhere in the tree (a run folding into a group)
       // loses the browser's own anchoring; hold the reader's place by id.
-      vp.scrollTop += toolAnchorDelta(vp, toolAnchorsRef.current);
+      vp.scrollTop += toolAnchorDelta(vp, toolAnchorsRef.current, true);
       sample();
       resample();
     });

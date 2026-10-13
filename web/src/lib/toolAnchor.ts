@@ -46,7 +46,7 @@ export function resampleToolAnchors(viewport: HTMLElement, previous: readonly To
  *  was remounted. A surviving card stops the search: ordinary layout shifts
  *  stay native. An anchor folded out of sight is skipped for the next one.
  *  Scrolling since the sample is the reader's own and stays. */
-export function toolAnchorDelta(viewport: HTMLElement, anchors: readonly ToolAnchor[]): number {
+export function toolAnchorDelta(viewport: HTMLElement, anchors: readonly ToolAnchor[], preserveOffset = false): number {
   for (const anchor of anchors) {
     if (anchor.el.isConnected) return 0;
     const next = viewport.querySelector(`[data-tool-id="${CSS.escape(anchor.id)}"]`);
@@ -54,7 +54,9 @@ export function toolAnchorDelta(viewport: HTMLElement, anchors: readonly ToolAnc
       // A fold shrinks the content, and the browser clamps the scroll to the new
       // end; that move is not the reader's.
       const sampled = Math.min(anchor.scrollTop, viewport.scrollHeight - viewport.clientHeight);
-      const expected = anchor.offset - (viewport.scrollTop - sampled);
+      // Scroll handlers sample the reader's position until a fold detaches the
+      // cards. A clamp followed by new text can exceed the current scroll bounds.
+      const expected = preserveOffset ? anchor.offset : anchor.offset - (viewport.scrollTop - sampled);
       return next.getBoundingClientRect().top - viewport.getBoundingClientRect().top - expected;
     }
   }

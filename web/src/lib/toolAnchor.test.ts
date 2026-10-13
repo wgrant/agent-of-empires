@@ -124,4 +124,15 @@ describe("tool anchors", () => {
     expect(ids).toEqual(Array.from({ length: 13 }, (_, n) => `c${n + 2}`));
     expect(reads).toBeLessThan(40);
   });
+
+  it("preserves the sampled offset through a transient clamp followed by content growth", () => {
+    const { viewport, add } = setup({ a: [150, 200] });
+    viewport.scrollTop = 100;
+    const anchors = sampleToolAnchors(viewport);
+    anchors[0]!.el.remove();
+    viewport.scrollTop = 60;
+    Object.defineProperty(viewport, "scrollHeight", { value: 1000, configurable: true });
+    add("a", [180, 230]);
+    expect(toolAnchorDelta(viewport, anchors, true)).toBe(30);
+  });
 });
