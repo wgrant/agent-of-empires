@@ -46,6 +46,7 @@ mod v036_session_creation_count;
 mod v037_trash_lifecycle_id;
 mod v038_session_compaction_budget;
 mod v039_idle_compaction;
+mod v040_upstream_creation_and_trash;
 
 /// Fixtures shared by the migrations that rewrite agent hook files.
 #[cfg(test)]
@@ -91,7 +92,7 @@ use anyhow::Result;
 use std::fs;
 use tracing::{debug, info};
 
-const CURRENT_VERSION: u32 = 39;
+const CURRENT_VERSION: u32 = 40;
 const VERSION_FILE: &str = ".schema_version";
 
 /// Version, log name, and the one-time transformation to run.
@@ -233,6 +234,11 @@ const MIGRATIONS: &[Migration] = &[
         v038_session_compaction_budget::run,
     ),
     (39, "idle_compaction", v039_idle_compaction::run),
+    (
+        40,
+        "upstream_creation_and_trash",
+        v040_upstream_creation_and_trash::run,
+    ),
 ];
 
 /// The data-schema version this build targets, i.e. the version every install
@@ -395,6 +401,33 @@ mod tests {
         let error = run_migrations().unwrap_err().to_string();
 
         assert!(error.contains("refusing to downgrade"));
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn working_branch_schema_37_receives_upstream_creation_and_trash_migrations() {
+        let temp = tempfile::tempdir().unwrap();
+        let _guard = crate::session::test_support::isolate_app_dir_at(temp.path());
+        let app = crate::session::get_app_dir().unwrap();
+        let profile = app.join("profiles/default");
+        fs::create_dir_all(&profile).unwrap();
+        fs::write(app.join(VERSION_FILE), "37").unwrap();
+        let path = profile.join("sessions.json");
+        fs::write(&path, r#"[{"id":"live"},{"id":"trash","trashed_at":"2026-10-01T00:00:00Z"},{"id":"new-trash","trashed_at":"2026-10-02T00:00:00Z","trash_lifecycle_id":"retained"}]"#).unwrap();
+        run_migrations().unwrap();
+        assert_eq!(get_current_version(), CURRENT_VERSION);
+        assert_eq!(
+            crate::session::config::AppStateConfig::load()
+                .unwrap()
+                .sessions_created,
+            3
+        );
+        let contents = fs::read_to_string(&path).unwrap();
+        let rows: serde_json::Value = serde_json::from_str(&contents).unwrap();
+        uuid::Uuid::parse_str(rows[1]["trash_lifecycle_id"].as_str().unwrap()).unwrap();
+        assert_eq!(rows[2]["trash_lifecycle_id"], "retained");
+        run_migrations().unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), contents);
     }
 
     /// Upgrading preserves the sort order, and a second run leaves state untouched.
