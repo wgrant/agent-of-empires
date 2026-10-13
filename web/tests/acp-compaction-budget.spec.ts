@@ -76,6 +76,7 @@ test("mobile context settings apply without restarting and retain a stable pendi
   await page.getByRole("button", { name: "Save for next start", exact: true }).click();
   await expect.poll(() => patches).toEqual([{ auto_compaction: { tokens: 200000 }, restart: false }]);
   await expect(page.getByTestId("session-settings-dialog")).toHaveCount(0);
+  await waitForComposerConnected(page);
   await openSessionSettings(page);
   await expect(context).toContainText("Saved for next start · restart required");
   await expect(context.getByLabel("Running compaction settings")).toContainText("Automatic threshold: Agent default");
