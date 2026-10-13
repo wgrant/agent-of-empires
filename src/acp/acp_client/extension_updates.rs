@@ -175,7 +175,10 @@ pub(super) fn extension_events(update: &Value) -> Vec<Event> {
                 if status == "completed" {
                     events.extend(compaction_completed_events());
                     if let Some(text) = compaction_summary(update) {
-                        events.push(Event::ConversationCompactionSummary { text });
+                        events.push(Event::ConversationCompactionSummary {
+                            compaction_id: String::new(),
+                            text,
+                        });
                     }
                 }
                 events.push(compaction_ended(status, update));
@@ -416,7 +419,7 @@ mod tests {
                             description.as_deref().unwrap_or("")
                         )
                     }
-                    Event::ConversationCompactionSummary { text } => {
+                    Event::ConversationCompactionSummary { text, .. } => {
                         format!("ConversationCompactionSummary:{text}")
                     }
                     Event::ConversationCompactionStarted => "ConversationCompactionStarted".into(),

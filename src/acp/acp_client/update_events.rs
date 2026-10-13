@@ -1108,8 +1108,16 @@ mod tests {
             let rows: Vec<(String, &str)> = model
                 .rows()
                 .iter()
-                .map(|r| (r.id.clone(), r.text.as_str()))
-                .filter(|(id, _)| !id.starts_with("compacted-"))
+                .map(|r| {
+                    (
+                        r.compaction
+                            .as_ref()
+                            .and_then(|info| info.compaction_id.as_ref())
+                            .map(|id| format!("compaction-summary-{id}"))
+                            .unwrap_or_else(|| r.id.clone()),
+                        r.text.as_str(),
+                    )
+                })
                 .collect();
             assert_eq!(
                 rows,
@@ -1127,20 +1135,8 @@ mod tests {
                 ]
             );
             let kinds: Vec<_> = model.rows().iter().map(|r| r.kind).collect();
-            use crate::acp::transcript::TranscriptRowKind::{
-                Advisory, Compacted, CompactionSummary,
-            };
-            assert_eq!(
-                kinds,
-                [
-                    Compacted,
-                    CompactionSummary,
-                    Advisory,
-                    Compacted,
-                    CompactionSummary,
-                    Advisory
-                ]
-            );
+            use crate::acp::transcript::TranscriptRowKind::{Advisory, Compacted};
+            assert_eq!(kinds, [Compacted, Advisory, Compacted, Advisory]);
         }
     }
 

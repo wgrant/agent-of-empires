@@ -829,6 +829,7 @@ export interface ActivityRow {
     | "advisory"
     | "session_cleared"
     | "compacted"
+    | "compaction_summary"
     | "summary"
     | "agent_notice"
     | "subagent"

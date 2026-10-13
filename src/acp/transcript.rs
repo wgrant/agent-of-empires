@@ -80,6 +80,8 @@ pub struct HookInfo {
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct CompactionInfo {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compaction_id: Option<String>,
     /// `running`, then `completed`, `failed`, `cancelled`, or `interrupted`
     /// when the turn ended without a verdict.
     pub state: String,
@@ -675,9 +677,10 @@ impl TranscriptModel {
                 TranscriptRowKind::Summary,
                 text.clone(),
             )],
-            Event::ConversationCompactionSummary { text, .. } => self.update_compaction(seq, |row| {
-                (row.text != *text).then(|| row.text = text.clone())
-            }),
+            Event::ConversationCompactionSummary {
+                compaction_id,
+                text,
+            } => self.update_compaction_summary(seq, compaction_id, text),
             Event::ConversationCompactionEnded {
                 status,
                 error,
@@ -1290,6 +1293,57 @@ impl TranscriptModel {
     fn compaction(&self) -> Option<&CompactionInfo> {
         let index = *self.compactions.get(&self.scope)?;
         self.rows[index].compaction.as_ref()
+    }
+
+    fn update_compaction_summary(
+        &mut self,
+        seq: u64,
+        id: &str,
+        text: &str,
+    ) -> Vec<TranscriptDelta> {
+        if id.is_empty() {
+            return self.update_compaction(seq, |row| {
+                (row.text != text).then(|| row.text = text.into())
+            });
+        }
+        let index = self
+            .rows
+            .iter()
+            .position(|row| {
+                row.subagent_id == self.scope
+                    && row
+                        .compaction
+                        .as_ref()
+                        .is_some_and(|info| info.compaction_id.as_deref() == Some(id))
+            })
+            .or_else(|| {
+                self.compactions.get(&self.scope).copied().filter(|&index| {
+                    self.rows[index]
+                        .compaction
+                        .as_ref()
+                        .is_some_and(|info| info.compaction_id.is_none())
+                })
+            });
+        let (index, fresh) = match index {
+            Some(index) => (index, false),
+            None => {
+                self.push_compaction(seq, "completed", String::new());
+                (self.rows.len() - 1, true)
+            }
+        };
+        let row = &mut self.rows[index];
+        let info = row.compaction.as_mut().expect("compaction row");
+        let changed = info.compaction_id.as_deref() != Some(id) || row.text != text;
+        info.compaction_id = Some(id.into());
+        row.text = text.into();
+        if fresh {
+            info.ended_at = Some(self.now);
+            vec![TranscriptDelta::Append(row.clone())]
+        } else if changed {
+            vec![patch(row)]
+        } else {
+            Vec::new()
+        }
     }
 
     fn push_compaction(&mut self, seq: u64, state: &str, text: String) -> TranscriptDelta {
@@ -2160,6 +2214,7 @@ mod tests {
             duration_ms: facts.then_some(71_200),
         };
         let summary = || Event::ConversationCompactionSummary {
+            compaction_id: String::new(),
             text: "kept the plan".into(),
         };
         let stopped = || Event::Stopped {
@@ -2746,13 +2801,13 @@ mod tests {
         for (seq, text) in [(5, "late"), (6, ""), (7, "restored")] {
             let deltas = m.apply_event(seq, &summary("a", text));
             assert!(
-                matches!(deltas.as_slice(), [TranscriptDelta::Patch { id, row }] if id == "compaction-summary-a" && row.text == text),
+                matches!(deltas.as_slice(), [TranscriptDelta::Patch { id, row }] if id == "compacted-1" && row.text == text),
                 "{text:?}"
             );
             assert_eq!(ids(&m), layout, "{text:?}");
         }
-        assert_eq!(layout[1], "compaction-summary-a");
-        assert_eq!(row(&m, "compaction-summary-b").text, "other");
+        assert_eq!(layout[0], "compacted-1");
+        assert_eq!(row(&m, "compacted-3").text, "other");
     }
 
     #[test]
