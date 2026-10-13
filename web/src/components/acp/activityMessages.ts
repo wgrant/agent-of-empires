@@ -227,11 +227,9 @@ export function activityToThreadMessages(
             : { type: "text" as const, text: `📎 ${att.name ?? att.kind} (${att.mimeType})` },
         ),
       ];
-      pushUser(
-        row,
-        parts.length > 0 ? parts : [{ type: "text", text: "" }],
-        { metadata: { custom: { originPlugin: row.originPlugin, promptSendFailure: row.sendFailure } } },
-      );
+      pushUser(row, parts.length > 0 ? parts : [{ type: "text", text: "" }], {
+        metadata: { custom: { originPlugin: row.originPlugin, promptSendFailure: row.sendFailure } },
+      });
       continue;
     }
     // Structured payloads ride on metadata so the user card renders without parsing text.

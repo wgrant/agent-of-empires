@@ -124,35 +124,35 @@ export function StructuredView(props: Props) {
       <AgentProfileProvider toolKey={tool} clearAliases={clearAliases}>
         <ToolDisplayModeProvider density={toolDensity}>
           <ToolExpansionProvider>
-          <ThinkingDisplayContext.Provider value={thinkingDisplay}>
-            <AcpRuntime
-              sessionId={sessionId}
-              archivedAt={archivedAt}
-              snoozedUntil={snoozedUntil}
-              showClearedTurns={showClearedTurns}
-              viewedAgentId={viewedAgentId}
-            >
-              {(ctx) => (
-                <BackgroundAgentsContext.Provider
-                  value={{
-                    agents: ctx.state.backgroundAgents,
-                    openPane: props.onOpenAgentsPane,
-                  }}
-                >
-                  <AcpChrome
-                    view={props}
-                    ctx={ctx}
-                    showClearedTurns={showClearedTurns}
-                    onToggleClearedTurns={() => setShowClearedTurns((v) => !v)}
-                    toolDensity={toolDensity}
-                    onToggleToolDensity={toggleToolDensity}
-                    viewedAgentId={viewedAgentId}
-                    onViewAgent={setViewedAgentId}
-                  />
-                </BackgroundAgentsContext.Provider>
-              )}
-            </AcpRuntime>
-          </ThinkingDisplayContext.Provider>
+            <ThinkingDisplayContext.Provider value={thinkingDisplay}>
+              <AcpRuntime
+                sessionId={sessionId}
+                archivedAt={archivedAt}
+                snoozedUntil={snoozedUntil}
+                showClearedTurns={showClearedTurns}
+                viewedAgentId={viewedAgentId}
+              >
+                {(ctx) => (
+                  <BackgroundAgentsContext.Provider
+                    value={{
+                      agents: ctx.state.backgroundAgents,
+                      openPane: props.onOpenAgentsPane,
+                    }}
+                  >
+                    <AcpChrome
+                      view={props}
+                      ctx={ctx}
+                      showClearedTurns={showClearedTurns}
+                      onToggleClearedTurns={() => setShowClearedTurns((v) => !v)}
+                      toolDensity={toolDensity}
+                      onToggleToolDensity={toggleToolDensity}
+                      viewedAgentId={viewedAgentId}
+                      onViewAgent={setViewedAgentId}
+                    />
+                  </BackgroundAgentsContext.Provider>
+                )}
+              </AcpRuntime>
+            </ThinkingDisplayContext.Provider>
           </ToolExpansionProvider>
         </ToolDisplayModeProvider>
       </AgentProfileProvider>

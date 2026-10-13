@@ -297,14 +297,7 @@ export function useAcpConnection(
       replaySyncCountRef.current += 1;
       setReplaySyncing(true);
       try {
-        await fetchReplay(
-          sessionId,
-          lastSeqRef,
-          dispatch,
-          setHasMoreOlder,
-          signal,
-          setLastTransportDiagnostic,
-        );
+        await fetchReplay(sessionId, lastSeqRef, dispatch, setHasMoreOlder, signal, setLastTransportDiagnostic);
       } finally {
         replaySyncCountRef.current -= 1;
         if (replaySyncCountRef.current === 0) setReplaySyncing(false);

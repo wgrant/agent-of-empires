@@ -64,14 +64,7 @@ export async function fetchReplay(
     if (lastSeq.current === 0) {
       await fetchTail(sid, lastSeq, dispatch, setHasMoreOlder, signal, setLastTransportDiagnostic);
     } else {
-      await fetchForward(
-        sid,
-        lastSeq,
-        dispatch,
-        setHasMoreOlder,
-        signal,
-        setLastTransportDiagnostic,
-      );
+      await fetchForward(sid, lastSeq, dispatch, setHasMoreOlder, signal, setLastTransportDiagnostic);
     }
   } catch {
     if (signal.aborted) return;
