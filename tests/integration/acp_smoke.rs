@@ -64,6 +64,7 @@ async fn shim_agent_round_trips_approval_allow() {
         claude_store_pin: None,
         base_host_environment: vec![],
         auto_compact_tokens: None,
+        idle_compact_tokens: None,
     };
 
     let mut client = AcpClient::spawn(config, AcpSessionId("approve".into()))
@@ -181,6 +182,7 @@ async fn shim_agent_round_trips_a_question_option_list() {
         claude_store_pin: None,
         base_host_environment: vec![],
         auto_compact_tokens: None,
+        idle_compact_tokens: None,
     };
 
     let mut client = AcpClient::spawn(config, AcpSessionId("choice".into()))
@@ -294,6 +296,7 @@ async fn shim_agent_sees_a_dismissed_question_as_cancelled() {
         claude_store_pin: None,
         base_host_environment: vec![],
         auto_compact_tokens: None,
+        idle_compact_tokens: None,
     };
 
     let mut client = AcpClient::spawn(config, AcpSessionId("dismiss".into()))
@@ -385,6 +388,7 @@ async fn shim_agent_round_trips_fs() {
         claude_store_pin: None,
         base_host_environment: vec![],
         auto_compact_tokens: None,
+        idle_compact_tokens: None,
     };
 
     let mut client = AcpClient::spawn(config, AcpSessionId("fs".into()))
@@ -476,6 +480,7 @@ async fn shim_agent_round_trips_terminal() {
         claude_store_pin: None,
         base_host_environment: vec![],
         auto_compact_tokens: None,
+        idle_compact_tokens: None,
     };
 
     let mut client = AcpClient::spawn(config, AcpSessionId("term".into()))
@@ -579,6 +584,7 @@ async fn shim_agent_set_mode_emits_current_mode_changed() {
         claude_store_pin: None,
         base_host_environment: vec![],
         auto_compact_tokens: None,
+        idle_compact_tokens: None,
     };
 
     let mut client = AcpClient::spawn(config, AcpSessionId("set-mode".into()))
@@ -666,6 +672,7 @@ async fn shim_agent_emits_rate_limit_event() {
         claude_store_pin: None,
         base_host_environment: vec![],
         auto_compact_tokens: None,
+        idle_compact_tokens: None,
     };
 
     let mut client = AcpClient::spawn(config, AcpSessionId("rl".into()))

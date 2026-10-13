@@ -59,7 +59,7 @@ describe("fetchReplay", () => {
     const actions: Action[] = [];
     const lastSeq = { current: 1 };
 
-    const replay = fetchReplay(sid, lastSeq, (action) => actions.push(action), vi.fn());
+    const replay = fetchReplay(sid, lastSeq, (action) => actions.push(action), vi.fn(), new AbortController().signal);
     await flush();
     expect(actions).toEqual([]);
     expect(lastSeq.current).toBe(1);
@@ -100,7 +100,7 @@ describe("fetchReplay", () => {
     );
     const actions: Action[] = [];
 
-    await fetchReplay(sid, { current: 1 }, (action) => actions.push(action), vi.fn());
+    await fetchReplay(sid, { current: 1 }, (action) => actions.push(action), vi.fn(), new AbortController().signal);
 
     expect(actions[0]).toMatchObject({
       kind: "catchup",
@@ -143,7 +143,7 @@ describe("fetchReplay", () => {
     const actions: Action[] = [];
     const lastSeq = { current: 100 };
 
-    await fetchReplay(sid, lastSeq, (action) => actions.push(action), vi.fn());
+    await fetchReplay(sid, lastSeq, (action) => actions.push(action), vi.fn(), new AbortController().signal);
 
     expect(requests).toEqual(["since:50", "since:50", "tail:frames", "tail:rows", "since:0"]);
     expect(actions.map((action) => action.kind)).toEqual(["hydrate", "frames", "lagged_resolved"]);

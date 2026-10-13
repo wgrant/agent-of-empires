@@ -117,14 +117,18 @@ export function AssistantMessage() {
       <MessageTime tapped={timeTap.shown} align="start" />
       <div className="text-sm text-text-primary leading-relaxed">
         <MessagePrimitive.Parts
-          components={{ Text: AssistantText, Reasoning: AssistantReasoning, tools: { Override: AssistantToolCall } }}
+          components={{
+            Text: AssistantTextPart,
+            Reasoning: AssistantReasoning,
+            tools: { Override: AssistantToolCall },
+          }}
         />
       </div>
     </MessagePrimitive.Root>
   );
 }
 
-export function AssistantText({ text, status }: { text: string; status?: { type?: string } }) {
+function AssistantTextPart({ text, status }: { text: string; status?: { type?: string } }) {
   const compactionSummary = useAuiState(
     (s) => (s.message.metadata?.custom as { compactionSummary?: unknown } | undefined)?.compactionSummary === true,
   );
@@ -141,6 +145,11 @@ export function AssistantText({ text, status }: { text: string; status?: { type?
       </details>
     );
   }
+  return <AssistantText text={text} status={status} />;
+}
+
+export function AssistantText({ text, status }: { text: string; status?: { type?: string } }) {
+  if (!text) return null;
   return <Markdown text={text} smooth={status?.type === "running"} />;
 }
 

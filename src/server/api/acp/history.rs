@@ -791,6 +791,7 @@ done
 
     fn prompt(text: &str) -> Event {
         Event::UserPromptSent {
+            origin_plugin: None,
             text: text.into(),
             attachments: Vec::new(),
             prompt_id: None,

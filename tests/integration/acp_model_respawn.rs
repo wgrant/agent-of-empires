@@ -63,6 +63,7 @@ fn spawn_config(
         claude_store_pin: None,
         base_host_environment: vec![],
         auto_compact_tokens: None,
+        idle_compact_tokens: None,
     }
 }
 

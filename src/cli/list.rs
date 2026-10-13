@@ -477,7 +477,7 @@ mod tests {
         let mut retired = Instance::new("z", "/repo");
         retired.archive();
         retired.retire();
-        let json = session_json(&retired, "p");
+        let json = session_json(&retired, "p", false);
         assert_eq!(json.state, "retired");
         assert!(json.retired_at.is_some() && json.archived_at.is_some());
 

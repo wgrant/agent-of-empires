@@ -1426,6 +1426,7 @@ mod serve {
                 .unwrap();
             let state = crate::server::test_support::build_test_app_state(vec![inst]);
             let prompt = crate::acp::state::Event::UserPromptSent {
+                origin_plugin: None,
                 text: "why is login flaky".to_string(),
                 attachments: Vec::new(),
                 prompt_id: None,
